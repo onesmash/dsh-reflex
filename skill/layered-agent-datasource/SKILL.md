@@ -1,7 +1,7 @@
 ---
 name: layered-agent-datasource
 description: "为分层智能体(ds-bot-layered-agent)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（LAYERED_HOME / $HOME）推导，不写死绝对路径。"
-version: 1.5.0
+version: 1.6.0
 ---
 
 # 添加分层智能体数据源
@@ -111,7 +111,10 @@ exit 0
    `mergeCtx(prev, next)` 攒进 `pending-wakes.json`，冷却期一到合并发出。
    注意：攒了就必须发得出去 —— `decideOnce` 在**没有新事实时也要继续跑**。
 3. **SemIf 判据必须拿真实历史 facts 校准**，别拍脑袋：逐条拼 `{id,state,question,options}` 批量跑
-   `run_score.sh` 看 p(yes) 分布。实测 4B 模型下「收紧判据」比「调高阈值」更容易把 target 压死到
+   `run_score.sh` 看 p(yes) 分布。
+   ⚠️ **校准时用的措辞和 state 构造，必须原样搬进实现**。手滑多写一句限定、或把上下文从
+   "全部消息"改成"最近 8 条"，分数就会整批漂移（实测 2/9→5/9、0.75→0.93），
+   而且表现为"数字变好"，很难察觉。改动判据后必须重跑校准。实测 4B 模型下「收紧判据」比「调高阈值」更容易把 target 压死到
    永不触发；加用户画像（`l1.profile`）会显著改变灵敏度。
    逐条筛选用批量打分（框架的 `semifScoreBatch`），**不要再跑第二次 SemIf**。
 
