@@ -53,10 +53,18 @@
 { "intervalMs": 900000, "timeoutMs": 120000, "env": { "MY_VAR": "x" } }
 ```
 
-- `intervalMs`：该源独立采集间隔（默认跟随 `l0.scriptIntervalMs`，60s）
+- `intervalMs`：该源独立采集间隔（默认跟随 `l0.scriptIntervalMs`，60s）。
+  **只有比采集节拍（`l0.intervalMs`）更长的间隔才会被额外节流** —— 扫描循环会给每个脚本源都
+  塞上默认 `intervalMs`，若不比较就当成独立间隔，抖动会让 60s 的源变成 120s 才跑一次。
+  ⚠️ 浏览器类源必须在这里设成分钟级（如 900000），否则会按节拍每分钟启停一次 Chrome。
 - `timeoutMs`：**脚本执行超时，默认只有 20s**。凡是启停外部进程/浏览器的脚本（如 `feed-timeline.sh`）
   必须在这里放宽，否则会被杀在半路
 - `env`：额外注入的环境变量
+
+> **双重节流**：调度器按 `intervalMs` 控制调用频率；**脚本自己也应该自节流**
+> （记一个 last-run 时间戳，没到间隔就 `exit 0`）。因为脚本每次都是重新执行的，
+> 自节流的改动**不需要重启插件**就能生效 —— 是调度器出问题时的兜底。
+> 参考 `feed-timeline.sh` 的"自节流"段落。
 
 ### `<name>.schema.json`
 

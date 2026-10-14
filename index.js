@@ -348,12 +348,24 @@ function install(rt, ctx, cfg) {
   }
   writeManifest()
 
+  // 每个脚本源按【自己的】intervalMs 节流 (来自 collectors/<name>.env.json)。
+  // 注意: 这个字段以前只被存进 SCRIPT_SOURCES 却从未在采集循环里生效 ——
+  // 所有脚本源实际都按 l0.intervalMs(默认 60s) 跑, 浏览器类源(feed-timeline)会被拉到
+  // 每分钟启停一次 Chrome, 既费资源又容易被目标站限流。这里补上。
+  const lastCollectAt = {}
   async function collectOnce() {
     const ts = Date.now()
     let count = 0
     for (const src of cfg.l0.sources) {
       const c = SOURCES[src]
       if (!c) continue
+      // 声明了【比节拍更长】的独立间隔的源才额外节流 ——
+      // 扫描循环给每个脚本源都塞了默认 intervalMs(= scriptIntervalMs), 若不加这个比较,
+      // 默认值恰好等于节拍时会被反复跳过(抖动导致 60s 的源变成 120s 跑一次)。
+      // 启动后 lastCollectAt 为空 → 首轮立即采一次。
+      const everyMs = (c.intervalMs ?? 0) > cfg.l0.intervalMs ? c.intervalMs : 0
+      if (everyMs && ts - (lastCollectAt[src] ?? 0) < everyMs) continue
+      lastCollectAt[src] = ts
       try {
         let rows
         if (c.builtin) {
