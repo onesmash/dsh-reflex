@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { randomUUID } from 'node:crypto'
+import { loadavg } from 'node:os'
 
 const execFileP = promisify(execFile)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -30,6 +31,7 @@ const DEFAULTS = {
   l1: {
     intervalMs: 60_000,
     threshold: 0.8,
+    targets: ['disk'],        // 启用的监控目标 (对应 TARGETS 注册表)
     hardRule: { lowAvailableGB: 20, highUsedPct: 90 },
     targetBot: 'Chief',       // L1 触发时唤醒 Chief 决策 (Chief 再派发执行 Bot)
     escalateToChief: false,   // 目标就是 Chief, 无需再升级
@@ -136,7 +138,8 @@ function install(rt, ctx, cfg) {
       const resolved = await sc.resolveAgent(sessionId)
       if ('error' in resolved) { log(`L2 wake failed: ${resolved.error?.message}`); return }
       const agent = resolved.agent
-      const text = `[分层智能体·L1] 检测到需关注事件：${summary}\n请评估并决策是否需要处理(如可清理缓存则执行)。`
+      // text 由 target.render 产出完整结构化通知; 这里不再加前缀 (原 'detected' 前缀已移入 render)
+      const text = summary
       const message = createUserMessageLike({
         content: [{ type: 'text', text }],
         source: { kind: 'bot', form: 'relay', role: 'request', exchangeId: randomUUID(), senderName: '分层智能体', hop: 0 },
@@ -150,7 +153,7 @@ function install(rt, ctx, cfg) {
     }
   }
 
-  // ---------- L0: 数据源采集 ----------
+  // ---------- L0: 数据源采集 (可扩展多源) ----------
   const SOURCES = {
     async disk() {
       const { stdout } = await execFileP('df', ['-k', '/System/Volumes/Data'])
@@ -166,6 +169,22 @@ function install(rt, ctx, cfg) {
           usedGB: +(usedKb / 1048576).toFixed(2),
         },
         meta: { volume: '/System/Volumes/Data' },
+      }]
+    },
+    // 附加源: CPU 负载 (示例扩展; 由 config l0.sources 决定是否启用)
+    async cpu() {
+      const { stdout } = await execFileP('ps', ['-A', '-o', '%cpu='])
+      const procs = stdout.trim().split('\n').map(Number).filter(n => Number.isFinite(n))
+      const load1 = Math.round(loadavg()[0] * 100) / 100
+      const top = procs.slice().sort((a, b) => b - a)[0] ?? 0
+      return [{
+        source: 'cpu', metric: 'load', ts: Date.now(),
+        raw: {
+          load1,
+          procCount: procs.length,
+          topProcCpu: Math.round(top * 100) / 100,
+        },
+        meta: { scope: 'host' },
       }]
     },
   }
@@ -230,8 +249,8 @@ function install(rt, ctx, cfg) {
     saveCursor()
   }
 
-  // ---------- L1: SemIf 调用 ----------
-  async function semifDecide(state) {
+  // ---------- L1: SemIf 调用 (通用; question/options 由 target 提供) ----------
+  async function semifDecide(state, question, options) {
     const runScore = join(cfg.semif.skillDir, 'scripts', 'run_score.sh')
     const work = join(cfg.l0.storeDir, '..', 'work')
     try { mkdirSync(work, { recursive: true }) } catch {}
@@ -241,12 +260,8 @@ function install(rt, ctx, cfg) {
     const row = {
       id: 'l1',
       state,
-      question: '仅当磁盘可用空间紧张、使用率过高、或出现明确异常时选 yes 需要唤醒 L2 处理。若一切正常或轻微波动选 no; 数据不足选 insufficient。',
-      options: [
-        { id: 'yes', description: '需要唤醒 L2。存在明确需决策的异常。' },
-        { id: 'no', description: '无需唤醒 L2。空间充足或轻微波动。' },
-        { id: 'insufficient', description: '数据不足, 无法判断。' },
-      ],
+      question,
+      options,
     }
     writeFileSync(inp, JSON.stringify(row) + '\n')
     await execFileP('bash', [runScore, '--input', inp, '--output', out, '--offline'], { timeout: 120_000 })
@@ -256,24 +271,79 @@ function install(rt, ctx, cfg) {
     return { winning: ids[probs.indexOf(Math.max(...probs))], pYes: p.yes ?? 0 }
   }
 
-  // ---------- L1: 决策 (增量: 游标推进 + 状态冷却去重) ----------
+  // ---------- L1: 目标化决策框架 (v2) ----------
+  // 每个 target 是自包含的决策闭环: collect(组装context) → interim(硬规则) → semif(本地模型) → wake(通知)
+  // L2 通知自包含 target collect 产出的 context → L2 无状态可决策
+  const TARGETS = {
+    disk: {
+      name: '磁盘存储',
+      // ① 收集器: 该 target 作为"决策 context"的所有数据都在这组装 (含趋势, 供 L2 无状态决策)
+      collect: async (facts) => {
+        const diskFacts = facts.filter(f => f.source === 'disk')
+        const latest = diskFacts[diskFacts.length - 1]?.raw
+        if (!latest) return null
+        // 趋势: 取窗口内前后对比 (fact 按 ts 排序, 取第一个和最后一个)
+        const first = diskFacts[0]?.raw
+        const trend = first && first.availableGB !== undefined
+          ? { deltaGB: Math.round((latest.availableGB - first.availableGB) * 10) / 10, windowFacts: diskFacts.length }
+          : null
+        return {
+          kind: 'disk',
+          current: { availableGB: latest.availableGB, usedPct: latest.usedPct, totalGB: latest.totalGB, usedGB: latest.usedGB },
+          trend,
+          policy: { lowAvailableGB: cfg.l1.hardRule.lowAvailableGB, highUsedPct: cfg.l1.hardRule.highUsedPct },
+        }
+      },
+      // ② 硬规则预筛: 明确超阈值直接触发 (还可给 SemIf 提供明确的上下文)
+      interim: (ctx) => ctx && ctx.current &&
+        (ctx.current.availableGB < cfg.l1.hardRule.lowAvailableGB || ctx.current.usedPct > cfg.l1.hardRule.highUsedPct),
+      // ③ SemIf 专属配置
+      semif: {
+        question: '仅当磁盘可用空间紧张、使用率过高、或出现明确异常时选 yes 需要唤醒 L2 处理。若一切正常或轻微波动选 no; 数据不足选 insufficient。',
+        options: [
+          { id: 'yes', description: '需要唤醒 L2。存在明确需决策的异常。' },
+          { id: 'no', description: '无需唤醒 L2。空间充足或轻微波动。' },
+          { id: 'insufficient', description: '数据不足, 无法判断。' },
+        ],
+      },
+      // ④ 通知渲染: 把 target 的完整 context 渲染成 L2 可无状态决策的结构化文本
+      render: (ctx, extra) => {
+        const c = ctx.current
+        const t = ctx.trend
+        return [
+          `[分层智能体·L1·磁盘存储] 检测到需关注事件`,
+          `状态: 可用 ${c.availableGB}GB / 已用 ${c.usedGB}GB (${c.usedPct}%) / 总量 ${c.totalGB}GB`,
+          ...(t ? [`趋势: 窗口${t.windowFacts}条采样内变化 Δ${t.deltaGB >= 0 ? '+' : ''}${t.deltaGB}GB`] : []),
+          `阈值: 可用<${ctx.policy.lowAvailableGB}GB 或 使用率>${ctx.policy.highUsedPct}%`,
+          ...(extra ? [extra] : []),
+          `请评估并决策是否需要处理(如可清理缓存则执行)。`,
+        ].join('\n')
+      },
+    },
+  }
+
+  // 目标指纹 + 冷却去重 (跨 target 各自独立)
   // lastWake 记录上次唤醒的"状态指纹+时间", 同状态或冷却期内不重复唤醒 → L2 无状态可行
   const lastWakePath = join(dirname(cfg.l0.storeDir), 'last-wake.json')
-  let lastWake = null
-  try { if (existsSync(lastWakePath)) lastWake = JSON.parse(readFileSync(lastWakePath, 'utf8')) } catch (e) { log(`last-wake read fail: ${e.message}`) }
-  function saveLastWake(w) { try { writeFileSync(lastWakePath, JSON.stringify(w)) } catch (e) { log(`last-wake write fail: ${e.message}`) } }
-  // 状态指纹: 用于判断"是否同一异常"。磁盘场景取 (avail 取整到 5GB, usedPct 取整到 5%) 的量化。
-  function stateFingerprint(disk) {
-    if (!disk) return null
-    return { availBucket: Math.round((disk.availableGB ?? 0) / 5), usedBucket: Math.round((disk.usedPct ?? 0) / 5) }
+  let lastWake = {}
+  try { if (existsSync(lastWakePath)) lastWake = JSON.parse(readFileSync(lastWakePath, 'utf8')) ?? {} } catch (e) { log(`last-wake read fail: ${e.message}`) }
+  function saveLastWake(w) { lastWake = w; try { writeFileSync(lastWakePath, JSON.stringify(w)) } catch (e) { log(`last-wake write fail: ${e.message}`) } }
+  function stateFingerprint(targetKey, ctx) {
+    const c = ctx?.current
+    if (!c) return null
+    if (targetKey === 'disk') return { availBucket: Math.round((c.availableGB ?? 0) / 5), usedBucket: Math.round((c.usedPct ?? 0) / 5) }
+    return null
   }
-  function contentChanged(fp) {
-    if (!lastWake || !lastWake.fp) return true                     // 无上次 → 视为新
-    if (lastWake.fp.availBucket !== fp.availBucket || lastWake.fp.usedBucket !== fp.usedBucket) return true  // 状态显著变化 → 新
-    const cooldownMs = cfg.l1.cooldownMs ?? 30 * 60 * 1000          // 冷却期内同状态不重复
-    if (Date.now() - (lastWake.at ?? 0) < cooldownMs) return false
-    return true                                                     // 同状态但超过冷却期 → 重新关注
+  function contentChanged(targetKey, fp) {
+    const last = lastWake[targetKey]
+    if (!last || !last.fp) return true                     // 该 target 无上次 → 视为新
+    if (fp && last.fp && (last.fp.availBucket !== fp.availBucket || last.fp.usedBucket !== fp.usedBucket)) return true  // 状态显著变化 → 新
+    const cooldownMs = cfg.l1.cooldownMs ?? 30 * 60 * 1000
+    if (Date.now() - (last.at ?? 0) < cooldownMs) return false
+    return true                                             // 同状态但超过冷却期 → 重新关注
   }
+
+  const activeTargets = Object.keys(TARGETS).filter(k => (cfg.l1.targets ?? ['disk']).includes(k))
 
   async function decideOnce() {
     // 测试钩子: wake-test 标记 → 强制唤醒 (端到端验证)
@@ -285,39 +355,41 @@ function install(rt, ctx, cfg) {
     if (!facts.length) return
     // 无论要不要唤醒, 都推进游标 (已消费这些事实)
     advanceCursor(nextFile, nextLine)
-    const disk = facts.filter(f => f.source === 'disk').slice(-1)[0]?.raw
-    const state = {
-      since: facts[0]?.ts ?? Date.now(),
-      count: facts.length,
-      disk,
-      policy: `可用空间低于${cfg.l1.hardRule.lowAvailableGB}GB 或使用率高于${cfg.l1.hardRule.highUsedPct}% 视为需要关注`,
-    }
-    const fp = stateFingerprint(disk)
-    // 硬规则先决
-    if (disk && (disk.availableGB < cfg.l1.hardRule.lowAvailableGB || disk.usedPct > cfg.l1.hardRule.highUsedPct)) {
-      if (contentChanged(fp)) {
-        const summary = `磁盘可用 ${disk.availableGB}GB / 使用率 ${disk.usedPct}% (硬规则触发)`
-        log(`L1: HARD-RULE -> ${summary}`)
-        await wakeL2(summary)
-        saveLastWake({ fp, at: Date.now(), reason: 'hard-rule' })
-      } else {
-        log(`L1: HARD-RULE 但状态冷却中, 跳过重复唤醒 (fp=${JSON.stringify(fp)})`)
-      }
-      return
-    }
-    // SemIf 边界
-    try {
-      const d = await semifDecide(state)
-      log(`L1: SemIf winning=${d.winning} pYes=${d.pYes.toFixed(3)}`)
-      if (d.pYes >= cfg.l1.threshold) {
-        if (contentChanged(fp)) {
-          await wakeL2(`磁盘可用 ${disk?.availableGB}GB / 使用率 ${disk?.usedPct}% (SemIf pYes=${d.pYes.toFixed(2)})`)
-          saveLastWake({ fp, at: Date.now(), reason: 'semif' })
-        } else {
-          log(`L1: SemIf 触发但状态冷却中, 跳过重复唤醒`)
+    for (const targetKey of activeTargets) {
+      const target = TARGETS[targetKey]
+      try {
+        const ctx = await target.collect(facts)
+        if (!ctx) continue
+        const fp = stateFingerprint(targetKey, ctx)
+        // 硬规则先决 (target 专属)
+        if (target.interim?.(ctx)) {
+          if (contentChanged(targetKey, fp)) {
+            log(`L1[${targetKey}]: HARD-RULE trigger`)
+            await wakeL2(target.render(ctx, '(硬规则触发)'))
+            saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: 'hard-rule' } })
+          } else {
+            log(`L1[${targetKey}]: HARD-RULE 但状态冷却中, 跳过重复唤醒`)
+          }
+          continue
         }
-      }
-    } catch (e) { log(`L1 SemIf fail: ${e.message}`) }
+        // SemIf 边界 (target 专属 question)
+        const state = {
+          since: facts[0]?.ts ?? Date.now(),
+          count: facts.length,
+          ...ctx,
+        }
+        const d = await semifDecide(state, target.semif.question, target.semif.options)
+        log(`L1[${targetKey}]: SemIf winning=${d.winning} pYes=${d.pYes.toFixed(3)}`)
+        if (d.pYes >= cfg.l1.threshold) {
+          if (contentChanged(targetKey, fp)) {
+            await wakeL2(target.render(ctx, `(SemIf pYes=${d.pYes.toFixed(2)})`))
+            saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: 'semif' } })
+          } else {
+            log(`L1[${targetKey}]: SemIf 触发但状态冷却中, 跳过重复唤醒`)
+          }
+        }
+      } catch (e) { log(`L1[${targetKey}] error: ${e.message}`) }
+    }
   }
 
   // ---------- 启动 ----------
