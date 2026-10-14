@@ -261,6 +261,7 @@ function install(rt, ctx, cfg) {
         disk:  { metric: 'data-volume', fields: { availableGB: '可用GB', usedPct: '使用率%', totalGB: '总量GB', usedGB: '已用GB' } },
         cpu:   { metric: 'load', fields: { load1: '1分钟负载', procCount: '进程数', topProcCpu: '最高进程CPU%' } },
         uptime:{ metric: 'uptime', fields: { seconds: '运行秒数', sinceBoot: '开机epoch' } },
+        net:   { metric: 'traffic', fields: { iface: '接口', inBytes: '收字节累计', outBytes: '发字节累计' } },
         mail:  { metric: 'new-email', fields: { id: '邮件id', timeMs: '时间', subject: '标题', from: '发件人', labels: '标签' } },
       }
       const schema = {
