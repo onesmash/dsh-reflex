@@ -266,7 +266,33 @@ exit 0
 - [ ] manifest `sources` 列出 `<name>`，schema 可见（若登记了）
 - [ ] 多次采集不重复（幂等）
 
-## 8. 示例参照
+## 8. 插件自带的 skill 与部署策略
+
+插件启动时把仓库 `skill/<name>/` **整个目录**递归部署到 `~/.agents/skills/<name>/`
+（有的 skill 带 `scripts/`、`assets/` 边车，只拷 `SKILL.md` 会装出个残废）。
+排除 `.DS_Store`、`__pycache__`；内容一致的文件不重写；可执行位保留。
+
+策略由 `skill/<name>/.deploy.json` 的 `policy` 决定：
+
+| policy | 适用 | 行为 |
+|---|---|---|
+| `sync`（默认） | 自有 skill | 内容不同就覆盖，随插件版本走 |
+| `seed-only` | 第三方 vendored skill | 只在目标**整个缺失**时安装；已存在则整体跳过 |
+
+`seed-only` 的理由：用户可能装了**更新的上游版本**，插件不能把它悄悄降级成仓库里这份快照。
+要强制用仓库这份，先删掉目标目录再重启插件。
+
+当前打包：
+
+| skill | policy | 说明 |
+|---|---|---|
+| `layered-agent-datasource` | sync | 本插件的加数据源规则，随代码版本走 |
+| `semif-decide` | seed-only | L1 决策依赖它打分；vendored 快照（MIT），不随上游自动更新 |
+
+> vendored 快照升级要手工做：重新 rsync 上游 skill 目录，并在 `.deploy.json` 里更新
+> `bundledAt` / `upstreamVersion`。别指望它会自己跟着上游走。
+
+## 9. 示例参照
 
 | 脚本 | 展示 |
 |---|---|

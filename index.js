@@ -128,21 +128,46 @@ function install(rt, ctx, cfg) {
     }
   } catch (e) { log(`seed collectors fail: ${e.message}`) }
 
-  // 自动部署 skill: 仓库 skill/<name>/ 的 SKILL.md → agent skills 目录 (~/.agents/skills/<name>/)
-  // 这样插件安装/每次启动时 skill 自动就位, 且随插件代码版本更新 (幂等: 目标存在且内容一致则跳过)
+  // 自动部署 skill: 仓库 skill/<name>/ → agent skills 目录 (~/.agents/skills/<name>/)
+  // 整个目录递归部署(有的 skill 带 scripts/ assets/ 边车, 只拷 SKILL.md 会装出个残废)。
+  // 策略由 skill/<name>/.deploy.json 的 policy 决定:
+  //   sync      (默认) 自有 skill —— 内容不同就覆盖, 随插件代码版本走
+  //   seed-only 第三方 vendored —— 只在目标【整个缺失】时安装; 已存在则整体跳过。
+  //             理由: 用户可能装了更新的上游版本, 不能悄悄把它降级成插件里的这份快照。
+  function deploySkillDir(srcDir, dstDir) {
+    let n = 0
+    mkdirSync(dstDir, { recursive: true })
+    for (const e of readdirSync(srcDir, { withFileTypes: true })) {
+      if (e.name === '.DS_Store' || e.name === '__pycache__' || e.name === '.deploy.json') continue
+      const s = join(srcDir, e.name), d = join(dstDir, e.name)
+      if (e.isDirectory()) { n += deploySkillDir(s, d); continue }
+      try {
+        if (existsSync(d) && readFileSync(d).equals(readFileSync(s))) continue   // 内容一致不重写
+        cpSync(s, d); n++
+      } catch (err) { log(`skill file copy fail ${e.name}: ${err.message}`) }
+    }
+    return n
+  }
   try {
     const pkgSkills = join(__dirname, 'skill')
     const skillsRoot = process.env.AGENTS_SKILLS_DIR || join(process.env.HOME || '', '.agents', 'skills')
     if (existsSync(pkgSkills)) {
       for (const skillName of readdirSync(pkgSkills)) {
-        const srcSkill = join(pkgSkills, skillName, 'SKILL.md')
-        if (!existsSync(srcSkill)) continue
-        const dstSkill = join(skillsRoot, skillName, 'SKILL.md')
+        const srcDir = join(pkgSkills, skillName)
+        if (!existsSync(join(srcDir, 'SKILL.md'))) continue
+        const dstDir = join(skillsRoot, skillName)
+        let policy = 'sync'
         try {
-          mkdirSync(join(skillsRoot, skillName), { recursive: true })
-          const needCopy = !existsSync(dstSkill) ||
-            (existsSync(dstSkill) && readFileSync(dstSkill, 'utf8') !== readFileSync(srcSkill, 'utf8'))
-          if (needCopy) { cpSync(srcSkill, dstSkill); log(`skill deployed: ${skillName} → ${dstSkill}`) }
+          const policyFile = join(srcDir, '.deploy.json')
+          if (existsSync(policyFile)) policy = JSON.parse(readFileSync(policyFile, 'utf8')).policy ?? 'sync'
+        } catch (e) { log(`skill deploy config ${skillName} parse fail: ${e.message}`) }
+        if (policy === 'seed-only' && existsSync(dstDir)) {
+          log(`skill ${skillName}: 已存在, 跳过 (seed-only — 不覆盖可能更新的上游版本)`)
+          continue
+        }
+        try {
+          const n = deploySkillDir(srcDir, dstDir)
+          if (n) log(`skill deployed: ${skillName} (${n} 个文件) → ${dstDir}`)
         } catch (e) { log(`skill deploy ${skillName} fail: ${e.message}`) }
       }
     }

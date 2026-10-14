@@ -1,7 +1,7 @@
 ---
 name: layered-agent-datasource
 description: "为分层智能体(ds-bot-layered-agent)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（LAYERED_HOME / $HOME）推导，不写死绝对路径。"
-version: 1.4.0
+version: 1.5.0
 ---
 
 # 添加分层智能体数据源
@@ -16,6 +16,7 @@ version: 1.4.0
 | 配置启用 | `$DSH_HOME`（默认 `$HOME/.dsh`）`/profiles/<当前 profile>/cordis.patch.yml` | 在 `layered-agent.l0.sources` 声明启用 |
 | 代码/详细规则 | 插件安装目录（见下方"定位插件安装目录"） | `DATASOURCE.md` 随代码版本走，是详细版 |
 | 本 skill | `~/.agents/skills/layered-agent-datasource/` | 由插件 install() 自动部署，随代码更新 |
+| SemIf skill | `~/.agents/skills/semif-decide/` | 同样是插件 install() 部署的（vendored 快照，只在缺失时装）；调 SemIf 用插件注入的 `$LAYERED_SEMIF_RUN`，别写死路径 |
 
 > 定位插件安装目录：Bot 收到本 skill 时若需读详细规则 `DATASOURCE.md`，用 `npm ls ds-bot-layered-agent`（在 profile 目录）或从运行报错中的文件路径反推，或直接读取 `$HOME/.dsh/bot/layered-agent/manifest.json`（L0 自描述，给出了数据源布局）。不要假设某个固定的源码 checkout 路径。
 

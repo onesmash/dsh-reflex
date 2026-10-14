@@ -1,0 +1,57 @@
+{
+  "skill_name": "semif-decide",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "env-repair-and-offline-run",
+      "prompt": "这台 Apple Silicon Mac 上执行 semif-score 时提示命令或 MLX 环境不存在。不要只告诉我安装命令：用 SemIf skill 自带的 doctor/setup/runner 自助修复，使用已经缓存的模型离线跑 assets/semif/examples/decisions.jsonl，输出到一个新的结果文件，并给我每行的 argmax 和概率。",
+      "expected_output": "使用幂等 setup_env.sh 复用或创建可用 venv，调用 run_score.sh 完成真实离线推理，生成经过校验的 3 行 JSONL 和 summary.md。",
+      "files": [],
+      "expectations": [
+        "Does not stop at a read-only missing-environment report; setup creates or reuses a working semif-score entry point",
+        "Produces exactly 3 result rows with finite probabilities summing to 1",
+        "Uses the MLX backend and a pinned 40-character revision",
+        "Creates a summary file listing the winning option and probability for all 3 rows"
+      ]
+    },
+    {
+      "id": 1,
+      "eval_name": "cached-model-selection-and-provenance",
+      "prompt": "在本机直接跑 SemIf 的 examples/decisions.jsonl，不要手工指定模型；质量优先使用已经缓存的 4B MLX 模型，禁止下载，输出结果并告诉我实际使用了哪个模型、revision 和每行的胜出选项。",
+      "expected_output": "runner 自动优先选择已缓存的 4B MLX 4-bit preset；只有 4B 不可用时才回退 2B，使用固定 revision 离线完成 3 行并生成 summary。",
+      "files": [],
+      "expectations": [
+        "Automatically selects the cached 4B MLX preset when available rather than assuming a global semif-score command",
+        "With --offline, refuses a missing model before invoking the scorer instead of attempting a network download",
+        "If 4B is unavailable, clearly reports the 2B fallback; otherwise result provenance records the 4B model and its pinned revision",
+        "The reported per-row winners and probabilities are read from the validated JSONL"
+      ]
+    },
+    {
+      "id": 2,
+      "eval_name": "atomic-output-and-rerun-safety",
+      "prompt": "请用 SemIf 跑一份 3 行决策输入。如果第一次运行中途失败，不能留下一个让第二次运行无法继续的半截 out.jsonl；成功后再用同一个 out.jsonl 重跑一次，应该清楚提示 create-only 冲突，同时保留第一次的完整结果和 summary。",
+      "expected_output": "runner 通过临时文件和校验后原子提交；失败不污染目标路径，重复目标明确失败且不覆盖既有结果。",
+      "files": [],
+      "expectations": [
+        "Scores into a private temporary path and commits the requested result only after validation",
+        "A failed scorer invocation does not leave a partial target result or summary",
+        "A second invocation with the same output path exits nonzero with a create-only explanation",
+        "The first successful result remains unchanged and still validates"
+      ]
+    },
+    {
+      "id": 3,
+      "eval_name": "unpinned-command-recovery",
+      "prompt": "这条命令失败了，帮我真正修好并跑通，不要使用 main：semif-score --mode direct --backend mlx --model Qwen/Qwen3.5-4B --revision main --input examples/decisions.jsonl --output out.jsonl。优先使用本机已缓存、兼容 MLX 的模型，不要下载 8GB BF16 权重。",
+      "expected_output": "识别 main revision 不合法且原始 BF16 仓库不适合当前 MLX Mac，切换到已缓存的 MLX 4-bit Qwen3.5 preset，使用 40 字符 revision 实际跑通并生成新结果。",
+      "files": [],
+      "expectations": [
+        "Explains that remote model loads reject a branch name and uses a 40-character lowercase commit SHA",
+        "Uses an MLX-native cached Qwen3.5 preset rather than the large unquantized Qwen/Qwen3.5-4B repository",
+        "Actually produces and validates 3 result rows",
+        "Does not overwrite an existing output path and reports the final result and summary paths"
+      ]
+    }
+  ]
+}
