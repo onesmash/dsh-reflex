@@ -34,6 +34,7 @@ const DEFAULTS = {
     targetBot: 'Chief',       // L1 触发时唤醒 Chief 决策 (Chief 再派发执行 Bot)
     escalateToChief: false,   // 目标就是 Chief, 无需再升级
     chiefBot: 'Chief',
+    cooldownMs: 30 * 60 * 1000,  // 同状态异常冷却: 30 分钟内不重复唤醒
   },
   semif: {
     skillDir: join(process.env.HOME || '', '.agents', 'skills', 'semif-decide'),
@@ -195,23 +196,38 @@ function install(rt, ctx, cfg) {
     return count
   }
 
-  // ---------- L1: 读新事实 (seq 指针仅进程内; 演进期不做持久去重) ----------
-  let lastSeq = 0
+  // ---------- L1: 增量读事实 (持久化游标 cursor.json, 跨重启不重读历史) ----------
+  // 游标 = 上次消费到 <file, lineIndex>; L0 事实追加在按日期命名的 jsonl, 文件排序 == 时间序。
+  const cursorPath = join(dirname(cfg.l0.storeDir), 'cursor.json')
+  let cursor = { file: null, line: 0 }
+  try { if (existsSync(cursorPath)) cursor = { file: null, line: 0, ...JSON.parse(readFileSync(cursorPath, 'utf8')) } } catch (e) { log(`cursor read fail: ${e.message}`) }
+  function saveCursor() { try { writeFileSync(cursorPath, JSON.stringify(cursor)) } catch (e) { log(`cursor write fail: ${e.message}`) } }
+
+  // 返回 (facts, 新游标位置)。只读游标之后的新事实; 不修改游标 (由调用方在决策后 advanceCursor)
   function readNewFacts() {
     const out = []
     const dir = cfg.l0.storeDir
+    let nextFile = null, nextLine = 0
     try {
       const files = (existsSync(dir) ? readdirSync(dir) : []).filter(f => f.endsWith('.jsonl')).sort()
       for (const f of files) {
-        for (const line of readFileSync(join(dir, f), 'utf8').split('\n').filter(Boolean)) {
-          let o; try { o = JSON.parse(line) } catch { continue }
-          if (o.seq && o.seq <= lastSeq) continue
-          if (o.seq) lastSeq = o.seq
+        // 游标前的文件整跳过; 游标当前文件从 cursor.line 起
+        if (cursor.file && f < cursor.file) continue
+        const startIdx = (cursor.file === f) ? cursor.line : 0
+        const lines = readFileSync(join(dir, f), 'utf8').split('\n').filter(Boolean)
+        for (let i = startIdx; i < lines.length; i++) {
+          let o; try { o = JSON.parse(lines[i]) } catch { continue }
           out.push(o)
+          nextFile = f; nextLine = i + 1
         }
       }
     } catch (e) { log(`L1 read fail: ${e.message}`) }
-    return out.slice(-50)
+    return { facts: out.slice(-50), nextFile, nextLine }
+  }
+  function advanceCursor(nextFile, nextLine) {
+    if (!nextFile) return
+    cursor = { file: nextFile, line: Math.max(cursor.file === nextFile ? cursor.line : 0, nextLine) }
+    saveCursor()
   }
 
   // ---------- L1: SemIf 调用 ----------
@@ -240,15 +256,35 @@ function install(rt, ctx, cfg) {
     return { winning: ids[probs.indexOf(Math.max(...probs))], pYes: p.yes ?? 0 }
   }
 
-  // ---------- L1: 决策 ----------
+  // ---------- L1: 决策 (增量: 游标推进 + 状态冷却去重) ----------
+  // lastWake 记录上次唤醒的"状态指纹+时间", 同状态或冷却期内不重复唤醒 → L2 无状态可行
+  const lastWakePath = join(dirname(cfg.l0.storeDir), 'last-wake.json')
+  let lastWake = null
+  try { if (existsSync(lastWakePath)) lastWake = JSON.parse(readFileSync(lastWakePath, 'utf8')) } catch (e) { log(`last-wake read fail: ${e.message}`) }
+  function saveLastWake(w) { try { writeFileSync(lastWakePath, JSON.stringify(w)) } catch (e) { log(`last-wake write fail: ${e.message}`) } }
+  // 状态指纹: 用于判断"是否同一异常"。磁盘场景取 (avail 取整到 5GB, usedPct 取整到 5%) 的量化。
+  function stateFingerprint(disk) {
+    if (!disk) return null
+    return { availBucket: Math.round((disk.availableGB ?? 0) / 5), usedBucket: Math.round((disk.usedPct ?? 0) / 5) }
+  }
+  function contentChanged(fp) {
+    if (!lastWake || !lastWake.fp) return true                     // 无上次 → 视为新
+    if (lastWake.fp.availBucket !== fp.availBucket || lastWake.fp.usedBucket !== fp.usedBucket) return true  // 状态显著变化 → 新
+    const cooldownMs = cfg.l1.cooldownMs ?? 30 * 60 * 1000          // 冷却期内同状态不重复
+    if (Date.now() - (lastWake.at ?? 0) < cooldownMs) return false
+    return true                                                     // 同状态但超过冷却期 → 重新关注
+  }
+
   async function decideOnce() {
-    // 测试钩子: 存在 ~/.dsh/bot/wake-test 标记时, 强制真实触发一次 L2 唤醒 (端到端验证用)
+    // 测试钩子: wake-test 标记 → 强制唤醒 (端到端验证)
     try {
       const marker = join(dirname(cfg.l0.storeDir), 'wake-test')
       if (existsSync(marker)) { unlinkSync(marker); log('L1: TEST-WAKE marker → forcing wakeL2'); await wakeL2('端到端投递测试 (wake-test 标记触发)'); return }
     } catch (e) { log(`TEST-WAKE error: ${e.message}`) }
-    const facts = readNewFacts()
+    const { facts, nextFile, nextLine } = readNewFacts()
     if (!facts.length) return
+    // 无论要不要唤醒, 都推进游标 (已消费这些事实)
+    advanceCursor(nextFile, nextLine)
     const disk = facts.filter(f => f.source === 'disk').slice(-1)[0]?.raw
     const state = {
       since: facts[0]?.ts ?? Date.now(),
@@ -256,18 +292,31 @@ function install(rt, ctx, cfg) {
       disk,
       policy: `可用空间低于${cfg.l1.hardRule.lowAvailableGB}GB 或使用率高于${cfg.l1.hardRule.highUsedPct}% 视为需要关注`,
     }
+    const fp = stateFingerprint(disk)
     // 硬规则先决
     if (disk && (disk.availableGB < cfg.l1.hardRule.lowAvailableGB || disk.usedPct > cfg.l1.hardRule.highUsedPct)) {
-      const summary = `磁盘可用 ${disk.availableGB}GB / 使用率 ${disk.usedPct}% (硬规则触发)`
-      log(`L1: HARD-RULE -> ${summary}`)
-      await wakeL2(summary)
+      if (contentChanged(fp)) {
+        const summary = `磁盘可用 ${disk.availableGB}GB / 使用率 ${disk.usedPct}% (硬规则触发)`
+        log(`L1: HARD-RULE -> ${summary}`)
+        await wakeL2(summary)
+        saveLastWake({ fp, at: Date.now(), reason: 'hard-rule' })
+      } else {
+        log(`L1: HARD-RULE 但状态冷却中, 跳过重复唤醒 (fp=${JSON.stringify(fp)})`)
+      }
       return
     }
     // SemIf 边界
     try {
       const d = await semifDecide(state)
       log(`L1: SemIf winning=${d.winning} pYes=${d.pYes.toFixed(3)}`)
-      if (d.pYes >= cfg.l1.threshold) await wakeL2(`磁盘可用 ${disk?.availableGB}GB / 使用率 ${disk?.usedPct}% (SemIf pYes=${d.pYes.toFixed(2)})`)
+      if (d.pYes >= cfg.l1.threshold) {
+        if (contentChanged(fp)) {
+          await wakeL2(`磁盘可用 ${disk?.availableGB}GB / 使用率 ${disk?.usedPct}% (SemIf pYes=${d.pYes.toFixed(2)})`)
+          saveLastWake({ fp, at: Date.now(), reason: 'semif' })
+        } else {
+          log(`L1: SemIf 触发但状态冷却中, 跳过重复唤醒`)
+        }
+      }
     } catch (e) { log(`L1 SemIf fail: ${e.message}`) }
   }
 
