@@ -31,8 +31,8 @@ const DEFAULTS = {
     intervalMs: 60_000,
     threshold: 0.8,
     hardRule: { lowAvailableGB: 20, highUsedPct: 90 },
-    targetBot: '存储专家',
-    escalateToChief: true,
+    targetBot: 'Chief',       // L1 触发时唤醒 Chief 决策 (Chief 再派发执行 Bot)
+    escalateToChief: false,   // 目标就是 Chief, 无需再升级
     chiefBot: 'Chief',
   },
   semif: {
