@@ -154,12 +154,17 @@ function install(rt, ctx, cfg) {
     }
   }
 
-  // ---------- L0: 数据源采集 (内置 or 脚本驱动) ----------
+  // ---------- L0: 数据源采集 (内置 builtin + 自动扫描的脚本源) ----------
   // collector 契约:
   //   - builtin: { builtin: async () => [facts...] }   JS 内联实现 (稳定/低延迟源)
-  //   - script:  { cmd: 'path/to/script.sh', cwd? }     外部脚本, stdout 每行一个 JSON fact
+  //   - script:  { cmd: 'path/to/script.sh' }          外部脚本, stdout 每行一个 JSON fact
   // fact 形如 { source?, metric, raw, meta? }; source 缺省用源名; ts 缺省由 collectOnce 补
-  const SOURCES = {
+  //
+  // 脚本源自动发现: 插件启动时扫描 <collectorsDir> (默认插件包内 collectors/), 每个 *.sh 自动注册为源,
+  // 源名 = 脚本文件名(去 .sh)。加一个脚本源 = 丢脚本到此目录 + 配置 l0.sources 启用, 无需改插件代码。
+  // 可选命名 companion 文件 <script>.env.json 提供该脚本源的 {intervalMs, env} 覆盖。
+  const collectorsDir = cfg.l0.collectorsDir ?? join(__dirname, 'collectors')
+  const BUILTIN_SOURCES = {
     disk: {
       builtin: async () => {
         const { stdout } = await execFileP('df', ['-k', '/System/Volumes/Data'])
@@ -191,20 +196,26 @@ function install(rt, ctx, cfg) {
         }]
       },
     },
-    // 示例: 脚本驱动的数据源 — 加新源 = 写一个脚本 + 在配置文件里声明 {cmd}, 无需改本文件
-    // 见 collectors/example-uptime.sh; 启用: l0.sources 加 'uptime'
-    uptime: {
-      cmd: join(__dirname, 'collectors', 'example-uptime.sh'),
-      intervalMs: 30_000,   // 可选: 该源独立采集节奏, 缺省用 l0.intervalMs
-    },
-    // IM 邮箱数据源: 采集新邮件元数据(时间/标题/发件人) — 见 collectors/mail.sh
-    // 只存元数据不存正文; 内部自带已见去重
-    mail: {
-      cmd: join(__dirname, 'collectors', 'mail.sh'),
-      intervalMs: 60_000,
-      env: { LAYERED_MAIL_SEEN: join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'seen-mail-ids.json') },
-    },
   }
+  // 扫描脚本源: <collectorsDir>/<name>.sh → source "<name>"; 可选 <name>.env.json → {intervalMs,env}
+  const SCRIPT_SOURCES = {}
+  try {
+    if (existsSync(collectorsDir)) {
+      for (const f of readdirSync(collectorsDir)) {
+        if (!f.endsWith('.sh')) continue
+        const name = f.slice(0, -3)
+        const def = { cmd: join(collectorsDir, f), intervalMs: cfg.l0.scriptIntervalMs ?? 60_000 }
+        const envFile = join(collectorsDir, `${name}.env.json`)
+        if (existsSync(envFile)) {
+          try { Object.assign(def, JSON.parse(readFileSync(envFile, 'utf8'))) } catch (e) { log(`collector env ${envFile} parse fail: ${e.message}`) }
+        }
+        SCRIPT_SOURCES[name] = def
+      }
+    }
+  } catch (e) { log(`scan collectors fail: ${e.message}`) }
+  const SOURCES = { ...BUILTIN_SOURCES, ...SCRIPT_SOURCES }
+  if (Object.keys(SCRIPT_SOURCES).length) log(`L0: auto-discovered script sources: [${Object.keys(SCRIPT_SOURCES).join(',')}]`)
+
 
   // ---------- L0: 序列化存储 (JSONL, 按 source 隔离) ----------
   // 结构: <storeDir>/<source>/<YYYY-MM-DD>.jsonl — 各源独立目录, 便于读隔离/独立保留策略/敏感源(diff 权限)
