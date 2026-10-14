@@ -346,10 +346,20 @@ function install(rt, ctx, cfg) {
   const activeTargets = Object.keys(TARGETS).filter(k => (cfg.l1.targets ?? ['disk']).includes(k))
 
   async function decideOnce() {
-    // 测试钩子: wake-test 标记 → 强制唤醒 (端到端验证)
+    // 测试钩子: wake-test 标记 → 强制唤醒 (端到端验证; 走真实 disk target.render 产出结构化通知)
     try {
       const marker = join(dirname(cfg.l0.storeDir), 'wake-test')
-      if (existsSync(marker)) { unlinkSync(marker); log('L1: TEST-WAKE marker → forcing wakeL2'); await wakeL2('端到端投递测试 (wake-test 标记触发)'); return }
+      if (existsSync(marker)) {
+        unlinkSync(marker)
+        log('L1: TEST-WAKE marker → forcing wakeL2 (via disk.render)')
+        // 读最新 disk 事实组装 context, 用真实 render 生成结构化通知
+        const { facts } = readNewFacts()
+        const diskTarget = TARGETS.disk
+        const ctx = await diskTarget.collect(facts)
+        if (ctx) { await wakeL2(diskTarget.render(ctx, '(测试触发)')) }
+        else { await wakeL2('端到端投递测试 (wake-test 标记触发, 无disk上下文)') }
+        return
+      }
     } catch (e) { log(`TEST-WAKE error: ${e.message}`) }
     const { facts, nextFile, nextLine } = readNewFacts()
     if (!facts.length) return
