@@ -25,7 +25,8 @@ const DEFAULTS = {
   statePath: join(process.env.DSH_HOME || join(process.env.HOME || '.', '.dsh'), 'bot', 'state.json'),
   l0: {
     intervalMs: 60_000,
-    sources: ['disk', 'mail'],   // 采集源: disk(磁盘) + mail(IM邮箱元数据); 还可加 cpu/uptime/自写脚本源
+    // 采集源在配置层决定(profile patch l0.sources), 插件默认最小; 可用: disk/cpu/uptime/mail/自写脚本源
+    sources: ['disk'],
     storeDir: process.env.LAYERED_FACT_DIR || join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'layered-facts'),
   },
   l1: {
@@ -481,6 +482,6 @@ function install(rt, ctx, cfg) {
   // cordis effect(setup): 立即调用 setup, 其返回值才是 dispose 回调 (照 ds-bot 惯例双箭头)
   try { ctx.effect(() => () => { clearInterval(t0); clearInterval(t1) }, 'layered-agent: L0/L1 timers') } catch {}
 
-  log(`layered-agent installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}"`)
+  log(`layered-agent installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}" sources=[${cfg.l0.sources.join(',')}]`)
   return { collectOnce, decideOnce, wakeL2 }
 }
