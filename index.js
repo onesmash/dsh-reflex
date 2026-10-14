@@ -254,7 +254,9 @@ function install(rt, ctx, cfg) {
   collectOnce().catch(() => {})
   const t0 = setInterval(() => collectOnce().catch(e => log(`L0 err: ${e.message}`)), cfg.l0.intervalMs)
   const t1 = setInterval(() => decideOnce().catch(e => log(`L1 err: ${e.message}`)), cfg.l1.intervalMs)
-  try { ctx.effect(() => { clearInterval(t0); clearInterval(t1) }) } catch {}
+  t0.unref?.(); t1.unref?.()
+  // cordis effect(setup): 立即调用 setup, 其返回值才是 dispose 回调 (照 ds-bot 惯例双箭头)
+  try { ctx.effect(() => () => { clearInterval(t0); clearInterval(t1) }, 'layered-agent: L0/L1 timers') } catch {}
 
   log(`layered-agent installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}"`)
   return { collectOnce, decideOnce, wakeL2 }
