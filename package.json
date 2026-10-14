@@ -1,0 +1,16 @@
+{
+  "name": "ds-bot-layered-agent",
+  "version": "0.1.0",
+  "description": "Layered Agent: L0 fact layer + L1 SemIf decision layer + L2 event-driven wake, as a sibling cordis plugin to ds-bot (zero modification to original ds-bot).",
+  "type": "module",
+  "main": "index.js",
+  "license": "Apache-2.0",
+  "dsh": {
+    "client": {
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
