@@ -76,6 +76,18 @@ exit 0
 - **会话过期要以非 0 退出**（记 `L0 <name> failed`），绝不能把空数据伪装成"没有新事件"
 - 告诉用户失效后怎么恢复（一条命令重跑导出工具）
 
+## 让新源能唤醒 L2（可选，要写 JS）
+
+在 `TARGETS` 注册表加 target（collect/interim/semif/render），再配 `l1.targets` 启用。三条最常翻车的：
+
+1. **必须给 `stateFingerprint` 补该 target 的分支**。不补 → 指纹恒为 null → **每轮都唤醒**（刷屏）。
+2. **内容类源必须设 `minIntervalMs`**（唤醒硬上限，放在 collect 前判断，被限流那轮连 SemIf 都不跑）。
+3. **SemIf 判据必须拿真实历史 facts 校准**，别拍脑袋：逐条拼 `{id,state,question,options}` 批量跑
+   `run_score.sh` 看 p(yes) 分布。实测 4B 模型下「收紧判据」比「调高阈值」更容易把 target 压死到
+   永不触发；加用户画像（`l1.profile`）会显著改变灵敏度。
+   逐条筛选用批量打分（框架的 `semifScoreBatch`），跑完用 `interim` + `interimReason` 直接进唤醒，
+   **不要再跑第二次 SemIf**。
+
 ## 验证清单
 
 - [ ] `collectors/<name>.sh` 可执行（`chmod +x`），单独跑输出合法 JSON line

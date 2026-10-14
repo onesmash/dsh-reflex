@@ -126,10 +126,51 @@ exit 0
 需要更多条目时，正确顺序是「先取顶部快照 → 再滚动 → 再取一次 → 合并去重」，
 不能"先滚动再取"。
 
-## 6. 可选：参与 L1 决策（异常唤醒）
+## 6. 可选：参与 L1 决策（唤醒 L2）
 
-若要让该源在异常时唤醒 L2，额外在 `TARGETS` 注册表加一个 target（collect/interim/semif/render）。
-只有这一层才需要 JS 代码——若只采集供查询，完全不用。
+只采集供查询的源完全不用做这一步。要让源能唤醒 L2，在 `TARGETS` 注册表加一个 target：
+
+```js
+'mysource': {
+  name: '显示名',
+  collect: async (facts) => { /* 组装决策 context；无内容返回 null */ },
+  interim: (ctx) => /* 硬规则: 命中即唤醒, 跳过 SemIf */,
+  semif: { question, options },   // 无硬规则时走这条: 需要 id 为 'yes' 的 option
+  render: (ctx, extra) => '给 L2 的结构化通知文本',
+}
+```
+
+然后配置启用：`l1.targets: [disk, mysource]`。
+
+### 六个必须遵守的点
+
+1. **`stateFingerprint` 必须为新 target 补一条分支**。框架里只有 `disk` 有指纹；
+   新 target 若不补，`fp` 恒为 `null` → `contentChanged()` 恒返回 true → **每轮都唤醒**，直接刷屏。
+   文本/内容类源的指纹取「本次命中条目的 id 集合」。
+2. **内容源必须设 `minIntervalMs`**（唤醒硬上限）。值得看的消息可能每轮都有，但人不能被
+   每 15 分钟打断一次。它放在 `collect` 之前判断，被限流的那轮连 SemIf 都不跑。
+3. **SemIf 判据要拿真实历史数据校准，不要拍脑袋写**。方法：把已入库的 facts 逐条拼成
+   `{id, state, question, options}` 跑一次 `run_score.sh`（可批量），看 p(yes) 分布。
+   实测结论（qwen3.5-4b）：
+   - 短判据（一句话）→ 概率整体被压低（最高 0.59），**永远不触发**
+   - 只写"与我相关"→ 模型理解成泛泛相关，触发率过高（≈18%），每轮都想唤醒
+   - **收紧判据比调高阈值更容易把 target 压死**。要改的是措辞，不是阈值
+   - 加用户画像（`l1.profile`）效果显著：同一条推文从 0.978 掉到 0.130，
+     所以画像里的措辞直接决定灵敏度，别写得太窄（写成"只关心雇主相关"就永不触发了）
+4. **逐条筛选要用批量 SemIf**（`semifScoreBatch`）：一次进程只加载一次模型给 N 条打分，
+   比 N 次单调用快得多。跑完把结果放进 `ctx`，用 `interim: ctx => !!ctx.notable?.length`
+   + `interimReason: '...'` 直接进唤醒，**不要再让框架跑第二次 SemIf**。
+5. **通知要自包含**：L2 无状态，`render` 必须把判定依据、条目原文、链接、触发原因
+   和 L0 入口（`manifest.json`）都写进去。
+6. **被限流/被跳过的那轮，数据不会丢** —— 事实已经在 L0 facts 里，L2 可经 manifest 自主回查。
+
+### 验证（别只看"跑通了"）
+
+用 mock `sessionController` 起一个 harness，喂真实历史 facts 调 `decideOnce()`，至少验三件事：
+
+- [ ] 该命中的命中、该挡的挡住（看 render 出来的通知正文）
+- [ ] **同一批内容重放 → 必须被抑制**（0 投递），否则就是第 1 条踩坑了
+- [ ] **`minIntervalMs` 生效时秒返回**，不跑 SemIf
 
 ## 7. 验证清单
 

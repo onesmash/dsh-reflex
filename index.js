@@ -40,6 +40,10 @@ const DEFAULTS = {
     escalateToChief: false,   // 目标就是 Chief, 无需再升级
     chiefBot: 'Chief',
     cooldownMs: 30 * 60 * 1000,  // 同状态异常冷却: 30 分钟内不重复唤醒
+    // 用户画像: 内容类 target(如 feed-timeline)组装 SemIf 决策 context 用 —— 建议在 profile patch 里覆盖
+    profile: '',
+    // feed-timeline target 参数: threshold 经真实推文校准 (见 TARGETS 前的注释), 别轻易调
+    xTimeline: { threshold: 0.8, maxCandidates: 12, minIntervalMs: 60 * 60 * 1000 },
   },
   semif: {
     skillDir: join(process.env.HOME || '', '.agents', 'skills', 'semif-decide'),
@@ -431,30 +435,63 @@ function install(rt, ctx, cfg) {
   }
 
   // ---------- L1: SemIf 调用 (通用; question/options 由 target 提供) ----------
-  async function semifDecide(state, question, options) {
+  // 批量打分: 一次进程只加载一次模型, N 条 state 一起评 —— 逐条筛选场景(如推文)比 N 次单调用快得多
+  let semifSeq = 0
+  async function semifScoreBatch(rows, timeoutMs = 180_000) {
     const runScore = join(cfg.semif.skillDir, 'scripts', 'run_score.sh')
     const work = join(cfg.l0.storeDir, '..', 'work')
     try { mkdirSync(work, { recursive: true }) } catch {}
-    const inp = join(work, `dec-${process.pid}.jsonl`)
-    const out = join(work, `res-${process.pid}.jsonl`)
+    const tag = `${process.pid}-${++semifSeq}`
+    const inp = join(work, `dec-${tag}.jsonl`)
+    const out = join(work, `res-${tag}.jsonl`)
     for (const f of [out, out.replace(/\.jsonl$/, '.summary.md')]) { try { if (existsSync(f)) unlinkSync(f) } catch {} }
-    const row = {
-      id: 'l1',
-      state,
-      question,
-      options,
+    writeFileSync(inp, rows.map(r => JSON.stringify(r)).join('\n') + '\n')
+    await execFileP('bash', [runScore, '--input', inp, '--output', out, '--offline'], { timeout: timeoutMs })
+    const res = new Map()
+    for (const line of readFileSync(out, 'utf8').split('\n')) {
+      const t = line.trim(); if (!t) continue
+      let o; try { o = JSON.parse(t) } catch { continue }
+      const probs = {}; (o.option_ids ?? []).forEach((id, i) => { probs[id] = (o.probabilities ?? [])[i] })
+      const vals = Object.keys(probs).map(k => probs[k])
+      res.set(String(o.id), {
+        winning: Object.keys(probs)[vals.indexOf(Math.max(...vals))],
+        pYes: probs.yes ?? 0,
+        probs,
+      })
     }
-    writeFileSync(inp, JSON.stringify(row) + '\n')
-    await execFileP('bash', [runScore, '--input', inp, '--output', out, '--offline'], { timeout: 120_000 })
-    const res = JSON.parse(readFileSync(out, 'utf8').trim().split('\n').pop())
-    const ids = res.option_ids, probs = res.probabilities
-    const p = {}; ids.forEach((id, i) => { p[id] = probs[i] })
-    return { winning: ids[probs.indexOf(Math.max(...probs))], pYes: p.yes ?? 0 }
+    return res
+  }
+  async function semifDecide(state, question, options) {
+    const m = await semifScoreBatch([{ id: 'l1', state, question, options }])
+    return m.get('l1') ?? { winning: 'insufficient', pYes: 0 }
   }
 
   // ---------- L1: 目标化决策框架 (v2) ----------
   // 每个 target 是自包含的决策闭环: collect(组装context) → interim(硬规则) → semif(本地模型) → wake(通知)
   // L2 通知自包含 target collect 产出的 context → L2 无状态可决策
+
+  // feed-timeline 的 SemIf 判据 —— 经真实推文校准得出, 别随手改措辞:
+  //   同一批 17 条推文实测 (阈值 0.8):
+  //     长版判据(带领域+反例)          → 命中 3 条, 但触发率过高(≈18%), 每轮都想唤醒
+  //     短版判据                       → 最高 0.591, 永不触发
+  //     加用户画像 + 只认"直接影响雇主" → 最高 0.639, 永不触发 (把"专业兴趣"错收窄成"雇主")
+  //     本判据(画像 + 兴趣领域 + 实质动态) → 命中 2 条: OpenAI 模型下线 0.86 / AI agent 进医疗 0.87 ✓
+  //                                       正确挡掉: Gemma 玩笑 0.69、娱乐八卦 0.01、寒暄 0.02~0.11
+  //   注意: qwen3.5-4b 对措辞极敏感, 「收窄判据」比「调高阈值」更容易把目标压死到永不触发。
+  const X_FEED_QUESTION = [
+    '基于用户画像判断: 这条推文是否值得立即打断该用户?',
+    '选 yes 需同时满足两点 —— ①属于该用户的专业兴趣领域(AI/LLM 技术、AI 编码工具、Apple 开发者生态、软件工程);',
+    '②是重大的实质动态而非观点闲聊, 例如重要模型发布或停用、关键开发工具的重大变更、影响开发者的平台政策、',
+    '重大安全事件、与该用户雇主 IM 相关的重大消息。',
+    '选 no: 其他领域的新闻(政治/娱乐/体育/医疗)、融资并购、纯观点吐槽、个人闲聊、广告推广。',
+    '信息不足选 insufficient。',
+  ].join('\n')
+  const X_FEED_OPTIONS = [
+    { id: 'yes', description: '值得立即打断用户关注。' },
+    { id: 'no', description: '不紧急, 不必打扰。' },
+    { id: 'insufficient', description: '信息不足, 无法判断。' },
+  ]
+
   const TARGETS = {
     disk: {
       name: '磁盘存储',
@@ -502,6 +539,61 @@ function install(rt, ctx, cfg) {
         ].join('\n')
       },
     },
+
+    'feed-timeline': {
+      name: 'X 关注流',
+      // 该 target 的 SemIf 是【逐条】筛选, 在 collect 里一次性批量跑完;
+      // 所以 interim 在这里的含义是"collect 已判定命中", 直接进唤醒, 不再做第二次 SemIf
+      interim: (ctx) => !!ctx?.notable?.length,
+      interimReason: 'SemIf 逐条筛选命中',
+      // 内容源必须有唤醒硬上限: 值得看的推文可能每轮都有, 但人不能被每 15 分钟打断一次。
+      // 被限流的那轮只记日志 —— 推文本身仍在 L0 facts 里, L2 可经 manifest 自主回查
+      minIntervalMs: cfg.l1.xTimeline?.minIntervalMs ?? 60 * 60 * 1000,
+      // ① 收集器: 本轮新增推文 → 用户画像 + 推文正文组装 state → 批量 SemIf 逐条打分
+      collect: async (facts) => {
+        const cfgX = cfg.l1.xTimeline ?? {}
+        const maxN = cfgX.maxCandidates ?? 12
+        const threshold = cfgX.threshold ?? 0.8
+        // 只取本轮新增的 feed-timeline 事实; 排除推广/广告与空正文
+        const posts = facts.filter(f => f.source === 'feed-timeline' && f.raw &&
+          !f.raw.promoted && String(f.raw.text ?? '').trim())
+        if (!posts.length) return null
+        const candidates = posts.slice(-maxN)
+        const profile = cfg.l1.profile ?? ''
+        const rows = candidates.map((f, i) => ({
+          id: `p${i}`,
+          state: `${profile}\n\n推文作者: ${f.raw.handle ?? '?'} (${f.raw.name ?? ''})\n发布时间: ${f.raw.postedAt ?? '未知'}\n正文: ${f.raw.text}`,
+          question: X_FEED_QUESTION,
+          options: X_FEED_OPTIONS,
+        }))
+        const scores = await semifScoreBatch(rows)
+        const notable = candidates
+          .map((f, i) => ({ post: f.raw, ts: f.ts, pYes: scores.get(`p${i}`)?.pYes ?? 0 }))
+          .filter(x => x.pYes >= threshold)
+        log(`L1[feed-timeline]: 扫描 ${candidates.length} 条, SemIf 命中 ${notable.length} 条 (阈值 ${threshold})`)
+        if (!notable.length) return null
+        return { kind: 'feed-timeline', notable, scanned: candidates.length, threshold }
+      },
+      // ④ 通知渲染: 自包含上下文, L2 无状态可决策; 末尾给 L0 入口供其自主回查
+      render: (ctx, extra) => {
+        const lines = [
+          `[分层智能体·L1·X 关注流] 检测到 ${ctx.notable.length} 条值得关注的新推文`,
+          `本轮扫描 ${ctx.scanned} 条 (已排除推广), SemIf 阈值 ${ctx.threshold}`,
+          '',
+        ]
+        ctx.notable.forEach((t, i) => {
+          const p = t.post
+          lines.push(`${i + 1}. ${p.handle ?? '?'} (${p.name ?? ''}) · ${p.postedAt ?? '时间未知'} · 相关度 ${t.pYes.toFixed(2)}`)
+          lines.push(`   ${String(p.text ?? '').slice(0, 300)}`)
+          if (p.url) lines.push(`   ${p.url}`)
+          lines.push(`   互动: 回复${p.replies ?? '?'} 转推${p.reposts ?? '?'} 赞${p.likes ?? '?'}`)
+          lines.push('')
+        })
+        if (extra) lines.push(extra)
+        lines.push(`请评估并决策是否需要处理。需要更多数据时, L0 数据源入口: ${cfg.l0.storeDir}/manifest.json (源: feed-timeline)`)
+        return lines.join('\n')
+      },
+    },
   }
 
   // 目标指纹 + 冷却去重 (跨 target 各自独立)
@@ -511,15 +603,27 @@ function install(rt, ctx, cfg) {
   try { if (existsSync(lastWakePath)) lastWake = JSON.parse(readFileSync(lastWakePath, 'utf8')) ?? {} } catch (e) { log(`last-wake read fail: ${e.message}`) }
   function saveLastWake(w) { lastWake = w; try { writeFileSync(lastWakePath, JSON.stringify(w)) } catch (e) { log(`last-wake write fail: ${e.message}`) } }
   function stateFingerprint(targetKey, ctx) {
-    const c = ctx?.current
-    if (!c) return null
-    if (targetKey === 'disk') return { availBucket: Math.round((c.availableGB ?? 0) / 5), usedBucket: Math.round((c.usedPct ?? 0) / 5) }
+    if (targetKey === 'disk') {
+      const c = ctx?.current
+      if (!c) return null
+      return { availBucket: Math.round((c.availableGB ?? 0) / 5), usedBucket: Math.round((c.usedPct ?? 0) / 5) }
+    }
+    if (targetKey === 'feed-timeline') {
+      // 指纹 = 本次命中的推文 id 集合: 同一批不重复唤醒, 出现新推文才视为新内容
+      const ids = (ctx?.notable ?? []).map(t => String(t.post?.id ?? '')).filter(Boolean).sort()
+      return ids.length ? { ids } : null
+    }
     return null
   }
   function contentChanged(targetKey, fp) {
     const last = lastWake[targetKey]
     if (!last || !last.fp) return true                     // 该 target 无上次 → 视为新
-    if (fp && last.fp && (last.fp.availBucket !== fp.availBucket || last.fp.usedBucket !== fp.usedBucket)) return true  // 状态显著变化 → 新
+    if (fp) {
+      const changed = targetKey === 'disk'
+        ? (last.fp.availBucket !== fp.availBucket || last.fp.usedBucket !== fp.usedBucket)  // 状态分桶变化
+        : JSON.stringify(last.fp) !== JSON.stringify(fp)                                    // 内容指纹变化
+      if (changed) return true
+    }
     const cooldownMs = cfg.l1.cooldownMs ?? 30 * 60 * 1000
     if (Date.now() - (last.at ?? 0) < cooldownMs) return false
     return true                                             // 同状态但超过冷却期 → 重新关注
@@ -550,17 +654,24 @@ function install(rt, ctx, cfg) {
     for (const targetKey of activeTargets) {
       const target = TARGETS[targetKey]
       try {
+        // 唤醒硬上限 (内容类源): 放在 collect 之前, 被限流的那轮连 SemIf 都不用跑
+        const rateLimit = target.minIntervalMs ?? 0
+        if (rateLimit && Date.now() - (lastWake[targetKey]?.at ?? 0) < rateLimit) {
+          log(`L1[${targetKey}]: 距上次唤醒不足 ${Math.round(rateLimit / 60000)} 分钟, 本轮跳过`)
+          continue
+        }
         const ctx = await target.collect(facts)
         if (!ctx) continue
         const fp = stateFingerprint(targetKey, ctx)
-        // 硬规则先决 (target 专属)
+        // 硬规则先决 (target 专属); 部分 target(如 feed-timeline)把 SemIf 前置进 collect, 用 interimReason 说明
         if (target.interim?.(ctx)) {
+          const label = target.interimReason ?? '硬规则触发'
           if (contentChanged(targetKey, fp)) {
-            log(`L1[${targetKey}]: HARD-RULE trigger`)
-            await wakeL2(target.render(ctx, '(硬规则触发)'))
-            saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: 'hard-rule' } })
+            log(`L1[${targetKey}]: ${label}`)
+            await wakeL2(target.render(ctx, `(${label})`))
+            saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: label } })
           } else {
-            log(`L1[${targetKey}]: HARD-RULE 但状态冷却中, 跳过重复唤醒`)
+            log(`L1[${targetKey}]: ${label} 但状态冷却中, 跳过重复唤醒`)
           }
           continue
         }
