@@ -196,6 +196,13 @@ function install(rt, ctx, cfg) {
       cmd: join(__dirname, 'collectors', 'example-uptime.sh'),
       intervalMs: 30_000,   // 可选: 该源独立采集节奏, 缺省用 l0.intervalMs
     },
+    // IM 邮箱数据源: 采集新邮件元数据(时间/标题/发件人) — 见 collectors/mail.sh
+    // 只存元数据不存正文; 内部自带已见去重
+    mail: {
+      cmd: join(__dirname, 'collectors', 'mail.sh'),
+      intervalMs: 60_000,
+      env: { LAYERED_MAIL_SEEN: join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'seen-mail-ids.json') },
+    },
   }
 
   // ---------- L0: 序列化存储 (JSONL) ----------
@@ -255,8 +262,17 @@ function install(rt, ctx, cfg) {
   }
 
   // 脚本驱动的 collector: 运行 cmd, 解析 stdout 每行一个 JSON fact
+  // 用 bash -c 执行, 并注入 IM 内部 CA 证书与完整 PATH (helper/内部 API 依赖, 否则 TLS 失败)
   async function runScriptCollector(c, src) {
-    const { stdout } = await execFileP(c.cmd, [], { timeout: (c.timeoutMs ?? 15_000), ...(c.env ? { env: { ...process.env, ...c.env } } : {}) })
+    const baseEnv = {
+      ...process.env,
+      PATH: `/usr/local/bin:/opt/homebrew/bin:/bin:/usr/bin:/sbin:/usr/sbin:${process.env.HOME}/.local/bin:${process.env.PATH ?? ''}`,
+      SSL_CERT_FILE: process.env.SSL_CERT_FILE || join(process.env.HOME || '', '.ca_bundle.pem'),
+      CURL_CA_BUNDLE: process.env.CURL_CA_BUNDLE || join(process.env.HOME || '', '.ca_bundle.pem'),
+      REQUESTS_CA_BUNDLE: process.env.REQUESTS_CA_BUNDLE || join(process.env.HOME || '', '.ca_bundle.pem'),
+      ...(c.env ?? {}),
+    }
+    const { stdout } = await execFileP('/bin/bash', [c.cmd], { timeout: (c.timeoutMs ?? 20_000), env: baseEnv })
     const rows = []
     for (const line of stdout.split('\n')) {
       const t = line.trim()
