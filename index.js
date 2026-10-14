@@ -748,7 +748,14 @@ function install(rt, ctx, cfg) {
       name: t.displayName ?? key,
       isScript: true,
       minIntervalMs: t.minIntervalMs === 'auto' ? sourceIntervalMs(key) : (t.minIntervalMs ?? 0),
-      collect: async (facts) => runScriptTarget(t, facts),
+      collect: async (facts) => {
+        // env.json 里声明了 sources 的 target: 本轮没有它关心的源的数据时, 连脚本都不用起。
+        // 不加这道闸, target 脚本会被每分钟空跑一次 —— 因为 disk 每分钟产出一条事实,
+        // 就触发一轮决策, 而脚本对那批事实根本不关心。
+        if (Array.isArray(t.sources) && t.sources.length &&
+            !facts.some(f => t.sources.includes(f.source))) return null
+        return runScriptTarget(t, facts)
+      },
       interim: (ctx) => !!ctx,
       interimReason: (ctx) => ctx?.reason ?? '脚本判定命中',
       mergeCtx: mergeScriptDecisions,
