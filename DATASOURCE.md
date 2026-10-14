@@ -270,4 +270,5 @@ exit 0
 | `collectors/mail.sh` | 有状态（seen 去重）+ 内部 API + 独立 env |
 | `collectors/feed-timeline.sh` | 浏览器登录态采集 + 时间线稳定性 + 虚拟列表两段式快照 + timeoutMs 放宽 |
 | `targets/feed-timeline.sh` | L1 target 脚本：stdin 收事实 → 批量 SemIf 逐条筛 → 输出 items 决策 |
+| `collectors/swap.sh` | 系统瞬时量（swap/磁盘占用），用于区分“文件涨了”和“内存换到磁盘” |
 | `tools/x-export-state.sh` | 从本机 Chrome 导出站点登录态（Chrome 136+ 禁默认 profile 调试的绕法） |

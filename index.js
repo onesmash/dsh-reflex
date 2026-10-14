@@ -670,28 +670,8 @@ function install(rt, ctx, cfg) {
   const sourceIntervalMs = (src) =>
     SCRIPT_SOURCES[src]?.intervalMs ?? cfg.l0.scriptIntervalMs ?? cfg.l0.intervalMs ?? 60_000
 
-  // feed-timeline 的 SemIf 判据 —— 经真实推文校准得出, 别随手改措辞:
-  //   同一批 17 条推文实测 (阈值 0.8):
-  //     长版判据(带领域+反例)          → 命中 3 条, 但触发率过高(≈18%), 每轮都想唤醒
-  //     短版判据                       → 最高 0.591, 永不触发
-  //     加用户画像 + 只认"直接影响雇主" → 最高 0.639, 永不触发 (把"专业兴趣"错收窄成"雇主")
-  //     本判据(画像 + 兴趣领域 + 实质动态) → 命中 2 条: OpenAI 模型下线 0.86 / AI agent 进医疗 0.87 ✓
-  //                                       正确挡掉: Gemma 玩笑 0.69、娱乐八卦 0.01、寒暄 0.02~0.11
-  //   注意: qwen3.5-4b 对措辞极敏感, 「收窄判据」比「调高阈值」更容易把目标压死到永不触发。
-  const X_FEED_QUESTION = [
-    '基于用户画像判断: 这条推文是否值得立即打断该用户?',
-    '选 yes 需同时满足两点 —— ①属于该用户的专业兴趣领域(AI/LLM 技术、AI 编码工具、Apple 开发者生态、软件工程);',
-    '②是重大的实质动态而非观点闲聊, 例如重要模型发布或停用、关键开发工具的重大变更、影响开发者的平台政策、',
-    '重大安全事件、与该用户雇主 IM 相关的重大消息。',
-    '选 no: 其他领域的新闻(政治/娱乐/体育/医疗)、融资并购、纯观点吐槽、个人闲聊、广告推广。',
-    '信息不足选 insufficient。',
-  ].join('\n')
-  const X_FEED_OPTIONS = [
-    { id: 'yes', description: '值得立即打断用户关注。' },
-    { id: 'no', description: '不紧急, 不必打扰。' },
-    { id: 'insufficient', description: '信息不足, 无法判断。' },
-  ]
-
+  // feed-timeline 的 SemIf 判据与阈值: 已随该 target 一起迁到 targets/feed-timeline.sh
+  // (校准记录与踩过的坑都在那个脚本的注释里 —— 判据归脚本, 插件不再持有它的措辞)
   const TARGETS = {
     disk: {
       name: '磁盘存储',
@@ -705,10 +685,24 @@ function install(rt, ctx, cfg) {
         const trend = first && first.availableGB !== undefined
           ? { deltaGB: Math.round((latest.availableGB - first.availableGB) * 10) / 10, windowFacts: diskFacts.length }
           : null
+        // 跨源关联: 顺手带上本轮的 swap 情况。磁盘骤降时, 这是"文件涨了"还是
+        // "系统把内存换到磁盘"的第一判据 —— 2026-10-14 那次可用量 3 分钟掉 55GB,
+        // 真凶是 swap 而非任何用户文件, 当时只能事后手工排查。
+        const swapFacts = facts.filter(f => f.source === 'swap')
+        const swLast = swapFacts[swapFacts.length - 1]?.raw
+        const swFirst = swapFacts[0]?.raw
+        const swap = swLast && swLast.usedMB !== undefined ? {
+          usedGB: +(swLast.usedMB / 1024).toFixed(1),
+          dirGB: swLast.vmDirMB ? +(swLast.vmDirMB / 1024).toFixed(1) : null,
+          files: swLast.swapFiles ?? null,
+          deltaGB: (swFirst && swFirst.usedMB !== undefined)
+            ? +((swLast.usedMB - swFirst.usedMB) / 1024).toFixed(1) : null,
+        } : null
         return {
           kind: 'disk',
           current: { availableGB: latest.availableGB, usedPct: latest.usedPct, totalGB: latest.totalGB, usedGB: latest.usedGB },
           trend,
+          swap,
           policy: { lowAvailableGB: cfg.l1.hardRule.lowAvailableGB, highUsedPct: cfg.l1.hardRule.highUsedPct },
         }
       },
@@ -733,6 +727,15 @@ function install(rt, ctx, cfg) {
           `[分层智能体·L1·磁盘存储] 检测到需关注事件`,
           `状态: 可用 ${c.availableGB}GB / 已用 ${c.usedGB}GB (${c.usedPct}%) / 总量 ${c.totalGB}GB`,
           ...(t ? [`趋势: 窗口${t.windowFacts}条采样内变化 Δ${t.deltaGB >= 0 ? '+' : ''}${t.deltaGB}GB`] : []),
+          ...(ctx.swap ? [`swap: 已用 ${ctx.swap.usedGB}GB` +
+            (ctx.swap.dirGB !== null ? ` / 占用磁盘 ${ctx.swap.dirGB}GB` : '') +
+            (ctx.swap.files !== null ? ` (${ctx.swap.files} 个 swapfile)` : '') +
+            (ctx.swap.deltaGB ? ` / 窗口内 Δ${ctx.swap.deltaGB >= 0 ? '+' : ''}${ctx.swap.deltaGB}GB` : '')
+          ] : []),
+          // 判读只说明"swap 解释了多少", 不声称它是全部 —— 窗口内掉的空间很可能另有原因
+          ...(t && ctx.swap && t.deltaGB < -1 && ctx.swap.deltaGB > 1
+            ? [`判读: 窗口内可用空间减少 ${Math.abs(t.deltaGB)}GB, 其中 ${ctx.swap.deltaGB}GB 来自 swap 增长`]
+            : []),
           `阈值: 可用<${ctx.policy.lowAvailableGB}GB 或 使用率>${ctx.policy.highUsedPct}%`,
           ...(extra ? [extra] : []),
           `请评估并决策是否需要处理(如可清理缓存则执行)。需要更多数据时, L0 数据源入口: ${cfg.l0.storeDir}/manifest.json`,
