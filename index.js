@@ -89,21 +89,21 @@ function install(rt, ctx, cfg) {
     try { ctx.logger?.info?.(line) } catch {}
   }
 
-  // schedule 服务: 用动态 ctx.inject(['schedule'], attach) 子插件解析 (ds-bot 同款, 经本实验验证可行)。
-  // 注意 inject=[] 时不能调用 ctx.get('schedule') (会抛 "without inject"), 故无 get 兜底。
-  let scheduleService = null
+  // 投递服务: 用 ds-bot 同款机制 = ctx.sessionController.resolveAgent(sessionId) → agent.followup(message)
+  // (schedule 服务在插件上下文不可见, 已探明; sessionController 是 ds-bot 必需服务, 对插件可见)
+  let sessionCtrl = null
   try {
     if (typeof ctx.inject === 'function') {
-      ctx.inject(['schedule'], (sub) => {
-        scheduleService = sub?.schedule
-        log(`schedule service attached (${scheduleService ? 'ok' : 'null'})`)
-        try { sub?.effect?.(() => () => { if (scheduleService) scheduleService = null }, 'layered-agent: schedule') } catch {}
+      ctx.inject(['sessionController'], (sub) => {
+        sessionCtrl = sub?.sessionController
+        log(`sessionController attached (${sessionCtrl ? 'ok' : 'null'})`)
+        try { sub?.effect?.(() => () => { if (sessionCtrl) sessionCtrl = null }, 'layered-agent: sessionController') } catch {}
       })
     } else {
       log('ctx.inject unavailable at install')
     }
-  } catch (e) { log(`inject schedule failed: ${e.message}`) }
-  const scheduleSvc = () => scheduleService
+  } catch (e) { log(`inject sessionController failed: ${e.message}`) }
+  const sessionCtrlSvc = () => sessionCtrl
 
   // ---------- 定位目标 Bot 的 chat sessionId (读 state.json) ----------
   function botSessionId(name) {
@@ -119,21 +119,31 @@ function install(rt, ctx, cfg) {
     return undefined
   }
 
-  // ---------- L2 唤醒: 经 schedule 服务投递消息给目标 session ----------
+  // 复刻 dsh-llm createUserMessage (只加 id; 返回可被 followup 接受的 user 消息)
+  function createUserMessageLike({ content, source }) {
+    return { id: `msg-${randomUUID().replace(/-/g, '').slice(0, 24)}`, role: 'user', content, source }
+  }
+
+  // ---------- L2 唤醒: 经 sessionController 直接投递 (ds-bot 同款) ----------
   async function wakeL2(summary) {
     try {
       const targetName = cfg.l1.targetBot
       const sessionId = botSessionId(targetName)
       if (!sessionId) { log(`L2 wake failed: no session for "${targetName}"`); return }
-      const prompt = `[分层智能体·L1] 检测到需关注事件：${summary}\n请评估并决策是否需要处理(如可清理缓存则执行)。`
-      const svc = scheduleSvc()
-      if (!svc?.create) { log('L2 wake failed: schedule service unavailable'); return }
-      await svc.create(sessionId, {
-        title: `分层智能体唤醒-${Date.now()}`,
-        prompt,
-        after_seconds: 1, // 与宿主 schedule_create 实测可用的格式一致 (DSH kind=after)
+      const sc = sessionCtrlSvc()
+      if (!sc?.resolveAgent) { log('L2 wake failed: sessionController unavailable'); return }
+      const resolved = await sc.resolveAgent(sessionId)
+      if ('error' in resolved) { log(`L2 wake failed: ${resolved.error?.message}`); return }
+      const agent = resolved.agent
+      const text = `[分层智能体·L1] 检测到需关注事件：${summary}\n请评估并决策是否需要处理(如可清理缓存则执行)。`
+      const message = createUserMessageLike({
+        content: [{ type: 'text', text }],
+        source: { kind: 'bot', form: 'relay', role: 'request', exchangeId: randomUUID(), senderName: '分层智能体', hop: 0 },
       })
-      log(`L2: woken "${targetName}" (${sessionId}) via schedule`)
+      if (agent?.followup) agent.followup(message)
+      else if (agent?.steer) agent.steer(message)
+      else { log('L2 wake failed: agent has no followup/steer'); return }
+      log(`L2: woken "${targetName}" (${sessionId}) via sessionController`)
     } catch (e) {
       log(`L2 wake error: ${e.message}`)
     }
