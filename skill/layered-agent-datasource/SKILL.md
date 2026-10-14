@@ -1,7 +1,7 @@
 ---
 name: layered-agent-datasource
 description: "为分层智能体(ds-bot-layered-agent)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（LAYERED_HOME / $HOME）推导，不写死绝对路径。"
-version: 1.3.0
+version: 1.4.0
 ---
 
 # 添加分层智能体数据源
@@ -114,6 +114,42 @@ exit 0
    永不触发；加用户画像（`l1.profile`）会显著改变灵敏度。
    逐条筛选用批量打分（框架的 `semifScoreBatch`），**不要再跑第二次 SemIf**。
 
+## ⚠️ 校准批量必须分块（会撑爆内存，进而撑爆磁盘）
+
+**一次 `run_score.sh` 喂进去的行数要有硬上限：≤40 行。** 这不是性能建议，是事故防线。
+
+SemIf 是**一次加载模型评 N 条**。N 一大，内存压力暴涨 → macOS 把内存换到 swap →
+swap 文件写在磁盘上 → **磁盘被吃光**。表现在磁盘上，根因在内存，很容易查错方向。
+
+实测（2026-10-15）：一次喂 326 行 →
+48GB 内存的机器 swap 涨到 43GB（`/System/Volumes/VM`）→ **磁盘可用量 3 分钟内从 55GB 掉到
+0.19GB**，触发了磁盘 target 的硬规则告警。事后只能靠 `du -sh /System/Volumes/VM` 手工挖出真凶。
+
+正确做法 —— 分块跑再合并（输入输出分开放，脚本可重复跑）：
+
+```bash
+SEMIF="${LAYERED_SEMIF_RUN:-$HOME/.agents/skills/semif-decide/scripts/run_score.sh}"
+rm -rf /tmp/cal && mkdir -p /tmp/cal/in /tmp/cal/out
+split -l 40 all_rows.jsonl /tmp/cal/in/part_
+for f in /tmp/cal/in/part_*; do
+  bash "$SEMIF" --input "$f" --output "/tmp/cal/out/$(basename "$f").jsonl" --offline \
+    || { echo "分块失败: $f" >&2; exit 1; }
+done
+cat /tmp/cal/out/*.jsonl > all_results.jsonl
+```
+
+（`LAYERED_SEMIF_RUN` 是插件注入给 target 脚本的；在手工 shell 里没这个变量，所以留了回退路径。）
+
+注意区分两条链路：
+
+| | 批量大小 | 安全性 |
+|---|---|---|
+| **生产 target** 每轮打分 | 受 `maxCandidates` 约束（如 12 条） | 安全 |
+| **临时校准脚本** 全量历史 | 由你决定 —— **危险就在这里** | 必须分块 |
+
+分块时还要盯一眼磁盘：`df -h /System/Volumes/Data | tail -1` 和
+`du -sh /System/Volumes/VM`。跑之前记一下，跑完再对一次，异常增长要立刻停。
+
 ## 验证清单
 
 - [ ] `collectors/<name>.sh` 可执行（`chmod +x`），单独跑输出合法 JSON line
@@ -132,6 +168,11 @@ exit 0
 - [ ] 命中后通知由插件排版（有标题栏/编号/L0 入口），脚本没自己拼这些
 - [ ] 同一批内容重放 → 被抑制（0 投递）
 - [ ] 冷却期内命中 → 进 `pending-wakes.json`；把上次唤醒时间推到冷却期之前且**不给新数据**再跑一次 → 必须被合并补发
+
+若做了校准：
+
+- [ ] 每块 ≤40 行（**先看上一节**，这条是事故防线不是性能建议）
+- [ ] 校准前后各看一次 `df -h /System/Volumes/Data` 与 `du -sh /System/Volumes/VM`，异常增长立刻停
 
 ## 注意
 
