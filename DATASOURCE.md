@@ -297,6 +297,30 @@ IM 的 `msg_mention_me_fetch` 只返回"这个线程里有人 @ 过你"，**不�
 - [ ] manifest `sources` 列出 `<name>`，schema 可见（若登记了）
 - [ ] 多次采集不重复（幂等）
 
+## 7.5 给用户发 IM 通知（输出通道）
+
+插件采集是"输入端"，这里是"输出端"：把需要用户注意的事推到他的 IM。
+
+```bash
+~/.dsh/bot/layered-agent/tools/notify.sh "正文"
+echo "正文" | ~/.dsh/bot/layered-agent/tools/notify.sh
+~/.dsh/bot/layered-agent/tools/notify.sh --tag "磁盘告警" "正文"
+```
+
+收件人取 `$LAYERED_IM_NOTIFY_TO` 或 `tools/notify.to`。退出码非 0 会说明原因，
+调用方据此决定是否降级到别处投递（比如只留 L0 记录）。
+
+两个必须知道的约束：
+
+1. **消息是"用户发给自己"的**。helper CLI 以用户本人身份认证，没有机器人账号 ——
+   消息落在 IM 的"自己/备注"会话里，不会显示成系统/机器人发件人。
+   当通知渠道可用（手机端一样有提醒），但别指望它看起来像系统消息。
+2. **必须显式用 `text` 模式**。API 默认 markdown，而 markdown 模式**禁止裸 URL** ——
+   我们的通知里全是 URL（推文链接 / deep link / L0 入口），用默认模式会失败或变形。
+   脚本里已经写死 text 模式。
+
+超过 3200 字符会自动按行分段续发（不切断 URL）—— 这是 API 硬限，超了直接失败。
+
 ## 8. 插件自带的 skill 与部署策略
 
 插件启动时把仓库 `skill/<name>/` **整个目录**递归部署到 `~/.agents/skills/<name>/`

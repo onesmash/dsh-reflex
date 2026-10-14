@@ -1,7 +1,7 @@
 ---
 name: layered-agent-datasource
 description: "为分层智能体(ds-bot-layered-agent)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（LAYERED_HOME / $HOME）推导，不写死绝对路径。"
-version: 1.6.0
+version: 1.7.0
 ---
 
 # 添加分层智能体数据源
@@ -153,6 +153,20 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 
 分块时还要盯一眼磁盘：`df -h /System/Volumes/Data | tail -1` 和
 `du -sh /System/Volumes/VM`。跑之前记一下，跑完再对一次，异常增长要立刻停。
+
+## 输出通道：给用户发 IM
+
+需要让用户注意的事，可以推到他的 IM：
+
+```bash
+~/.dsh/bot/layered-agent/tools/notify.sh "正文"       # 或 echo 正文 | 脚本
+```
+
+- 收件人取 `$LAYERED_IM_NOTIFY_TO` 或 `tools/notify.to`
+- **消息是"用户发给自己"的**（helper 以用户本人身份认证，没有机器人账号），
+  落在 IM 的"自己/备注"会话里 —— 能当通知渠道，但不显示成机器人
+- 脚本强制 `text` 模式：默认的 markdown 模式**禁止裸 URL**，我们的通知里全是链接
+- 超 3200 字符自动分段；退出码非 0 时按需降级
 
 ## 验证清单
 
