@@ -88,10 +88,17 @@ function install(rt, ctx, cfg) {
     try { ctx.logger?.info?.(line) } catch {}
   }
 
-  const scheduleSvc = () => {
-    // DSH schedule 服务
-    try { return ctx.get?.('schedule') ?? ctx.schedule } catch { return undefined }
-  }
+  // schedule 服务: 用 cordis 标准的 inject 异步解析 (ds-bot 同款模式), get 仅作兜底
+  let scheduleService = null
+  try {
+    if (typeof ctx.inject === 'function') {
+      ctx.inject(['schedule'], (sub) => {
+        scheduleService = sub?.schedule ?? sub
+        try { sub?.effect?.(() => () => { if (scheduleService) scheduleService = null }, 'layered-agent: schedule') } catch {}
+      })
+    }
+  } catch {}
+  const scheduleSvc = () => scheduleService ?? (typeof ctx.get === 'function' ? ctx.get('schedule') : undefined) ?? ctx.schedule
 
   // ---------- 定位目标 Bot 的 chat sessionId (读 state.json) ----------
   function botSessionId(name) {
