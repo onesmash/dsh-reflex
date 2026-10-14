@@ -42,9 +42,10 @@ const DEFAULTS = {
 
 export const name = 'ds-bot-layered-agent'
 
-// cordis 要求: 访问服务必须先在 inject 里声明, 否则 "cannot get property ... without inject"。
-// 声明后即使服务暂缺也只是本插件等待 (非致命, 参见 client-hmr 先例)。
-export const inject = ['schedule']
+// 探明 (本地 cordis 决定性实验): module-level inject 会让 apply 延迟到服务可见才执行;
+// 真实 DSH 里 schedule 服务可能不在插件可见的隔离作用域, 导致 apply 永不执行。
+// ds-bot 成功路径 = inject 不声明 + 运行时 ctx.inject(['schedule'], attach) 动态子插件。
+export const inject = []
 
 export function apply(ctx, config = {}) {
   try {
@@ -88,12 +89,13 @@ function install(rt, ctx, cfg) {
     try { ctx.logger?.info?.(line) } catch {}
   }
 
-  // schedule 服务: 用 cordis 标准的 inject 异步解析 (ds-bot 同款模式), get 仅作兜底
+  // schedule 服务: 用动态 ctx.inject(['schedule'], attach) 子插件解析 (ds-bot 同款, 经本实验验证可行)。
+  // 注意 inject=[] 时不能调用 ctx.get('schedule') (会抛 "without inject"), 故无 get 兜底。
   let scheduleService = null
   try {
     if (typeof ctx.inject === 'function') {
       ctx.inject(['schedule'], (sub) => {
-        scheduleService = sub?.schedule ?? sub
+        scheduleService = sub?.schedule
         log(`schedule service attached (${scheduleService ? 'ok' : 'null'})`)
         try { sub?.effect?.(() => () => { if (scheduleService) scheduleService = null }, 'layered-agent: schedule') } catch {}
       })
@@ -101,10 +103,7 @@ function install(rt, ctx, cfg) {
       log('ctx.inject unavailable at install')
     }
   } catch (e) { log(`inject schedule failed: ${e.message}`) }
-  const scheduleSvc = () => {
-    try { return scheduleService ?? (typeof ctx.get === 'function' ? ctx.get('schedule') : undefined) ?? ctx.schedule }
-    catch (e) { log(`scheduleSvc error: ${e.message}`); return undefined }
-  }
+  const scheduleSvc = () => scheduleService
 
   // ---------- 定位目标 Bot 的 chat sessionId (读 state.json) ----------
   function botSessionId(name) {
