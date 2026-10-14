@@ -94,11 +94,17 @@ function install(rt, ctx, cfg) {
     if (typeof ctx.inject === 'function') {
       ctx.inject(['schedule'], (sub) => {
         scheduleService = sub?.schedule ?? sub
+        log(`schedule service attached (${scheduleService ? 'ok' : 'null'})`)
         try { sub?.effect?.(() => () => { if (scheduleService) scheduleService = null }, 'layered-agent: schedule') } catch {}
       })
+    } else {
+      log('ctx.inject unavailable at install')
     }
-  } catch {}
-  const scheduleSvc = () => scheduleService ?? (typeof ctx.get === 'function' ? ctx.get('schedule') : undefined) ?? ctx.schedule
+  } catch (e) { log(`inject schedule failed: ${e.message}`) }
+  const scheduleSvc = () => {
+    try { return scheduleService ?? (typeof ctx.get === 'function' ? ctx.get('schedule') : undefined) ?? ctx.schedule }
+    catch (e) { log(`scheduleSvc error: ${e.message}`); return undefined }
+  }
 
   // ---------- 定位目标 Bot 的 chat sessionId (读 state.json) ----------
   function botSessionId(name) {
@@ -116,13 +122,13 @@ function install(rt, ctx, cfg) {
 
   // ---------- L2 唤醒: 经 schedule 服务投递消息给目标 session ----------
   async function wakeL2(summary) {
-    const targetName = cfg.l1.targetBot
-    const sessionId = botSessionId(targetName)
-    if (!sessionId) { log(`L2 wake failed: no session for "${targetName}"`); return }
-    const prompt = `[分层智能体·L1] 检测到需关注事件：${summary}\n请评估并决策是否需要处理(如可清理缓存则执行)。`
-    const svc = scheduleSvc()
-    if (!svc?.create) { log('L2 wake failed: schedule service unavailable'); return }
     try {
+      const targetName = cfg.l1.targetBot
+      const sessionId = botSessionId(targetName)
+      if (!sessionId) { log(`L2 wake failed: no session for "${targetName}"`); return }
+      const prompt = `[分层智能体·L1] 检测到需关注事件：${summary}\n请评估并决策是否需要处理(如可清理缓存则执行)。`
+      const svc = scheduleSvc()
+      if (!svc?.create) { log('L2 wake failed: schedule service unavailable'); return }
       await svc.create(sessionId, {
         title: `分层智能体唤醒-${Date.now()}`,
         prompt,
@@ -130,13 +136,7 @@ function install(rt, ctx, cfg) {
       })
       log(`L2: woken "${targetName}" (${sessionId}) via schedule`)
     } catch (e) {
-      log(`L2 wake via schedule failed: ${e.message}`)
-      // 回退: 直接尝试 sessionController
-      try {
-        const sc = ctx.get?.('sessionController')
-        if (sc?.deliver) await sc.deliver(sessionId, prompt)
-        else log('no sessionController fallback deliver')
-      } catch (e2) { log(`L2 fallback failed: ${e2.message}`) }
+      log(`L2 wake error: ${e.message}`)
     }
   }
 
@@ -237,7 +237,7 @@ function install(rt, ctx, cfg) {
     try {
       const marker = join(dirname(cfg.l0.storeDir), 'wake-test')
       if (existsSync(marker)) { unlinkSync(marker); log('L1: TEST-WAKE marker → forcing wakeL2'); await wakeL2('端到端投递测试 (wake-test 标记触发)'); return }
-    } catch {}
+    } catch (e) { log(`TEST-WAKE error: ${e.message}`) }
     const facts = readNewFacts()
     if (!facts.length) return
     const disk = facts.filter(f => f.source === 'disk').slice(-1)[0]?.raw
