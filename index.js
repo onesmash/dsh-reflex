@@ -501,7 +501,13 @@ function install(rt, ctx, cfg) {
       if (!s) continue
       let o; try { o = JSON.parse(s) } catch { continue }
       if (!o || typeof o !== 'object') continue
-      if (o.wake === false) return null
+      if (o.wake === false) {
+        // 脚本跑了但本轮不唤醒: 记一行 —— 否则没命中的轮次完全静默, 排查时看不出 target 是死是活
+        const why = typeof o.reason === 'string' ? o.reason
+          : (Number.isFinite(o.scanned) ? `扫描 ${o.scanned} 条, 本轮无命中` : null)
+        if (why) log(`L1[${t.target}]: ${why}`)
+        return null
+      }
       const items = Array.isArray(o.items) ? o.items : []
       const notice = typeof o.notice === 'string' && o.notice.trim() ? o.notice : null
       if (!items.length && !notice) return null

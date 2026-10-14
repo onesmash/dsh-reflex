@@ -250,6 +250,9 @@ exit 0
 ## 7. 验证清单
 
 - [ ] `collectors/<name>.sh` 可执行（`chmod +x`），单独跑输出合法 JSON line
+      ⚠️ **单独跑会烧掉去重窗口**：collector 一跑就把新 id 写进 `seen-*.json`，但那些事实
+      没经过插件、没进 L0 —— 等于永久丢一批。**手工测试务必换一个 seen 文件**
+      （如 `LAYERED_X_SEEN=/tmp/test-seen.json`），或者事后把多出来的 id 从 seen 里回滚掉。
 - [ ] 加到 `l0.sources` 后，重启插件日志出现 `auto-discovered script sources: [... <name>]`
 - [ ] 数据写入 `~/.dsh/bot/layered-agent/facts/<name>/`
 - [ ] manifest `sources` 列出 `<name>`，schema 可见（若登记了）
