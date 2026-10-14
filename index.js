@@ -42,9 +42,9 @@ const DEFAULTS = {
 
 export const name = 'ds-bot-layered-agent'
 
-// 不声明 inject: 避免任何服务依赖使插件"未激活"而拖垮宿主启动。
-// schedule 服务在运行时惰性获取 (见 wakeL2)。
-export const inject = []
+// cordis 要求: 访问服务必须先在 inject 里声明, 否则 "cannot get property ... without inject"。
+// 声明后即使服务暂缺也只是本插件等待 (非致命, 参见 client-hmr 先例)。
+export const inject = ['schedule']
 
 export function apply(ctx, config = {}) {
   try {
