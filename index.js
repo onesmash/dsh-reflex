@@ -42,19 +42,31 @@ const DEFAULTS = {
 
 export const name = 'ds-bot-layered-agent'
 
-// 兄弟插件需要的 DSH 服务
-export const inject = ['schedule', 'sessionController', 'sessions']
+// 兄弟插件需要的 DSH 服务 (只依赖 schedule; sessionController/sessions 仅在有时代码路径使用, 不在 inject 硬依赖)
+export const inject = ['schedule']
 
 export function apply(ctx, config = {}) {
+  try {
+    return install(rtOf(ctx), ctx, normalize(cfgOf(config)))
+  } catch (e) {
+    // 兄弟插件绝不拖垮宿主: 任何初始化错误都降级为记录并跳过
+    try { ctx.logger?.warn?.(`[layered-agent] init skipped: ${e.message}`) } catch {}
+    return undefined
+  }
+}
+
+function cfgOf(config) {
+  return config?.layeredAgent ?? config ?? {}
+}
+function normalize(c) {
   const cfg = {
     ...DEFAULTS,
-    ...(config.layeredAgent ?? config ?? {}),
-    l0: { ...DEFAULTS.l0, ...(config?.l0 ?? {}) },
-    l1: { ...DEFAULTS.l1, ...(config?.l1 ?? {}) },
-    semif: { ...DEFAULTS.semif, ...(config?.semif ?? {}) },
+    ...c,
+    l0: { ...DEFAULTS.l0, ...(c?.l0 ?? {}) },
+    l1: { ...DEFAULTS.l1, ...(c?.l1 ?? {}) },
+    semif: { ...DEFAULTS.semif, ...(c?.semif ?? {}) },
   }
-  if (cfg.enabled === false) return
-  return install(rtOf(ctx), ctx, cfg)
+  return cfg
 }
 
 // 构造一个最小的 rt 视图 (兄弟插件只用 state + 会话定位, 不碰 ds-bot 内部)
