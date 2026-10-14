@@ -199,6 +199,31 @@ function install(rt, ctx, cfg) {
     return row
   }
 
+  // ---------- L0: 自描述 manifest (让 L2 自主发现/访问 L0) ----------
+  // L2 收到通知时如何"知道 L0"? 靠 manifest.json: 一旦指引到入口(通知/tool), L2 读 manifest
+  // 即获得 L0 全部知识: 路径、schema、源、retention、查询方法。
+  function writeManifest() {
+    try {
+      const schema = {
+        fact: {
+          filePattern: '{YYYY-MM-DD}.jsonl', eachLine: 'JSON 对象',
+          fields: { id: 'string', seq: 'number(处理顺序)', ts: 'epoch ms', source: 'string(数据源)', metric: 'string', raw: 'object(源原始值)', meta: 'object(可选)' },
+        },
+        sources: Object.keys(SOURCES).map(src => ({ source: src, enabled: cfg.l0.sources.includes(src) })),
+        cursorPath: join(dirname(cfg.l0.storeDir), 'cursor.json'),
+        lastWakePath: join(dirname(cfg.l0.storeDir), 'last-wake.json'),
+        queryTips: [
+          'list facts dir: ls <storeDir>',
+          'latest: tail -1 <storeDir>/{today}.jsonl',
+          'timeline: cat <storeDir>/*.jsonl | sort -t, -k...',
+          'filter by source: grep "\"source\":\"disk\"" <storeDir>/*.jsonl',
+        ],
+      }
+      writeFileSync(join(cfg.l0.storeDir, 'manifest.json'), JSON.stringify({ updatedAt: Date.now(), storeDir: cfg.l0.storeDir, schema }, null, 2))
+    } catch (e) { log(`manifest write fail: ${e.message}`) }
+  }
+  writeManifest()
+
   async function collectOnce() {
     const ts = Date.now()
     let count = 0
@@ -307,6 +332,7 @@ function install(rt, ctx, cfg) {
         ],
       },
       // ④ 通知渲染: 把 target 的完整 context 渲染成 L2 可无状态决策的结构化文本
+      //    末尾带 L0 入口指引 → L2 读 manifest.json 即可自主发现 L0 (主动推理)
       render: (ctx, extra) => {
         const c = ctx.current
         const t = ctx.trend
@@ -316,7 +342,7 @@ function install(rt, ctx, cfg) {
           ...(t ? [`趋势: 窗口${t.windowFacts}条采样内变化 Δ${t.deltaGB >= 0 ? '+' : ''}${t.deltaGB}GB`] : []),
           `阈值: 可用<${ctx.policy.lowAvailableGB}GB 或 使用率>${ctx.policy.highUsedPct}%`,
           ...(extra ? [extra] : []),
-          `请评估并决策是否需要处理(如可清理缓存则执行)。`,
+          `请评估并决策是否需要处理(如可清理缓存则执行)。需要更多数据时, L0 数据源入口: ${cfg.l0.storeDir}/manifest.json`,
         ].join('\n')
       },
     },
