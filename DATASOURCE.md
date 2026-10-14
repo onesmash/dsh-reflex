@@ -11,7 +11,7 @@
 | 1 | 写一个 collector 脚本（`.sh` 或内置） | 否 |
 | 2 | 把脚本放到 **统一目录** `~/.dsh/bot/layered-agent/collectors/` | 否 |
 | 3 | 在 `cordis.patch.yml` 的 `l0.sources` 里启用它 | 否（只改配置） |
-| 4 | （可选）脚本的 schema 登记进 manifest `sourceSchema` | 是（仅一处） |
+| 4 | （可选）写 `<name>.schema.json` 让该源在 manifest 里自描述 | 否 |
 | 5 | （可选）加 L1 target 让它参与决策唤醒 | 是（仅当要决策） |
 
 **核心原则**：加数据源 = 写脚本 + 配置启用，**不改插件核心代码**。
@@ -44,7 +44,28 @@
 
 插件启动时扫描 `collectorsDir`（= 统一目录 `collectors/`）：
 - 每个 `*.sh` 自动注册为一个源，**源名 = 文件名（去 `.sh`）**
-- 可选 companion `<name>.env.json` 提供该源的 `{intervalMs, env}` 覆盖（仅当需要非默认配置才加）
+- 可选 companion `<name>.env.json` 提供该源的 `{intervalMs, env, timeoutMs}` 覆盖
+- 可选 companion `<name>.schema.json` 自描述字段 → 自动进 manifest 的 `sources[].schema`，供 L2 自主推理看懂
+
+### `<name>.env.json`
+
+```json
+{ "intervalMs": 900000, "timeoutMs": 120000, "env": { "MY_VAR": "x" } }
+```
+
+- `intervalMs`：该源独立采集间隔（默认跟随 `l0.scriptIntervalMs`，60s）
+- `timeoutMs`：**脚本执行超时，默认只有 20s**。凡是启停外部进程/浏览器的脚本（如 `feed-timeline.sh`）
+  必须在这里放宽，否则会被杀在半路
+- `env`：额外注入的环境变量
+
+### `<name>.schema.json`
+
+```json
+{ "metric": "post", "fields": { "id": "推文id", "text": "正文" }, "notes": "可选说明" }
+```
+
+写它的好处：L2 读 `facts/manifest.json` 就能知道这个源有什么字段、能查什么，无需读脚本源码。
+**这是一个纯数据文件，加源依然不用改插件代码。**
 
 ## 4. 常见脚本模板
 
@@ -75,12 +96,35 @@ exit 0
         - <你的新源名>
 ```
 
-### 可选：登记 schema（让 L2 自主推理能看懂该源）
+### 可选：写 schema 让 L2 看懂该源
 
-在 `index.js` 的 `sourceSchema` 加一行（这是加源唯一可选的代码改动）：
-```js
-yourname: { metric: '<metric>', fields: { key: '含义', ... } },
-```
+在同一个 `collectors/` 目录放一个 `<name>.schema.json`（内容见 §3），manifest 会自动收录。
+**不需要改任何 JS 代码。**
+
+## 5.1 需要登录态的源（浏览器/账号类）
+
+有些源（如 `feed-timeline`）没有 API token，靠浏览器登录态采集。约定做法：
+
+1. 登录态存成 JSON state 文件放统一目录，如 `$LAYERED_HOME/feed-timeline-state.json`
+2. 写一个**导出工具**放 `$LAYERED_HOME/tools/`（不要放 `collectors/`，那会被当成数据源）
+   参考 `tools/x-export-state.sh`：从本机 Chrome 复制 profile 副本 → 起带调试端口的 Chrome
+   → CDP 导出明文 cookie → 只保留目标站点 → 落盘 600 权限
+3. collector 用 `agent-browser --session <私有会话名> --state <state 文件>` 采集，**用完 `close`**
+   （不要常驻 headless 浏览器，占内存）
+4. **会话过期必须是非 0 退出**——让它记 `L0 <name> failed`，绝不能把空数据伪装成"没有新事件"
+5. 该源至少要 `intervalMs`（登录态类通常 10-15 分钟）+ `timeoutMs`（启浏览器需要 60-120s）
+
+## 5.2 增量源的时间线必须稳定
+
+采集"最新 N 条"时，先确认该列表**多次加载结果一致**（时间倒序流）。
+
+- ✅ `https://x.com/search?q=filter:follows&f=live` — 按时间倒序，三次加载 id 集合完全相同
+- ❌ `https://x.com/home`（"为你推荐"）— 算法流，每次加载都返回一批不同的旧推文，
+  轮询会持续吐"新"噪音且丢掉真正最新的
+
+另外注意**虚拟列表**（如 X 的时间线）：滚动会把顶部条目挤出 DOM。
+需要更多条目时，正确顺序是「先取顶部快照 → 再滚动 → 再取一次 → 合并去重」，
+不能"先滚动再取"。
 
 ## 6. 可选：参与 L1 决策（异常唤醒）
 
@@ -102,3 +146,5 @@ yourname: { metric: '<metric>', fields: { key: '含义', ... } },
 | `collectors/uptime.sh` | 最简单：单条 metric 的静态脚本 |
 | `collectors/net.sh` | 用系统命令采集、带 meta |
 | `collectors/mail.sh` | 有状态（seen 去重）+ 内部 API + 独立 env |
+| `collectors/feed-timeline.sh` | 浏览器登录态采集 + 时间线稳定性 + 虚拟列表两段式快照 + timeoutMs 放宽 |
+| `tools/x-export-state.sh` | 从本机 Chrome 导出站点登录态（Chrome 136+ 禁默认 profile 调试的绕法） |

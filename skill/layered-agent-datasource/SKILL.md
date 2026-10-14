@@ -1,7 +1,7 @@
 ---
 name: layered-agent-datasource
 description: "为分层智能体(ds-bot-layered-agent)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（LAYERED_HOME / $HOME）推导，不写死绝对路径。"
-version: 1.1.0
+version: 1.2.0
 ---
 
 # 添加分层智能体数据源
@@ -36,7 +36,11 @@ version: 1.1.0
 - **输出**：stdout 每行一个 JSON fact：`{"metric":"<m>","raw":{...},"meta":{...}}`；`source`/`ts` 由插件补齐
 - **环境**：插件注入 `LAYERED_HOME`（统一目录）、IM 内部 CA（`SSL_CERT_FILE`/`CURL_CA_BUNDLE`/`REQUESTS_CA_BUNDLE`）、常用 PATH
 - **行为**：退出 0 + 空输出 = 本轮无数据（正常）；退出非 0 = 记 `L0 <name> failed`，不影响其他源；必须幂等
-- **自动发现**：插件启动扫描 `collectors/`，每个 `*.sh` 自动注册为源（源名 = 文件名去 `.sh`）；可选 `<name>.env.json` 提供 `{intervalMs, env}` 覆盖
+- **自动发现**：插件启动扫描 `collectors/`，每个 `*.sh` 自动注册为源（源名 = 文件名去 `.sh`）
+- **伴生文件**（都是纯数据，加源不改代码）：
+  - `<name>.env.json` → `{intervalMs, timeoutMs, env}`
+    - **`timeoutMs` 默认只有 20s**：凡启停外部进程/浏览器的源必须放宽到 60-120s，否则被杀在半路
+  - `<name>.schema.json` → `{metric, fields:{名:含义}, notes?}`，自动进 `facts/manifest.json` 的 `sources[].schema`，让 L2 看得懂
 
 ### 模板
 
@@ -50,16 +54,40 @@ EOF
 exit 0
 ```
 
+## 抓「最新 N 条」类源的硬要求
+
+要采的是「我的时间线 / 我的信息流」这类列表时，先验证**列表稳定性**，否则轮询全是噪音：
+
+1. **必须是时间倒序流**。算法推荐流（如 x.com 首页「为你推荐」）每次加载都返回一批不同的旧内容
+   —— 轮询会持续吐"新"事实，还丢掉真正最新的。改成时间序入口
+   （X 用 `search?q=filter:follows&f=live`）。验证法：连开三次，比较 id 集合是否完全相同。
+2. **虚拟列表要两段式取快照**。滚动会把顶部条目挤出 DOM，所以顺序是
+   「先取顶部 → 再滚动 → 再取一次 → 合并按 id 去重」，不能"先滚动再取"。
+3. **去重持久化**在 `$LAYERED_HOME/seen-<name>.json`（有序数组 + 截断上限），不要用 set 丢顺序。
+
+## 需要登录态的源
+
+没有 API token、靠浏览器/账号登录态的源（如 `feed-timeline`）：
+
+- 登录态 state 文件放 `$LAYERED_HOME/<name>-state.json`，权限 600，**只保留目标站点的 cookie**
+- 配套写一个导出工具放 `$LAYERED_HOME/tools/`（**别放 `collectors/`，会被当成数据源**）；
+  参照 `tools/x-export-state.sh`：复制浏览器 profile 副本 → 起带调试端口的浏览器 → CDP 导出明文 cookie
+- collector 用独立会话名（如 `--session x-collect`）采集，结束 `close`，**不要常驻 headless 浏览器**
+- **会话过期要以非 0 退出**（记 `L0 <name> failed`），绝不能把空数据伪装成"没有新事件"
+- 告诉用户失效后怎么恢复（一条命令重跑导出工具）
+
 ## 验证清单
 
 - [ ] `collectors/<name>.sh` 可执行（`chmod +x`），单独跑输出合法 JSON line
 - [ ] 加到 `l0.sources` 后，重启日志出现 `auto-discovered script sources: [... <name>]`
 - [ ] 数据写入 `$HOME/.dsh/bot/layered-agent/facts/<name>/`
-- [ ] manifest `sources` 列出 `<name>`，schema 可见（若登记了）
-- [ ] 多次采集不重复（幂等）
+- [ ] manifest `sources` 列出 `<name>`，schema 可见（若写了 `<name>.schema.json`）
+- [ ] 多次采集不重复（幂等）——连跑三次，第二次只出真正新增，第三次为 0
+- [ ] 需要外部进程/浏览器的源，已在 `<name>.env.json` 放宽 `timeoutMs`
 
 ## 注意
 
-- 先看现有脚本参照：`collectors/` 下 `uptime.sh`（最简单）、`net.sh`（系统命令+meta）、`mail.sh`（有状态去重+内部 API）
-- 敏感数据（如邮件）只采元数据，不落正文
+- 先看现有脚本参照：`collectors/` 下 `uptime.sh`（最简单）、`net.sh`（系统命令+meta）、
+  `mail.sh`（有状态去重+内部 API）、`feed-timeline.sh`（登录态+虚拟列表两段式快照）
+- 敏感数据（如邮件）只采元数据，不落正文；登录态文件要有 600 权限
 - 详尽的契约、schema 登记、L1 target 做法见插件安装目录的 `DATASOURCE.md`

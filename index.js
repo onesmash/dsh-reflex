@@ -247,8 +247,11 @@ function install(rt, ctx, cfg) {
       },
     },
   }
-  // 扫描脚本源: <collectorsDir>/<name>.sh → source "<name>"; 可选 <name>.env.json → {intervalMs,env}
+  // 扫描脚本源: <collectorsDir>/<name>.sh → source "<name>"
+  //   可选 <name>.env.json    → {intervalMs,env,timeoutMs} 覆盖运行参数
+  //   可选 <name>.schema.json → 自描述字段, 进 manifest 供 L2 发现 (加源无需改插件代码)
   const SCRIPT_SOURCES = {}
+  const SCRIPT_SCHEMAS = {}
   try {
     if (existsSync(collectorsDir)) {
       for (const f of readdirSync(collectorsDir)) {
@@ -258,6 +261,10 @@ function install(rt, ctx, cfg) {
         const envFile = join(collectorsDir, `${name}.env.json`)
         if (existsSync(envFile)) {
           try { Object.assign(def, JSON.parse(readFileSync(envFile, 'utf8'))) } catch (e) { log(`collector env ${envFile} parse fail: ${e.message}`) }
+        }
+        const schemaFile = join(collectorsDir, `${name}.schema.json`)
+        if (existsSync(schemaFile)) {
+          try { SCRIPT_SCHEMAS[name] = JSON.parse(readFileSync(schemaFile, 'utf8')) } catch (e) { log(`collector schema ${schemaFile} parse fail: ${e.message}`) }
         }
         SCRIPT_SOURCES[name] = def
       }
@@ -320,7 +327,8 @@ function install(rt, ctx, cfg) {
           fields: { id: 'string', seq: 'number(处理顺序)', ts: 'epoch ms', source: 'string(数据源)', metric: 'string', raw: 'object(源原始值)', meta: 'object(可选)' },
         },
         // 可用源及其 schema (发现层; 是否启用见配置, 不在此)
-        sources: Object.keys(SOURCES).map(src => ({ source: src, type: SOURCES[src].builtin ? 'builtin' : 'script', schema: sourceSchema[src] ?? null })),
+        // builtin 源用内联表; 脚本源优先读 <name>.schema.json 自描述, 否则 null
+        sources: Object.keys(SOURCES).map(src => ({ source: src, type: SOURCES[src].builtin ? 'builtin' : 'script', schema: sourceSchema[src] ?? SCRIPT_SCHEMAS[src] ?? null })),
         cursorPath: join(dirname(cfg.l0.storeDir), 'cursor.json'),
         lastWakePath: join(dirname(cfg.l0.storeDir), 'last-wake.json'),
         queryTips: [
