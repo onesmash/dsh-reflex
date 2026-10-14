@@ -25,7 +25,7 @@ const DEFAULTS = {
   l0: {
     intervalMs: 60_000,
     sources: ['disk'],
-    storeDir: process.env.LAYERED_FACT_DIR || join(__dirname, '..', '..', '..', '..', 'bot', 'layered-facts'),
+    storeDir: process.env.LAYERED_FACT_DIR || join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'layered-facts'),
   },
   l1: {
     intervalMs: 60_000,
