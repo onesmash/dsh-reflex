@@ -9,7 +9,7 @@
 //   不修改原版 ds-bot 任何代码; 通过 ctx.get('schedule') + 读 bot state.json 定位目标会话。
 
 import { join, dirname } from 'node:path'
-import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync, statSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync, statSync, cpSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -27,7 +27,9 @@ const DEFAULTS = {
     intervalMs: 60_000,
     // 采集源在配置层决定(profile patch l0.sources), 插件默认最小; 可用: disk/cpu/uptime/mail/自写脚本源
     sources: ['disk'],
-    storeDir: process.env.LAYERED_FACT_DIR || join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'layered-facts'),
+    // 统一目录: 数据源工作区根 — collectors/ 脚本、facts/ 数据、manifest/状态全在此之下
+    homeDir: process.env.LAYERED_HOME || join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'layered-agent'),
+    // storeDir / collectorsDir 由 homeDir 派生 (若显式传则优先)
   },
   l1: {
     intervalMs: 60_000,
@@ -72,6 +74,11 @@ function normalize(c) {
     l1: { ...DEFAULTS.l1, ...(c?.l1 ?? {}) },
     semif: { ...DEFAULTS.semif, ...(c?.semif ?? {}) },
   }
+  // 统一目录派生: 默认 homeDir/facts, homeDir/collectors; 显式传 storeDir/collectorsDir 优先
+  cfg.l0.homeDir ||= join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'layered-agent')
+  cfg.l0.storeDir ||= process.env.LAYERED_FACT_DIR || join(cfg.l0.homeDir, 'facts')
+  cfg.l0.collectorsDir ||= process.env.LAYERED_COLLECTORS_DIR || join(cfg.l0.homeDir, 'collectors')
+  cfg.l0.logFile = join(cfg.l0.homeDir, 'layered-agent.log')
   return cfg
 }
 
@@ -84,14 +91,37 @@ function rtOf(ctx) {
 //  安装: 注册 L0/L1 定时器 + L2 唤醒 (通过 schedule 服务)
 // ================================================================
 function install(rt, ctx, cfg) {
-  // 确保事实目录存在
+  // 统一目录工作区根
+  try { mkdirSync(cfg.l0.homeDir, { recursive: true }) } catch {}
   try { mkdirSync(cfg.l0.storeDir, { recursive: true }) } catch {}
-  const logFile = join(cfg.l0.storeDir, '..', 'layered-agent.log')
+  try { mkdirSync(cfg.l0.collectorsDir, { recursive: true }) } catch {}
+  const logFile = cfg.l0.logFile
   const log = (m) => {
     const line = `[${new Date().toISOString()}] ${m}`
     try { appendFileSync(logFile, line + '\n') } catch {}
     try { ctx.logger?.info?.(line) } catch {}
   }
+  // 迁移: 旧版 layed-facts/ (旧默认 storeDir) → 新统一目录 homeDir/facts
+  try {
+    const legacyStore = join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'layered-facts')
+    if (legacyStore !== cfg.l0.storeDir && existsSync(legacyStore) && !existsSync(join(cfg.l0.storeDir, 'disk'))) {
+      for (const item of readdirSync(legacyStore)) {
+        try { cpSync(join(legacyStore, item), join(cfg.l0.storeDir, item), { recursive: true, force: true }) } catch {}
+      }
+      log(`L0: migrated legacy ${legacyStore} → ${cfg.l0.storeDir}`)
+    }
+  } catch (e) { log(`migrate legacy store fail: ${e.message}`) }
+  // 种子脚本: 插件包内置 collectors/ → 统一目录 collectors/ (仅当缺失)
+  try {
+    const pkgCollectors = join(__dirname, 'collectors')
+    if (existsSync(pkgCollectors)) {
+      for (const f of readdirSync(pkgCollectors)) {
+        if (!existsSync(join(cfg.l0.collectorsDir, f))) {
+          try { cpSync(join(pkgCollectors, f), join(cfg.l0.collectorsDir, f)) } catch {}
+        }
+      }
+    }
+  } catch (e) { log(`seed collectors fail: ${e.message}`) }
 
   // 投递服务: 用 ds-bot 同款机制 = ctx.sessionController.resolveAgent(sessionId) → agent.followup(message)
   // (schedule 服务在插件上下文不可见, 已探明; sessionController 是 ds-bot 必需服务, 对插件可见)
@@ -311,6 +341,7 @@ function install(rt, ctx, cfg) {
   async function runScriptCollector(c, src) {
     const baseEnv = {
       ...process.env,
+      LAYERED_HOME: cfg.l0.homeDir,   // 统一目录, 供脚本源定位状态文件等
       PATH: `/usr/local/bin:/opt/homebrew/bin:/bin:/usr/bin:/sbin:/usr/sbin:${process.env.HOME}/.local/bin:${process.env.PATH ?? ''}`,
       SSL_CERT_FILE: process.env.SSL_CERT_FILE || join(process.env.HOME || '', '.ca_bundle.pem'),
       CURL_CA_BUNDLE: process.env.CURL_CA_BUNDLE || join(process.env.HOME || '', '.ca_bundle.pem'),
