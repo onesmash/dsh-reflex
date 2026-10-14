@@ -242,16 +242,23 @@ function install(rt, ctx, cfg) {
   }
 
   // ---------- L0: 自描述 manifest (让 L2 自主发现/访问 L0) ----------
-  // L2 收到通知时如何"知道 L0"? 靠 manifest.json: 一旦指引到入口(通知/tool), L2 读 manifest
-  // 即获得 L0 全部知识: 路径、schema、源、retention、查询方法。
+  // 职责边界: 配置(启用哪些源)在 cordis.patch.yml 声明; manifest 只是 L0 的【发现层】——
+  // 列出可用源与 schema, 供 L2 知道"能查什么、怎么查"。不镜像配置状态(enabled 不属于这里)。
   function writeManifest() {
     try {
+      const sourceSchema = {
+        disk:  { metric: 'data-volume', fields: { availableGB: '可用GB', usedPct: '使用率%', totalGB: '总量GB', usedGB: '已用GB' } },
+        cpu:   { metric: 'load', fields: { load1: '1分钟负载', procCount: '进程数', topProcCpu: '最高进程CPU%' } },
+        uptime:{ metric: 'uptime', fields: { seconds: '运行秒数', sinceBoot: '开机epoch' } },
+        mail:  { metric: 'new-email', fields: { id: '邮件id', timeMs: '时间', subject: '标题', from: '发件人', labels: '标签' } },
+      }
       const schema = {
         fact: {
           layout: '<storeDir>/<source>/<YYYY-MM-DD>.jsonl', eachLine: 'JSON 对象',
           fields: { id: 'string', seq: 'number(处理顺序)', ts: 'epoch ms', source: 'string(数据源)', metric: 'string', raw: 'object(源原始值)', meta: 'object(可选)' },
         },
-        sources: Object.keys(SOURCES).map(src => ({ source: src, type: SOURCES[src].builtin ? 'builtin' : 'script', enabled: cfg.l0.sources.includes(src) })),
+        // 可用源及其 schema (发现层; 是否启用见配置, 不在此)
+        sources: Object.keys(SOURCES).map(src => ({ source: src, type: SOURCES[src].builtin ? 'builtin' : 'script', schema: sourceSchema[src] ?? null })),
         cursorPath: join(dirname(cfg.l0.storeDir), 'cursor.json'),
         lastWakePath: join(dirname(cfg.l0.storeDir), 'last-wake.json'),
         queryTips: [
