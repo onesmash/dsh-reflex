@@ -42,8 +42,9 @@ const DEFAULTS = {
 
 export const name = 'ds-bot-layered-agent'
 
-// 兄弟插件需要的 DSH 服务 (只依赖 schedule; sessionController/sessions 仅在有时代码路径使用, 不在 inject 硬依赖)
-export const inject = ['schedule']
+// 不声明 inject: 避免任何服务依赖使插件"未激活"而拖垮宿主启动。
+// schedule 服务在运行时惰性获取 (见 wakeL2)。
+export const inject = []
 
 export function apply(ctx, config = {}) {
   try {
