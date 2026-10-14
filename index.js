@@ -25,7 +25,7 @@ const DEFAULTS = {
   statePath: join(process.env.DSH_HOME || join(process.env.HOME || '.', '.dsh'), 'bot', 'state.json'),
   l0: {
     intervalMs: 60_000,
-    sources: ['disk'],
+    sources: ['disk', 'mail'],   // 采集源: disk(磁盘) + mail(IM邮箱元数据); 还可加 cpu/uptime/自写脚本源
     storeDir: process.env.LAYERED_FACT_DIR || join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'layered-facts'),
   },
   l1: {
