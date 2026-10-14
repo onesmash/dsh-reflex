@@ -153,39 +153,48 @@ function install(rt, ctx, cfg) {
     }
   }
 
-  // ---------- L0: 数据源采集 (可扩展多源) ----------
+  // ---------- L0: 数据源采集 (内置 or 脚本驱动) ----------
+  // collector 契约:
+  //   - builtin: { builtin: async () => [facts...] }   JS 内联实现 (稳定/低延迟源)
+  //   - script:  { cmd: 'path/to/script.sh', cwd? }     外部脚本, stdout 每行一个 JSON fact
+  // fact 形如 { source?, metric, raw, meta? }; source 缺省用源名; ts 缺省由 collectOnce 补
   const SOURCES = {
-    async disk() {
-      const { stdout } = await execFileP('df', ['-k', '/System/Volumes/Data'])
-      const line = stdout.trim().split('\n')[1]?.trim().split(/\s+/)
-      if (!line) return []
-      const [, totalKb, usedKb, availKb] = line.map(Number)
-      return [{
-        source: 'disk', metric: 'data-volume', ts: Date.now(),
-        raw: {
-          availableGB: +(availKb / 1048576).toFixed(2),
-          usedPct: Math.round((usedKb / totalKb) * 100),
-          totalGB: +(totalKb / 1048576).toFixed(2),
-          usedGB: +(usedKb / 1048576).toFixed(2),
-        },
-        meta: { volume: '/System/Volumes/Data' },
-      }]
+    disk: {
+      builtin: async () => {
+        const { stdout } = await execFileP('df', ['-k', '/System/Volumes/Data'])
+        const line = stdout.trim().split('\n')[1]?.trim().split(/\s+/)
+        if (!line) return []
+        const [, totalKb, usedKb, availKb] = line.map(Number)
+        return [{
+          source: 'disk', metric: 'data-volume',
+          raw: {
+            availableGB: +(availKb / 1048576).toFixed(2),
+            usedPct: Math.round((usedKb / totalKb) * 100),
+            totalGB: +(totalKb / 1048576).toFixed(2),
+            usedGB: +(usedKb / 1048576).toFixed(2),
+          },
+          meta: { volume: '/System/Volumes/Data' },
+        }]
+      },
     },
-    // 附加源: CPU 负载 (示例扩展; 由 config l0.sources 决定是否启用)
-    async cpu() {
-      const { stdout } = await execFileP('ps', ['-A', '-o', '%cpu='])
-      const procs = stdout.trim().split('\n').map(Number).filter(n => Number.isFinite(n))
-      const load1 = Math.round(loadavg()[0] * 100) / 100
-      const top = procs.slice().sort((a, b) => b - a)[0] ?? 0
-      return [{
-        source: 'cpu', metric: 'load', ts: Date.now(),
-        raw: {
-          load1,
-          procCount: procs.length,
-          topProcCpu: Math.round(top * 100) / 100,
-        },
-        meta: { scope: 'host' },
-      }]
+    cpu: {
+      builtin: async () => {
+        const { stdout } = await execFileP('ps', ['-A', '-o', '%cpu='])
+        const procs = stdout.trim().split('\n').map(Number).filter(n => Number.isFinite(n))
+        const load1 = Math.round(loadavg()[0] * 100) / 100
+        const top = procs.slice().sort((a, b) => b - a)[0] ?? 0
+        return [{
+          source: 'cpu', metric: 'load',
+          raw: { load1, procCount: procs.length, topProcCpu: Math.round(top * 100) / 100 },
+          meta: { scope: 'host' },
+        }]
+      },
+    },
+    // 示例: 脚本驱动的数据源 — 加新源 = 写一个脚本 + 在配置文件里声明 {cmd}, 无需改本文件
+    // 见 collectors/example-uptime.sh; 启用: l0.sources 加 'uptime'
+    uptime: {
+      cmd: join(__dirname, 'collectors', 'example-uptime.sh'),
+      intervalMs: 30_000,   // 可选: 该源独立采集节奏, 缺省用 l0.intervalMs
     },
   }
 
@@ -209,7 +218,7 @@ function install(rt, ctx, cfg) {
           filePattern: '{YYYY-MM-DD}.jsonl', eachLine: 'JSON 对象',
           fields: { id: 'string', seq: 'number(处理顺序)', ts: 'epoch ms', source: 'string(数据源)', metric: 'string', raw: 'object(源原始值)', meta: 'object(可选)' },
         },
-        sources: Object.keys(SOURCES).map(src => ({ source: src, enabled: cfg.l0.sources.includes(src) })),
+        sources: Object.keys(SOURCES).map(src => ({ source: src, type: SOURCES[src].builtin ? 'builtin' : 'script', enabled: cfg.l0.sources.includes(src) })),
         cursorPath: join(dirname(cfg.l0.storeDir), 'cursor.json'),
         lastWakePath: join(dirname(cfg.l0.storeDir), 'last-wake.json'),
         queryTips: [
@@ -231,13 +240,33 @@ function install(rt, ctx, cfg) {
       const c = SOURCES[src]
       if (!c) continue
       try {
-        const rows = await c()
+        let rows
+        if (c.builtin) {
+          rows = await c.builtin()
+        } else if (c.cmd) {
+          rows = await runScriptCollector(c, src)
+        } else { continue }
         for (const r of rows) appendFact({ ts, ...r })
         count += rows.length
       } catch (e) { log(`L0 ${src} failed: ${e.message}`) }
     }
     if (count) log(`L0: +${count} fact(s)`)
     return count
+  }
+
+  // 脚本驱动的 collector: 运行 cmd, 解析 stdout 每行一个 JSON fact
+  async function runScriptCollector(c, src) {
+    const { stdout } = await execFileP(c.cmd, [], { timeout: (c.timeoutMs ?? 15_000), ...(c.env ? { env: { ...process.env, ...c.env } } : {}) })
+    const rows = []
+    for (const line of stdout.split('\n')) {
+      const t = line.trim()
+      if (!t) continue
+      try {
+        const o = JSON.parse(t)
+        rows.push({ source: o.source ?? src, metric: o.metric ?? 'default', ...(o.raw !== undefined ? { raw: o.raw } : {}), ...(o.meta ? { meta: o.meta } : {}) })
+      } catch { /* 忽略非 JSON 行 */ }
+    }
+    return rows
   }
 
   // ---------- L1: 增量读事实 (持久化游标 cursor.json, 跨重启不重读历史) ----------
