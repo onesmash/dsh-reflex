@@ -147,8 +147,13 @@ exit 0
 1. **`stateFingerprint` 必须为新 target 补一条分支**。框架里只有 `disk` 有指纹；
    新 target 若不补，`fp` 恒为 `null` → `contentChanged()` 恒返回 true → **每轮都唤醒**，直接刷屏。
    文本/内容类源的指纹取「本次命中条目的 id 集合」。
-2. **内容源必须设 `minIntervalMs`**（唤醒硬上限）。值得看的消息可能每轮都有，但人不能被
-   每 15 分钟打断一次。两种行为，看 target 有没有声明 `mergeCtx`：
+2. **内容源要设唤醒硬上限 `minIntervalMs`**：值得看的消息可能每轮都有，但人不能被每 15 分钟
+   打断一次。**缺省值应跟随该源的采集间隔**（用框架的 `sourceIntervalMs('<source>')` 读
+   `<name>.env.json` 的 `intervalMs`），而不是写死一个数字 —— 每轮采集最多叫醒一次，
+   比采集勤没意义（根本没新数据），比采集慢太多又会把窗口拖过头。
+   ⚠️ **别在 `DEFAULTS` 里给它写死默认值**：DEFAULTS 会合并进 cfg，写死了
+   `cfg...?.minIntervalMs ?? sourceIntervalMs(...)` 的回落分支就永远不生效。
+   两种行为，看 target 有没有声明 `mergeCtx`：
    - **没声明**：冷却期内直接短路，连 `collect` 都不跑 —— 省算力，但那几轮的命中项**会漏报**
    - **声明了**（推荐给内容源）：冷却期内照常筛选，命中项攒进 `pending-wakes.json`，
      冷却期一到就合并成**一条摘要**发出，不漏报。`mergeCtx(prev, next)` 负责去重合并，

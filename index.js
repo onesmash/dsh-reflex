@@ -43,7 +43,8 @@ const DEFAULTS = {
     // 用户画像: 内容类 target(如 feed-timeline)组装 SemIf 决策 context 用 —— 建议在 profile patch 里覆盖
     profile: '',
     // feed-timeline target 参数: threshold 经真实推文校准 (见 TARGETS 前的注释), 别轻易调
-    xTimeline: { threshold: 0.8, maxCandidates: 12, minIntervalMs: 60 * 60 * 1000 },
+    // minIntervalMs 故意【不设默认】: 缺省时跟随该源的真实采集间隔 (见 TARGETS 里 sourceIntervalMs)
+    xTimeline: { threshold: 0.8, maxCandidates: 12 },
   },
   semif: {
     skillDir: join(process.env.HOME || '', '.agents', 'skills', 'semif-decide'),
@@ -470,6 +471,12 @@ function install(rt, ctx, cfg) {
   // 每个 target 是自包含的决策闭环: collect(组装context) → interim(硬规则) → semif(本地模型) → wake(通知)
   // L2 通知自包含 target collect 产出的 context → L2 无状态可决策
 
+  // 某个【脚本源】的真实采集间隔 —— 来自 collectors/<name>.env.json 的 intervalMs,
+  // 插件启动扫描 collectors/ 时已放进 SCRIPT_SOURCES。
+  // 用途: 内容类 target 的唤醒上限缺省跟随采集节奏, 避免写死魔数、改采集频率后忘了同步。
+  const sourceIntervalMs = (src) =>
+    SCRIPT_SOURCES[src]?.intervalMs ?? cfg.l0.scriptIntervalMs ?? cfg.l0.intervalMs ?? 60_000
+
   // feed-timeline 的 SemIf 判据 —— 经真实推文校准得出, 别随手改措辞:
   //   同一批 17 条推文实测 (阈值 0.8):
   //     长版判据(带领域+反例)          → 命中 3 条, 但触发率过高(≈18%), 每轮都想唤醒
@@ -546,9 +553,12 @@ function install(rt, ctx, cfg) {
       // 所以 interim 在这里的含义是"collect 已判定命中", 直接进唤醒, 不再做第二次 SemIf
       interim: (ctx) => !!ctx?.notable?.length,
       interimReason: 'SemIf 逐条筛选命中',
-      // 内容源必须有唤醒硬上限: 值得看的推文可能每轮都有, 但人不能被每 15 分钟打断一次。
-      // 被限流的那轮只记日志 —— 推文本身仍在 L0 facts 里, L2 可经 manifest 自主回查
-      minIntervalMs: cfg.l1.xTimeline?.minIntervalMs ?? 60 * 60 * 1000,
+      // 唤醒硬上限 = 该源的采集间隔 ("每轮采集最多叫醒一次"):
+      //   比采集还勤没意义(根本没新数据), 比采集慢太多又会把窗口拖过头。
+      //   所以缺省不写死数字, 而是读 collector 的真实 intervalMs —— 改采集频率时这里自动跟随。
+      //   想覆盖就在 profile patch 里显式写 l1.xTimeline.minIntervalMs。
+      // 冷却期内命中的推文不会丢: 攒进 pending-wakes.json, 到点合并成一条摘要补发。
+      minIntervalMs: cfg.l1.xTimeline?.minIntervalMs ?? sourceIntervalMs('feed-timeline'),
       // ① 收集器: 本轮新增推文 → 用户画像 + 推文正文组装 state → 批量 SemIf 逐条打分
       collect: async (facts) => {
         const cfgX = cfg.l1.xTimeline ?? {}
