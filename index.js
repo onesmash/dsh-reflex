@@ -123,6 +123,26 @@ function install(rt, ctx, cfg) {
     }
   } catch (e) { log(`seed collectors fail: ${e.message}`) }
 
+  // 自动部署 skill: 仓库 skill/<name>/ 的 SKILL.md → agent skills 目录 (~/.agents/skills/<name>/)
+  // 这样插件安装/每次启动时 skill 自动就位, 且随插件代码版本更新 (幂等: 目标存在且内容一致则跳过)
+  try {
+    const pkgSkills = join(__dirname, 'skill')
+    const skillsRoot = process.env.AGENTS_SKILLS_DIR || join(process.env.HOME || '', '.agents', 'skills')
+    if (existsSync(pkgSkills)) {
+      for (const skillName of readdirSync(pkgSkills)) {
+        const srcSkill = join(pkgSkills, skillName, 'SKILL.md')
+        if (!existsSync(srcSkill)) continue
+        const dstSkill = join(skillsRoot, skillName, 'SKILL.md')
+        try {
+          mkdirSync(join(skillsRoot, skillName), { recursive: true })
+          const needCopy = !existsSync(dstSkill) ||
+            (existsSync(dstSkill) && readFileSync(dstSkill, 'utf8') !== readFileSync(srcSkill, 'utf8'))
+          if (needCopy) { cpSync(srcSkill, dstSkill); log(`skill deployed: ${skillName} → ${dstSkill}`) }
+        } catch (e) { log(`skill deploy ${skillName} fail: ${e.message}`) }
+      }
+    }
+  } catch (e) { log(`deploy skills fail: ${e.message}`) }
+
   // 投递服务: 用 ds-bot 同款机制 = ctx.sessionController.resolveAgent(sessionId) → agent.followup(message)
   // (schedule 服务在插件上下文不可见, 已探明; sessionController 是 ds-bot 必需服务, 对插件可见)
   let sessionCtrl = null
