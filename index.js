@@ -9,7 +9,7 @@
 //   不修改原版 ds-bot 任何代码; 通过 ctx.get('schedule') + 读 bot state.json 定位目标会话。
 
 import { join, dirname } from 'node:path'
-import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -206,11 +206,36 @@ function install(rt, ctx, cfg) {
     },
   }
 
-  // ---------- L0: 序列化存储 (JSONL) ----------
+  // ---------- L0: 序列化存储 (JSONL, 按 source 隔离) ----------
+  // 结构: <storeDir>/<source>/<YYYY-MM-DD>.jsonl — 各源独立目录, 便于读隔离/独立保留策略/敏感源(diff 权限)
+  // 启动时迁移: 旧 root 混合文件 (*.jsonl) 按 source 拆分进各自子目录
+  function migrateLegacyStore() {
+    try {
+      const rootFiles = existsSync(cfg.l0.storeDir) ? readdirSync(cfg.l0.storeDir).filter(f => f.endsWith('.jsonl')) : []
+      for (const f of rootFiles) {
+        const lines = readFileSync(join(cfg.l0.storeDir, f), 'utf8').split('\n').filter(Boolean)
+        for (const line of lines) {
+          try {
+            const o = JSON.parse(line)
+            const srcDir = join(cfg.l0.storeDir, o.source || 'unknown')
+            mkdirSync(srcDir, { recursive: true })
+            appendFileSync(join(srcDir, f), line + '\n')
+          } catch {}
+        }
+        // 迁移后删除旧混合文件 (仅当确实写入了子目录)
+        unlinkSync(join(cfg.l0.storeDir, f))
+        log(`L0: migrated legacy ${f} → per-source dirs`)
+      }
+    } catch (e) { log(`migrate legacy fail: ${e.message}`) }
+  }
+  migrateLegacyStore()
+
   let factCounter = 0
   function appendFact(fact) {
     const date = new Date(fact.ts).toISOString().slice(0, 10)
-    const file = join(cfg.l0.storeDir, `${date}.jsonl`)
+    const srcDir = join(cfg.l0.storeDir, fact.source || 'unknown')
+    try { mkdirSync(srcDir, { recursive: true }) } catch {}
+    const file = join(srcDir, `${date}.jsonl`)
     const row = { id: `fact-${randomUUID().slice(0, 8)}`, seq: ++factCounter, ...fact, ...(fact.raw ? { raw: fact.raw } : {}) }
     appendFileSync(file, JSON.stringify(row) + '\n')
     return row
@@ -223,17 +248,17 @@ function install(rt, ctx, cfg) {
     try {
       const schema = {
         fact: {
-          filePattern: '{YYYY-MM-DD}.jsonl', eachLine: 'JSON 对象',
+          layout: '<storeDir>/<source>/<YYYY-MM-DD>.jsonl', eachLine: 'JSON 对象',
           fields: { id: 'string', seq: 'number(处理顺序)', ts: 'epoch ms', source: 'string(数据源)', metric: 'string', raw: 'object(源原始值)', meta: 'object(可选)' },
         },
         sources: Object.keys(SOURCES).map(src => ({ source: src, type: SOURCES[src].builtin ? 'builtin' : 'script', enabled: cfg.l0.sources.includes(src) })),
         cursorPath: join(dirname(cfg.l0.storeDir), 'cursor.json'),
         lastWakePath: join(dirname(cfg.l0.storeDir), 'last-wake.json'),
         queryTips: [
-          'list facts dir: ls <storeDir>',
-          'latest: tail -1 <storeDir>/{today}.jsonl',
-          'timeline: cat <storeDir>/*.jsonl | sort -t, -k...',
-          'filter by source: grep "\"source\":\"disk\"" <storeDir>/*.jsonl',
+          'list sources: ls <storeDir>/',
+          'source disk: tail -1 <storeDir>/disk/{today}.jsonl',
+          'source mail: tail -1 <storeDir>/mail/{today}.jsonl',
+          'timeline: cat <storeDir>/*/*.jsonl',
         ],
       }
       writeFileSync(join(cfg.l0.storeDir, 'manifest.json'), JSON.stringify({ updatedAt: Date.now(), storeDir: cfg.l0.storeDir, schema }, null, 2))
@@ -287,36 +312,43 @@ function install(rt, ctx, cfg) {
   }
 
   // ---------- L1: 增量读事实 (持久化游标 cursor.json, 跨重启不重读历史) ----------
-  // 游标 = 上次消费到 <file, lineIndex>; L0 事实追加在按日期命名的 jsonl, 文件排序 == 时间序。
+  // 游标按 source 隔离: cursor = { <source>: { file, line } } — 各源独立消费位置
   const cursorPath = join(dirname(cfg.l0.storeDir), 'cursor.json')
-  let cursor = { file: null, line: 0 }
-  try { if (existsSync(cursorPath)) cursor = { file: null, line: 0, ...JSON.parse(readFileSync(cursorPath, 'utf8')) } } catch (e) { log(`cursor read fail: ${e.message}`) }
+  let cursor = {}
+  try { if (existsSync(cursorPath)) cursor = JSON.parse(readFileSync(cursorPath, 'utf8')) ?? {} } catch (e) { log(`cursor read fail: ${e.message}`) }
   function saveCursor() { try { writeFileSync(cursorPath, JSON.stringify(cursor)) } catch (e) { log(`cursor write fail: ${e.message}`) } }
 
   // 返回 (facts, 新游标位置)。只读游标之后的新事实; 不修改游标 (由调用方在决策后 advanceCursor)
+  // 存储: <storeDir>/<source>/<date>.jsonl — 按源子目录遍历
   function readNewFacts() {
     const out = []
     const dir = cfg.l0.storeDir
-    let nextFile = null, nextLine = 0
+    let nextSrc = null, nextFile = null, nextLine = 0
     try {
-      const files = (existsSync(dir) ? readdirSync(dir) : []).filter(f => f.endsWith('.jsonl')).sort()
-      for (const f of files) {
-        // 游标前的文件整跳过; 游标当前文件从 cursor.line 起
-        if (cursor.file && f < cursor.file) continue
-        const startIdx = (cursor.file === f) ? cursor.line : 0
-        const lines = readFileSync(join(dir, f), 'utf8').split('\n').filter(Boolean)
-        for (let i = startIdx; i < lines.length; i++) {
-          let o; try { o = JSON.parse(lines[i]) } catch { continue }
-          out.push(o)
-          nextFile = f; nextLine = i + 1
+      const srcDirs = (existsSync(dir) ? readdirSync(dir) : []).filter(d => {
+        try { if (d === 'manifest.json') return false; return statSync(join(dir, d)).isDirectory() } catch { return false }
+      }).sort()
+      for (const src of srcDirs) {
+        const srcCursor = cursor[src] ?? { file: null, line: 0 }
+        const files = readdirSync(join(dir, src)).filter(f => f.endsWith('.jsonl')).sort()
+        for (const f of files) {
+          if (srcCursor.file && f < srcCursor.file) continue
+          const startIdx = (srcCursor.file === f) ? srcCursor.line : 0
+          const lines = readFileSync(join(dir, src, f), 'utf8').split('\n').filter(Boolean)
+          for (let i = startIdx; i < lines.length; i++) {
+            let o; try { o = JSON.parse(lines[i]) } catch { continue }
+            out.push(o)
+            nextSrc = src; nextFile = f; nextLine = i + 1
+          }
         }
       }
     } catch (e) { log(`L1 read fail: ${e.message}`) }
-    return { facts: out.slice(-50), nextFile, nextLine }
+    return { facts: out.slice(-100), nextSrc, nextFile, nextLine }
   }
-  function advanceCursor(nextFile, nextLine) {
-    if (!nextFile) return
-    cursor = { file: nextFile, line: Math.max(cursor.file === nextFile ? cursor.line : 0, nextLine) }
+  function advanceCursor(nextSrc, nextFile, nextLine) {
+    if (!nextSrc || !nextFile) return
+    const prev = cursor[nextSrc] ?? { file: null, line: 0 }
+    cursor[nextSrc] = { file: nextFile, line: Math.max(prev.file === nextFile ? prev.line : 0, nextLine) }
     saveCursor()
   }
 
@@ -433,10 +465,10 @@ function install(rt, ctx, cfg) {
         return
       }
     } catch (e) { log(`TEST-WAKE error: ${e.message}`) }
-    const { facts, nextFile, nextLine } = readNewFacts()
+    const { facts, nextSrc, nextFile, nextLine } = readNewFacts()
     if (!facts.length) return
     // 无论要不要唤醒, 都推进游标 (已消费这些事实)
-    advanceCursor(nextFile, nextLine)
+    advanceCursor(nextSrc, nextFile, nextLine)
     for (const targetKey of activeTargets) {
       const target = TARGETS[targetKey]
       try {
