@@ -1,7 +1,7 @@
 ---
 name: layered-agent-datasource
 description: "为分层智能体(ds-bot-layered-agent)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（LAYERED_HOME / $HOME）推导，不写死绝对路径。"
-version: 1.2.0
+version: 1.3.0
 ---
 
 # 添加分层智能体数据源
@@ -76,21 +76,41 @@ exit 0
 - **会话过期要以非 0 退出**（记 `L0 <name> failed`），绝不能把空数据伪装成"没有新事件"
 - 告诉用户失效后怎么恢复（一条命令重跑导出工具）
 
-## 让新源能唤醒 L2（可选，要写 JS）
+## 让新源能唤醒 L2（可选）
 
-在 `TARGETS` 注册表加 target（collect/interim/semif/render），再配 `l1.targets` 启用。三条最常翻车的：
+### 脚本 target（首选，不用改代码）
+
+写 `$LAYERED_HOME/targets/<name>.sh` + 在 `l1.targets` 启用。与 collector 同一套契约。
+
+**职责分界**（关键，别混）：**脚本**负责判定与条目内容；**插件**负责指纹去重、冷却、
+`minIntervalMs` 节流、pending 累积合并、**排版信封**（标题/编号/「其中 N 条为冷却期累积」/L0 入口）。
+信封必须归插件 —— 那些信息来自跨轮统计，脚本不知道。
+
+契约：stdin 收本轮新事实（JSONL）；stdout 一行 JSON；无输出 = 不唤醒；非 0 退出 = 记 failed。
+
+    { "wake": true, "reason": "...", "fingerprint": {"ids": ["..."]}, "scanned": 12,
+      "items": [ { "id": "...", "title": "一行标题", "body": "多行正文" } ] }
+
+- **`items[].id` 必须有** —— 它是跨轮合并去重的唯一依据，缺了整个合并机制就退化
+- 脚本别自己判重、别输出标题栏/编号/L0 入口
+- 调 SemIf 用 `$LAYERED_SEMIF_RUN`（插件注入，别写死路径），**批量**打分别逐条起进程
+- 用户画像从 `$LAYERED_PROFILE` 读
+- 想全权排版可输出 `{"notice": "整段文本"}`，代价是累积时插件只能粗暴拼接、无法跨轮去重
+
+### 内置 target（要写 JS，仅当需要计算逻辑）
+
+像 `disk` 那样要算趋势、跨源关联的才写进 `TARGETS`。三条最常翻车的：
 
 1. **必须给 `stateFingerprint` 补该 target 的分支**。不补 → 指纹恒为 null → **每轮都唤醒**（刷屏）。
-2. **内容类源要设唤醒硬上限 `minIntervalMs`**，且缺省值应**跟随该源的采集间隔**
-   （框架的 `sourceIntervalMs('<source>')` 读 `<name>.env.json`），别写死数字。
-   冷却期内命中项**会漏报**，所以要再声明 `mergeCtx(prev, next)` 把它们攒进
-   `pending-wakes.json`，冷却期一到合并成一条摘要发出。
-   注意：攒了就必须发得出去 —— `decideOnce` 在**没有新事实时也要继续跑**，否则 pending 会永远躺在文件里。
+   （脚本 target 有兜底：script fingerprint → items[].id）
+2. **内容类源要设唤醒硬上限 `minIntervalMs`**，且缺省应**跟随该源的采集间隔**
+   （`sourceIntervalMs('<source>')`），别写死数字。冷却期内命中项会漏报，所以要声明
+   `mergeCtx(prev, next)` 攒进 `pending-wakes.json`，冷却期一到合并发出。
+   注意：攒了就必须发得出去 —— `decideOnce` 在**没有新事实时也要继续跑**。
 3. **SemIf 判据必须拿真实历史 facts 校准**，别拍脑袋：逐条拼 `{id,state,question,options}` 批量跑
    `run_score.sh` 看 p(yes) 分布。实测 4B 模型下「收紧判据」比「调高阈值」更容易把 target 压死到
    永不触发；加用户画像（`l1.profile`）会显著改变灵敏度。
-   逐条筛选用批量打分（框架的 `semifScoreBatch`），跑完用 `interim` + `interimReason` 直接进唤醒，
-   **不要再跑第二次 SemIf**。
+   逐条筛选用批量打分（框架的 `semifScoreBatch`），**不要再跑第二次 SemIf**。
 
 ## 验证清单
 
@@ -101,9 +121,20 @@ exit 0
 - [ ] 多次采集不重复（幂等）——连跑三次，第二次只出真正新增，第三次为 0
 - [ ] 需要外部进程/浏览器的源，已在 `<name>.env.json` 放宽 `timeoutMs`
 
+若还做了 target：
+
+- [ ] `echo '<facts>' | bash targets/<name>.sh` 能独立跑出合法决策 JSON（这是最好的调试方式）
+- [ ] 重启日志出现 `auto-discovered script targets: [... <name>]`，且 `l1.targets` 已启用
+- [ ] manifest `l1Targets` 列出该 target，`type=script`
+- [ ] 决策里 `items[].id` 非空（合并去重唯一依据）
+- [ ] 命中后通知由插件排版（有标题栏/编号/L0 入口），脚本没自己拼这些
+- [ ] 同一批内容重放 → 被抑制（0 投递）
+- [ ] 冷却期内命中 → 进 `pending-wakes.json`；把上次唤醒时间推到冷却期之前且**不给新数据**再跑一次 → 必须被合并补发
+
 ## 注意
 
 - 先看现有脚本参照：`collectors/` 下 `uptime.sh`（最简单）、`net.sh`（系统命令+meta）、
-  `mail.sh`（有状态去重+内部 API）、`feed-timeline.sh`（登录态+虚拟列表两段式快照）
+  `mail.sh`（有状态去重+内部 API）、`feed-timeline.sh`（登录态+虚拟列表两段式快照）；
+  `targets/feed-timeline.sh`（L1 判定 + 批量 SemIf + items 决策）
 - 敏感数据（如邮件）只采元数据，不落正文；登录态文件要有 600 权限
 - 详尽的契约、schema 登记、L1 target 做法见插件安装目录的 `DATASOURCE.md`

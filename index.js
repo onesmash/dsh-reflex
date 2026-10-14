@@ -11,7 +11,7 @@
 import { join, dirname } from 'node:path'
 import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync, statSync, cpSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { loadavg } from 'node:os'
@@ -42,9 +42,9 @@ const DEFAULTS = {
     cooldownMs: 30 * 60 * 1000,  // 同状态异常冷却: 30 分钟内不重复唤醒
     // 用户画像: 内容类 target(如 feed-timeline)组装 SemIf 决策 context 用 —— 建议在 profile patch 里覆盖
     profile: '',
-    // feed-timeline target 参数: threshold 经真实推文校准 (见 TARGETS 前的注释), 别轻易调
-    // minIntervalMs 故意【不设默认】: 缺省时跟随该源的真实采集间隔 (见 TARGETS 里 sourceIntervalMs)
-    xTimeline: { threshold: 0.8, maxCandidates: 12 },
+    // 内容类 target 的参数现在归 target 自己的 env.json 管 (targets/<name>.env.json 的 env 段),
+    // 例如 feed-timeline 的阈值/候选数走 LAYERED_X_THRESHOLD / LAYERED_X_MAX_CANDIDATES。
+    // 唤醒闸门缺省跟随该源采集间隔, 见 ALL_TARGETS 里的 minIntervalMs。
   },
   semif: {
     skillDir: join(process.env.HOME || '', '.agents', 'skills', 'semif-decide'),
@@ -278,6 +278,47 @@ function install(rt, ctx, cfg) {
   const SOURCES = { ...BUILTIN_SOURCES, ...SCRIPT_SOURCES }
   if (Object.keys(SCRIPT_SOURCES).length) log(`L0: auto-discovered script sources: [${Object.keys(SCRIPT_SOURCES).join(',')}]`)
 
+  // ---------- 脚本驱动的 L1 target ----------
+  // 与 collector 同构: <targetsDir>/<name>.sh 自动注册为 target, 配置 l1.targets 启用。
+  // 职责分界 —— 这是本设计的关键:
+  //   脚本负责【判定 + 条目内容】: 从 stdin 拿本轮新事实 → 组装 context → 调 SemIf → 判定 → 产出条目
+  //   插件负责【投递纪律】  : 指纹去重、冷却、minIntervalMs 节流、pending 累积合并、排版信封、投递
+  //   信封(heading/编号/合并说明/L0入口)必须由插件排: "其中 N 条为冷却期累积"这类信息来自跨轮统计,
+  //   脚本根本不知道; 而且信封对所有 target 是同一套, 复制进脚本必然漂移。
+  // 契约: stdin 收到本轮新事实(JSONL); stdout 输出一行 JSON; 无输出=本轮不唤醒; 非 0 退出=记 failed
+  //   { wake, reason, fingerprint, header?, scanned?, items?: [{id,title,body}] }  或 { notice } 全权模式
+  const targetsDir = cfg.l1.targetsDir ?? join(cfg.l0.homeDir, 'targets')
+  // 种子脚本: 插件包内置 targets/ → 统一目录 targets/ (仅当缺失), 与 collectors 同一规则
+  try {
+    const pkgTargets = join(__dirname, 'targets')
+    if (existsSync(pkgTargets)) {
+      mkdirSync(targetsDir, { recursive: true })
+      for (const f of readdirSync(pkgTargets)) {
+        if (!existsSync(join(targetsDir, f))) {
+          try { cpSync(join(pkgTargets, f), join(targetsDir, f)) } catch {}
+        }
+      }
+    }
+  } catch (e) { log(`seed targets fail: ${e.message}`) }
+  const SCRIPT_TARGETS = {}
+  try {
+    if (existsSync(targetsDir)) {
+      for (const f of readdirSync(targetsDir)) {
+        if (!f.endsWith('.sh')) continue
+        const name = f.slice(0, -3)
+        const def = { target: name, type: 'script', cmd: join(targetsDir, f), displayName: name, timeoutMs: 120_000 }
+        const envFile = join(targetsDir, `${name}.env.json`)
+        if (existsSync(envFile)) {
+          try { Object.assign(def, JSON.parse(readFileSync(envFile, 'utf8'))) } catch (e) { log(`target env ${envFile} parse fail: ${e.message}`) }
+        }
+        // 缺省唤醒闸门: 存在同名采集源 → 'auto'(跟随其采集间隔, 即每轮采集最多叫醒一次); 否则 0(不限制)
+        if (def.minIntervalMs === undefined) def.minIntervalMs = SCRIPT_SOURCES[name] ? 'auto' : 0
+        SCRIPT_TARGETS[name] = def
+      }
+    }
+  } catch (e) { log(`scan targets fail: ${e.message}`) }
+  if (Object.keys(SCRIPT_TARGETS).length) log(`L1: auto-discovered script targets: [${Object.keys(SCRIPT_TARGETS).join(',')}]`)
+
 
   // ---------- L0: 序列化存储 (JSONL, 按 source 隔离) ----------
   // 结构: <storeDir>/<source>/<YYYY-MM-DD>.jsonl — 各源独立目录, 便于读隔离/独立保留策略/敏感源(diff 权限)
@@ -336,6 +377,13 @@ function install(rt, ctx, cfg) {
         sources: Object.keys(SOURCES).map(src => ({ source: src, type: SOURCES[src].builtin ? 'builtin' : 'script', schema: sourceSchema[src] ?? SCRIPT_SCHEMAS[src] ?? null })),
         cursorPath: join(dirname(cfg.l0.storeDir), 'cursor.json'),
         lastWakePath: join(dirname(cfg.l0.storeDir), 'last-wake.json'),
+        // L1 监控目标 (发现层): 让 L2 知道"除了 facts 之外, 还有哪些 target 在盯着"
+        l1Targets: Object.keys(ALL_TARGETS).map(k => ({
+          target: k,
+          type: ALL_TARGETS[k].isScript ? 'script' : 'builtin',
+          name: ALL_TARGETS[k].name ?? k,
+          minIntervalMs: ALL_TARGETS[k].minIntervalMs ?? 0,
+        })),
         queryTips: [
           'list sources: ls <storeDir>/',
           'source disk: tail -1 <storeDir>/disk/{today}.jsonl',
@@ -346,7 +394,6 @@ function install(rt, ctx, cfg) {
       writeFileSync(join(cfg.l0.storeDir, 'manifest.json'), JSON.stringify({ updatedAt: Date.now(), storeDir: cfg.l0.storeDir, schema }, null, 2))
     } catch (e) { log(`manifest write fail: ${e.message}`) }
   }
-  writeManifest()
 
   // 每个脚本源按【自己的】intervalMs 节流 (来自 collectors/<name>.env.json)。
   // 注意: 这个字段以前只被存进 SCRIPT_SOURCES 却从未在采集循环里生效 ——
@@ -383,17 +430,25 @@ function install(rt, ctx, cfg) {
 
   // 脚本驱动的 collector: 运行 cmd, 解析 stdout 每行一个 JSON fact
   // 用 bash -c 执行, 并注入 IM 内部 CA 证书与完整 PATH (helper/内部 API 依赖, 否则 TLS 失败)
-  async function runScriptCollector(c, src) {
-    const baseEnv = {
+  // 脚本运行的公共环境: 统一目录 / 内部 CA / 完整 PATH / SemIf 打分脚本位置
+  // (GUI 子进程 PATH 可能精简, 不补会导致 helper / 内部 API 的 TLS 失败)
+  function scriptEnv(extra) {
+    const ca = join(process.env.HOME || '', '.ca_bundle.pem')
+    return {
       ...process.env,
-      LAYERED_HOME: cfg.l0.homeDir,   // 统一目录, 供脚本源定位状态文件等
+      LAYERED_HOME: cfg.l0.homeDir,
       PATH: `/usr/local/bin:/opt/homebrew/bin:/bin:/usr/bin:/sbin:/usr/sbin:${process.env.HOME}/.local/bin:${process.env.PATH ?? ''}`,
-      SSL_CERT_FILE: process.env.SSL_CERT_FILE || join(process.env.HOME || '', '.ca_bundle.pem'),
-      CURL_CA_BUNDLE: process.env.CURL_CA_BUNDLE || join(process.env.HOME || '', '.ca_bundle.pem'),
-      REQUESTS_CA_BUNDLE: process.env.REQUESTS_CA_BUNDLE || join(process.env.HOME || '', '.ca_bundle.pem'),
-      ...(c.env ?? {}),
+      SSL_CERT_FILE: process.env.SSL_CERT_FILE || ca,
+      CURL_CA_BUNDLE: process.env.CURL_CA_BUNDLE || ca,
+      REQUESTS_CA_BUNDLE: process.env.REQUESTS_CA_BUNDLE || ca,
+      // target 脚本要调 SemIf 时用它, 不必写死路径
+      LAYERED_SEMIF_RUN: join(cfg.semif.skillDir, 'scripts', 'run_score.sh'),
+      ...(extra ?? {}),
     }
-    const { stdout } = await execFileP('/bin/bash', [c.cmd], { timeout: (c.timeoutMs ?? 20_000), env: baseEnv })
+  }
+
+  async function runScriptCollector(c, src) {
+    const { stdout } = await execFileP('/bin/bash', [c.cmd], { timeout: (c.timeoutMs ?? 20_000), env: scriptEnv(c.env) })
     const rows = []
     for (const line of stdout.split('\n')) {
       const t = line.trim()
@@ -404,6 +459,126 @@ function install(rt, ctx, cfg) {
       } catch { /* 忽略非 JSON 行 */ }
     }
     return rows
+  }
+
+  // 跑子进程并把 input 写进 stdin —— 异步 execFile 不支持 input 选项, 所以用 spawn 自己接
+  function runWithStdin(cmd, args, input, { timeoutMs, env }) {
+    return new Promise((resolve, reject) => {
+      const child = spawn(cmd, args, { env })
+      let out = '', err = '', timedOut = false
+      const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL') }, timeoutMs)
+      child.stdout.on('data', d => { out += d })
+      child.stderr.on('data', d => { err += d })
+      child.on('error', e => { clearTimeout(timer); reject(e) })
+      child.on('close', code => {
+        clearTimeout(timer)
+        if (timedOut) return reject(new Error(`timeout after ${timeoutMs}ms`))
+        if (code !== 0) {
+          const tail = err.trim().split('\n').filter(Boolean).pop() ?? ''
+          return reject(new Error(`exit ${code}${tail ? `: ${tail}` : ''}`))
+        }
+        resolve({ stdout: out, stderr: err })
+      })
+      child.stdin.on('error', () => {})   // 脚本不读 stdin 时忽略 EPIPE
+      child.stdin.end(input)
+    })
+  }
+
+  // 脚本 target: 本轮新事实(JSONL)喂 stdin → 读回一行 JSON 决策; 无输出/无内容 = 本轮不唤醒
+  async function runScriptTarget(t, facts) {
+    const input = facts.length ? facts.map(f => JSON.stringify(f)).join('\n') + '\n' : ''
+    const { stdout } = await runWithStdin('/bin/bash', [t.cmd], input, {
+      timeoutMs: t.timeoutMs ?? 120_000,
+      env: scriptEnv({
+        // 用户画像: 内容类 target 组装 SemIf 决策 context 用 (由 profile patch 的 l1.profile 提供)
+        LAYERED_PROFILE: cfg.l1.profile ?? '',
+        LAYERED_TARGET: t.target,
+        ...(t.env ?? {}),
+      }),
+    })
+    for (const line of stdout.split('\n')) {
+      const s = line.trim()
+      if (!s) continue
+      let o; try { o = JSON.parse(s) } catch { continue }
+      if (!o || typeof o !== 'object') continue
+      if (o.wake === false) return null
+      const items = Array.isArray(o.items) ? o.items : []
+      const notice = typeof o.notice === 'string' && o.notice.trim() ? o.notice : null
+      if (!items.length && !notice) return null
+      return {
+        kind: 'script-target',
+        reason: typeof o.reason === 'string' ? o.reason : '脚本判定命中',
+        fingerprint: (o.fingerprint && typeof o.fingerprint === 'object') ? o.fingerprint : null,
+        header: typeof o.header === 'string' ? o.header : null,
+        items, notice,
+        scanned: Number.isFinite(o.scanned) ? o.scanned : 0,
+        rounds: 1,
+        carried: 0,
+      }
+    }
+    return null
+  }
+
+  // 脚本 target 的累积合并: items 按 id 去重、新一轮排在前面; 自由文本 notice 只能整段拼接
+  function mergeScriptDecisions(prev, next) {
+    const prevItems = prev?.items ?? []
+    const prevIds = new Set(prevItems.map(i => String(i?.id ?? '')).filter(Boolean))
+    const seen = new Set()
+    const items = [...(next?.items ?? []), ...prevItems].filter(it => {
+      const id = String(it?.id ?? '')
+      if (!id) return true
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+    const notices = [
+      ...(next?.notice ? [next.notice] : []),
+      ...(prev?.notices ?? []),
+      ...(prev?.notice ? [prev.notice] : []),
+    ]
+    if (!items.length && !notices.length) return null
+    return {
+      kind: 'script-target',
+      reason: next?.reason ?? prev?.reason ?? '脚本判定命中',
+      header: next?.header ?? prev?.header ?? null,
+      fingerprint: null,                       // 合并后交给 stateFingerprint 从 items 重新算
+      items, notices,
+      scanned: (prev?.scanned ?? 0) + (next?.scanned ?? 0),
+      rounds: (prev?.rounds ?? 0) + (next?.rounds ?? 0),   // next 为 null 时(空跑补发)不计轮次
+      carried: items.filter(it => prevIds.has(String(it?.id ?? ''))).length,
+    }
+  }
+
+  // 排版信封 —— 由插件负责, 脚本只出 items[].title/body。
+  // "其中 N 条为冷却期累积 / 跨 N 轮扫描" 这类信息来自插件跨轮统计, 脚本不可能知道。
+  function renderScriptTarget(displayName, ctx, extra) {
+    const items = ctx.items ?? []
+    const parts = [`[分层智能体·L1·${displayName}] ${items.length ? `${items.length} 条值得关注` : '需要关注'}`]
+    const meta = []
+    if (ctx.carried) meta.push(`其中 ${ctx.carried} 条为唤醒冷却期内累积`)
+    if ((ctx.rounds ?? 1) > 1) meta.push(`跨 ${ctx.rounds} 轮扫描`)
+    if (ctx.scanned) meta.push(`累计扫描 ${ctx.scanned} 条`)
+    if (meta.length) parts.push(meta.join(' · '))
+    if (ctx.header) parts.push(ctx.header)
+    if (items.length) {
+      parts.push('')
+      items.forEach((it, i) => {
+        const title = String(it?.title ?? '')
+        const body = String(it?.body ?? '')
+        if (title) parts.push(`${i + 1}. ${title}`)
+        if (body) parts.push(body.split('\n').map(l => (title ? `   ${l}` : l)).join('\n'))
+        parts.push('')
+      })
+    }
+    const notices = ctx.notices ?? []
+    notices.forEach((nt, i) => {
+      if (notices.length > 1) parts.push(`── 冷却期内累积的第 ${i + 1} 段 ──`)
+      parts.push(nt)
+      parts.push('')
+    })
+    if (extra) parts.push(extra)
+    parts.push(`请评估并决策是否需要处理。需要更多数据时, L0 数据源入口: ${cfg.l0.storeDir}/manifest.json`)
+    return parts.join('\n')
   }
 
   // ---------- L1: 增量读事实 (持久化游标 cursor.json, 跨重启不重读历史) ----------
@@ -558,91 +733,26 @@ function install(rt, ctx, cfg) {
         ].join('\n')
       },
     },
-
-    'feed-timeline': {
-      name: 'X 关注流',
-      // 该 target 的 SemIf 是【逐条】筛选, 在 collect 里一次性批量跑完;
-      // 所以 interim 在这里的含义是"collect 已判定命中", 直接进唤醒, 不再做第二次 SemIf
-      interim: (ctx) => !!ctx?.notable?.length,
-      interimReason: 'SemIf 逐条筛选命中',
-      // 唤醒硬上限 = 该源的采集间隔 ("每轮采集最多叫醒一次"):
-      //   比采集还勤没意义(根本没新数据), 比采集慢太多又会把窗口拖过头。
-      //   所以缺省不写死数字, 而是读 collector 的真实 intervalMs —— 改采集频率时这里自动跟随。
-      //   想覆盖就在 profile patch 里显式写 l1.xTimeline.minIntervalMs。
-      // 冷却期内命中的推文不会丢: 攒进 pending-wakes.json, 到点合并成一条摘要补发。
-      minIntervalMs: cfg.l1.xTimeline?.minIntervalMs ?? sourceIntervalMs('feed-timeline'),
-      // ① 收集器: 本轮新增推文 → 用户画像 + 推文正文组装 state → 批量 SemIf 逐条打分
-      collect: async (facts) => {
-        const cfgX = cfg.l1.xTimeline ?? {}
-        const maxN = cfgX.maxCandidates ?? 12
-        const threshold = cfgX.threshold ?? 0.8
-        // 只取本轮新增的 feed-timeline 事实; 排除推广/广告与空正文
-        const posts = facts.filter(f => f.source === 'feed-timeline' && f.raw &&
-          !f.raw.promoted && String(f.raw.text ?? '').trim())
-        if (!posts.length) return null
-        const candidates = posts.slice(-maxN)
-        const profile = cfg.l1.profile ?? ''
-        const rows = candidates.map((f, i) => ({
-          id: `p${i}`,
-          state: `${profile}\n\n推文作者: ${f.raw.handle ?? '?'} (${f.raw.name ?? ''})\n发布时间: ${f.raw.postedAt ?? '未知'}\n正文: ${f.raw.text}`,
-          question: X_FEED_QUESTION,
-          options: X_FEED_OPTIONS,
-        }))
-        const scores = await semifScoreBatch(rows)
-        const notable = candidates
-          .map((f, i) => ({ post: f.raw, ts: f.ts, pYes: scores.get(`p${i}`)?.pYes ?? 0 }))
-          .filter(x => x.pYes >= threshold)
-        log(`L1[feed-timeline]: 扫描 ${candidates.length} 条, SemIf 命中 ${notable.length} 条 (阈值 ${threshold})`)
-        if (!notable.length) return null
-        return { kind: 'feed-timeline', notable, scanned: candidates.length, carried: 0, threshold }
-      },
-      // 冷却期内攒下的命中项与新一轮合并: 按推文 id 去重、按时间倒序、带上限
-      mergeCtx: (prev, next) => {
-        const cap = cfg.l1.xTimeline?.maxPending ?? 20
-        const prevItems = prev?.notable ?? []
-        const prevIds = new Set(prevItems.map(i => String(i.post?.id ?? '')))
-        const seen = new Set()
-        const notable = [...prevItems, ...(next?.notable ?? [])]
-          .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))
-          .filter(it => {
-            const id = String(it.post?.id ?? '')
-            if (!id || seen.has(id)) return false
-            seen.add(id)
-            return true
-          })
-          .slice(0, cap)
-        if (!notable.length) return null
-        return {
-          kind: 'feed-timeline',
-          notable,
-          scanned: (prev?.scanned ?? 0) + (next?.scanned ?? 0),   // 累计真实扫描量
-          carried: notable.filter(it => prevIds.has(String(it.post?.id ?? ''))).length,
-          threshold: next?.threshold ?? prev?.threshold ?? 0.8,
-        }
-      },
-      // ④ 通知渲染: 自包含上下文, L2 无状态可决策; 末尾给 L0 入口供其自主回查
-      render: (ctx, extra) => {
-        const lines = [
-          `[分层智能体·L1·X 关注流] 检测到 ${ctx.notable.length} 条值得关注的新推文`,
-          ...(ctx.carried
-            ? [`其中 ${ctx.carried} 条为唤醒冷却期内累积 (累计扫描 ${ctx.scanned} 条), SemIf 阈值 ${ctx.threshold}`]
-            : [`本轮扫描 ${ctx.scanned} 条 (已排除推广), SemIf 阈值 ${ctx.threshold}`]),
-          '',
-        ]
-        ctx.notable.forEach((t, i) => {
-          const p = t.post
-          lines.push(`${i + 1}. ${p.handle ?? '?'} (${p.name ?? ''}) · ${p.postedAt ?? '时间未知'} · 相关度 ${t.pYes.toFixed(2)}`)
-          lines.push(`   ${String(p.text ?? '').slice(0, 300)}`)
-          if (p.url) lines.push(`   ${p.url}`)
-          lines.push(`   互动: 回复${p.replies ?? '?'} 转推${p.reposts ?? '?'} 赞${p.likes ?? '?'}`)
-          lines.push('')
-        })
-        if (extra) lines.push(extra)
-        lines.push(`请评估并决策是否需要处理。需要更多数据时, L0 数据源入口: ${cfg.l0.storeDir}/manifest.json (源: feed-timeline)`)
-        return lines.join('\n')
-      },
-    },
   }
+
+  // 脚本 target 适配器: 把 targets/<name>.sh 包装成与内置 target 同形的对象,
+  // 于是 decideOnce 的主循环一行都不用改 —— 去重/冷却/节流/累积/投递纪律全部复用。
+  const scriptTargetAdapters = Object.fromEntries(
+    Object.entries(SCRIPT_TARGETS).map(([key, t]) => [key, {
+      name: t.displayName ?? key,
+      isScript: true,
+      minIntervalMs: t.minIntervalMs === 'auto' ? sourceIntervalMs(key) : (t.minIntervalMs ?? 0),
+      collect: async (facts) => runScriptTarget(t, facts),
+      interim: (ctx) => !!ctx,
+      interimReason: (ctx) => ctx?.reason ?? '脚本判定命中',
+      mergeCtx: mergeScriptDecisions,
+      render: (ctx, extra) => renderScriptTarget(t.displayName ?? key, ctx, extra),
+    }]))
+  const ALL_TARGETS = { ...TARGETS, ...scriptTargetAdapters }
+  if (Object.keys(scriptTargetAdapters).length) log(`L1: script targets registered: [${Object.keys(scriptTargetAdapters).join(',')}]`)
+  // manifest 要列出 L1 监控目标, 所以延到这里再写 (ALL_TARGETS 此时才建好)
+  writeManifest()
+
 
   // 目标指纹 + 冷却去重 (跨 target 各自独立)
   // lastWake 记录上次唤醒的"状态指纹+时间", 同状态或冷却期内不重复唤醒 → L2 无状态可行
@@ -663,18 +773,21 @@ function install(rt, ctx, cfg) {
     try { writeFileSync(pendingPath, JSON.stringify(pendingWakes)) } catch (e) { log(`pending write fail: ${e.message}`) }
     return pendingWakes
   }
+  // 本轮/累积的条目数 —— 内置 target 用 notable[], 脚本 target 用 items[]
+  const ctxItemCount = (ctx) => ctx?.items?.length ?? ctx?.notable?.length ?? 0
+
   function stateFingerprint(targetKey, ctx) {
     if (targetKey === 'disk') {
       const c = ctx?.current
       if (!c) return null
       return { availBucket: Math.round((c.availableGB ?? 0) / 5), usedBucket: Math.round((c.usedPct ?? 0) / 5) }
     }
-    if (targetKey === 'feed-timeline') {
-      // 指纹 = 本次命中的推文 id 集合: 同一批不重复唤醒, 出现新推文才视为新内容
-      const ids = (ctx?.notable ?? []).map(t => String(t.post?.id ?? '')).filter(Boolean).sort()
-      return ids.length ? { ids } : null
-    }
-    return null
+    // 脚本 target: 优先用脚本自己给的 fingerprint; 没给就用 items 的 id 集合兜底 ——
+    // 指纹缺失会让 contentChanged 恒真, 变成每轮都唤醒, 所以兜底不能省
+    if (ctx?.fingerprint && typeof ctx.fingerprint === 'object') return ctx.fingerprint
+    const items = ctx?.items ?? ctx?.notable ?? []
+    const ids = items.map(x => String(x?.id ?? x?.post?.id ?? '')).filter(Boolean).sort()
+    return ids.length ? { ids } : null
   }
   function contentChanged(targetKey, fp) {
     const last = lastWake[targetKey]
@@ -690,9 +803,18 @@ function install(rt, ctx, cfg) {
     return true                                             // 同状态但超过冷却期 → 重新关注
   }
 
-  const activeTargets = Object.keys(TARGETS).filter(k => (cfg.l1.targets ?? ['disk']).includes(k))
+  const activeTargets = Object.keys(ALL_TARGETS).filter(k => (cfg.l1.targets ?? ['disk']).includes(k))
 
+  // 防重入: 脚本 target 可能要跑十几秒(要启浏览器、要调 SemIf), 一旦超过 l1.intervalMs,
+  // setInterval 会让两轮决策并发 —— 它们会读到同一批事实各判一次, 造成重复唤醒。
+  let deciding = false
   async function decideOnce() {
+    if (deciding) { log('L1: 上一轮决策尚未结束, 跳过本轮'); return }
+    deciding = true
+    try { return await decideOnceInner() } finally { deciding = false }
+  }
+
+  async function decideOnceInner() {
     // 测试钩子: wake-test 标记 → 强制唤醒 (端到端验证; 走真实 disk target.render 产出结构化通知)
     try {
       const marker = join(dirname(cfg.l0.storeDir), 'wake-test')
@@ -713,7 +835,7 @@ function install(rt, ctx, cfg) {
     if (facts.length) advanceCursor(nextSrc, nextFile, nextLine)
     if (!facts.length && !Object.keys(pendingWakes).length) return
     for (const targetKey of activeTargets) {
-      const target = TARGETS[targetKey]
+      const target = ALL_TARGETS[targetKey]
       try {
         const rateLimit = target.minIntervalMs ?? 0
         const limited = !!rateLimit && (Date.now() - (lastWake[targetKey]?.at ?? 0)) < rateLimit
@@ -730,17 +852,17 @@ function install(rt, ctx, cfg) {
         const pending = pendingWakes[targetKey]
         if (buffers && pending) {
           ctx = target.mergeCtx(pending, ctx)
-          if (ctx) log(`L1[${targetKey}]: 合并冷却期累积 (共 ${ctx.notable?.length ?? 0} 条, 其中 ${ctx.carried ?? 0} 条为累积)`)
+          if (ctx) log(`L1[${targetKey}]: 合并冷却期累积 (共 ${ctxItemCount(ctx)} 条, 其中 ${ctx.carried ?? 0} 条为累积)`)
         }
         if (!ctx) continue
 
         const fp = stateFingerprint(targetKey, ctx)
         // 硬规则先决 (target 专属); 部分 target(如 feed-timeline)把 SemIf 前置进 collect, 用 interimReason 说明
         if (target.interim?.(ctx)) {
-          const label = target.interimReason ?? '硬规则触发'
+          const label = (typeof target.interimReason === 'function' ? target.interimReason(ctx) : target.interimReason) ?? '硬规则触发'
           if (limited) {
             savePending(targetKey, ctx)
-            log(`L1[${targetKey}]: ${label} 但距上次唤醒不足 ${Math.round(rateLimit / 60000)} 分钟, 已攒 ${ctx.notable?.length ?? '?'} 条待下次合并`)
+            log(`L1[${targetKey}]: ${label} 但距上次唤醒不足 ${Math.round(rateLimit / 60000)} 分钟, 已攒 ${ctxItemCount(ctx)} 条待下次合并`)
             continue
           }
           if (contentChanged(targetKey, fp)) {

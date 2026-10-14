@@ -12,9 +12,11 @@
 | 2 | 把脚本放到 **统一目录** `~/.dsh/bot/layered-agent/collectors/` | 否 |
 | 3 | 在 `cordis.patch.yml` 的 `l0.sources` 里启用它 | 否（只改配置） |
 | 4 | （可选）写 `<name>.schema.json` 让该源在 manifest 里自描述 | 否 |
-| 5 | （可选）加 L1 target 让它参与决策唤醒 | 是（仅当要决策） |
+| 5 | （可选）写 L1 target 脚本放 `targets/`，在 `l1.targets` 启用 | 否 |
+| 6 | （极少）target 需要趋势计算/跨源关联时才写进插件 `TARGETS` | 是 |
 
 **核心原则**：加数据源 = 写脚本 + 配置启用，**不改插件核心代码**。
+L0 采集和 L1 判定**都是脚本驱动的**，两者同一套契约（自动发现、`.env.json`、env 注入、超时、失败隔离）。
 
 ## 2. Collector 契约（脚本必须遵守）
 
@@ -136,7 +138,51 @@ exit 0
 
 ## 6. 可选：参与 L1 决策（唤醒 L2）
 
-只采集供查询的源完全不用做这一步。要让源能唤醒 L2，在 `TARGETS` 注册表加一个 target：
+只采集供查询的源完全不用做这一步。
+
+### 6.1 脚本 target（推荐，与 collector 同构）
+
+把 `<targetsDir>/<name>.sh` 放好 + 配置 `l1.targets` 启用，**不用改插件代码**。
+
+职责分界 —— 这是本设计的关键，别混：
+
+| | 谁做 | 为什么 |
+|---|---|---|
+| **判定 + 条目内容** | **脚本** | 组装 context、调 SemIf、按阈值筛、产出 `items` |
+| **投递纪律** | **插件** | 指纹去重、冷却、`minIntervalMs` 节流、pending 累积合并、投递 |
+| **排版信封** | **插件** | 标题/编号/合并说明/L0 入口 —— `"其中 N 条为冷却期累积"` 来自插件跨轮统计，脚本不知道；且信封对所有 target 是同一套，复制进脚本必然漂移 |
+
+**契约**：stdin 收到本轮新事实（JSONL）；stdout 输出一行 JSON；无输出 = 本轮不唤醒；非 0 退出 = 记 `L1 <name> failed`。
+
+```json
+{ "wake": true,
+  "reason": "SemIf 逐条筛选命中 (阈值 0.8)",
+  "fingerprint": { "ids": ["2110377288923758975"] },
+  "scanned": 12,
+  "header": "可选：target 专属副标题",
+  "items": [ { "id": "2110377288923758975",
+               "title": "@someone · 08:56 · 相关度 0.94",
+               "body": "正文…\nhttps://x.com/...\n互动: …" } ] }
+```
+
+- **`items[].id` 是合并去重的依据** —— 没有它，插件无法跨轮去重，同样的内容会被重复列出
+- `items` 按你希望的展示顺序排；合并时**新一轮的 items 排在前面**
+- 想全权排版可以改输出 `{"notice": "整段文本"}`：插件原样投递，但**冷却期累积时只能把多段粗暴拼起来**
+  （自由文本没法跨轮去重）。要结构化合并就得用 `items`。
+- 脚本不必自己判重、不必输出标题栏/编号/L0 入口 —— 那些是插件的事
+
+插件注入的环境：`LAYERED_HOME`、`LAYERED_PROFILE`（用户画像）、`LAYERED_SEMIF_RUN`（SemIf 打分脚本路径，
+**别写死路径**）、`LAYERED_TARGET`、IM 内部 CA、完整 PATH。
+
+`<name>.env.json`（可选，与 collector 同规则）：`{ "displayName": "X 关注流", "timeoutMs": 180000,
+"minIntervalMs": "auto", "env": { "LAYERED_X_THRESHOLD": "0.9" } }`
+
+- `minIntervalMs: "auto"` = 跟随同名采集源的采集间隔（每轮采集最多叫醒一次）；缺省即 auto（若存在同名源）
+- **防重入**：脚本跑得比 `l1.intervalMs` 还久时，插件会跳过本轮而不是并发跑两轮（并发会读到同一批事实重复唤醒）
+
+### 6.2 内置 target（`TARGETS` 注册表，需要计算逻辑时）
+
+像 `disk` 那样要做趋势计算、跨源关联的，才写进插件的 `TARGETS`：
 
 ```js
 'mysource': {
@@ -152,9 +198,14 @@ exit 0
 
 ### 六个必须遵守的点
 
+> 第 1、2、4 条针对**内置 target**（`TARGETS` 注册表）。脚本 target 由插件统一处理指纹兜底、
+> 闸门与合并，脚本只要把 `items[].id` 填对即可 —— 但第 3、5、6 条对两者都成立。
+
 1. **`stateFingerprint` 必须为新 target 补一条分支**。框架里只有 `disk` 有指纹；
    新 target 若不补，`fp` 恒为 `null` → `contentChanged()` 恒返回 true → **每轮都唤醒**，直接刷屏。
    文本/内容类源的指纹取「本次命中条目的 id 集合」。
+   （脚本 target 有兜底：脚本给的 `fingerprint` → 否则从 `items[].id` 推。**但如果 `items` 里没有 id，
+   兜底同样失效**，所以 id 不能省。）
 2. **内容源要设唤醒硬上限 `minIntervalMs`**：值得看的消息可能每轮都有，但人不能被每 15 分钟
    打断一次。**缺省值应跟随该源的采集间隔**（用框架的 `sourceIntervalMs('<source>')` 读
    `<name>.env.json` 的 `intervalMs`），而不是写死一个数字 —— 每轮采集最多叫醒一次，
@@ -174,11 +225,12 @@ exit 0
    - **收紧判据比调高阈值更容易把 target 压死**。要改的是措辞，不是阈值
    - 加用户画像（`l1.profile`）效果显著：同一条推文从 0.978 掉到 0.130，
      所以画像里的措辞直接决定灵敏度，别写得太窄（写成"只关心雇主相关"就永不触发了）
-4. **逐条筛选要用批量 SemIf**（`semifScoreBatch`）：一次进程只加载一次模型给 N 条打分，
-   比 N 次单调用快得多。跑完把结果放进 `ctx`，用 `interim: ctx => !!ctx.notable?.length`
-   + `interimReason: '...'` 直接进唤醒，**不要再让框架跑第二次 SemIf**。
-5. **通知要自包含**：L2 无状态，`render` 必须把判定依据、条目原文、链接、触发原因
-   和 L0 入口（`manifest.json`）都写进去。
+4. **逐条筛选要用批量 SemIf**：一次进程只加载一次模型给 N 条打分，比 N 次单调用快得多。
+   - 内置 target：用框架的 `semifScoreBatch(rows)`
+   - 脚本 target：直接把 N 行写进 `$LAYERED_SEMIF_RUN --input` 的输入文件（见 `targets/feed-timeline.sh`）
+   跑完不要**再**让框架跑第二次 SemIf（内置 target 用 `interim` + `interimReason` 直接进唤醒）。
+5. **通知要自包含**：L2 无状态，通知必须带判定依据、条目原文、链接、触发原因
+   和 L0 入口（`manifest.json`）。信封部分插件会自动补，条目内容归脚本。
 6. **攒了就必须发得出去**。`decideOnce` 在**没有新事实**时也要继续跑 —— 否则「冷却期内攒了，
    但之后一直没新数据」的 pending 会永远躺在文件里发不出去。框架已按
    `facts 为空 && pending 为空` 才提前返回处理；自己加 target 时不要在开头无脑 `return`。
@@ -211,4 +263,5 @@ exit 0
 | `collectors/net.sh` | 用系统命令采集、带 meta |
 | `collectors/mail.sh` | 有状态（seen 去重）+ 内部 API + 独立 env |
 | `collectors/feed-timeline.sh` | 浏览器登录态采集 + 时间线稳定性 + 虚拟列表两段式快照 + timeoutMs 放宽 |
+| `targets/feed-timeline.sh` | L1 target 脚本：stdin 收事实 → 批量 SemIf 逐条筛 → 输出 items 决策 |
 | `tools/x-export-state.sh` | 从本机 Chrome 导出站点登录态（Chrome 136+ 禁默认 profile 调试的绕法） |
