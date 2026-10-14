@@ -572,13 +572,39 @@ function install(rt, ctx, cfg) {
           .filter(x => x.pYes >= threshold)
         log(`L1[feed-timeline]: 扫描 ${candidates.length} 条, SemIf 命中 ${notable.length} 条 (阈值 ${threshold})`)
         if (!notable.length) return null
-        return { kind: 'feed-timeline', notable, scanned: candidates.length, threshold }
+        return { kind: 'feed-timeline', notable, scanned: candidates.length, carried: 0, threshold }
+      },
+      // 冷却期内攒下的命中项与新一轮合并: 按推文 id 去重、按时间倒序、带上限
+      mergeCtx: (prev, next) => {
+        const cap = cfg.l1.xTimeline?.maxPending ?? 20
+        const prevItems = prev?.notable ?? []
+        const prevIds = new Set(prevItems.map(i => String(i.post?.id ?? '')))
+        const seen = new Set()
+        const notable = [...prevItems, ...(next?.notable ?? [])]
+          .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))
+          .filter(it => {
+            const id = String(it.post?.id ?? '')
+            if (!id || seen.has(id)) return false
+            seen.add(id)
+            return true
+          })
+          .slice(0, cap)
+        if (!notable.length) return null
+        return {
+          kind: 'feed-timeline',
+          notable,
+          scanned: (prev?.scanned ?? 0) + (next?.scanned ?? 0),   // 累计真实扫描量
+          carried: notable.filter(it => prevIds.has(String(it.post?.id ?? ''))).length,
+          threshold: next?.threshold ?? prev?.threshold ?? 0.8,
+        }
       },
       // ④ 通知渲染: 自包含上下文, L2 无状态可决策; 末尾给 L0 入口供其自主回查
       render: (ctx, extra) => {
         const lines = [
           `[分层智能体·L1·X 关注流] 检测到 ${ctx.notable.length} 条值得关注的新推文`,
-          `本轮扫描 ${ctx.scanned} 条 (已排除推广), SemIf 阈值 ${ctx.threshold}`,
+          ...(ctx.carried
+            ? [`其中 ${ctx.carried} 条为唤醒冷却期内累积 (累计扫描 ${ctx.scanned} 条), SemIf 阈值 ${ctx.threshold}`]
+            : [`本轮扫描 ${ctx.scanned} 条 (已排除推广), SemIf 阈值 ${ctx.threshold}`]),
           '',
         ]
         ctx.notable.forEach((t, i) => {
@@ -602,6 +628,19 @@ function install(rt, ctx, cfg) {
   let lastWake = {}
   try { if (existsSync(lastWakePath)) lastWake = JSON.parse(readFileSync(lastWakePath, 'utf8')) ?? {} } catch (e) { log(`last-wake read fail: ${e.message}`) }
   function saveLastWake(w) { lastWake = w; try { writeFileSync(lastWakePath, JSON.stringify(w)) } catch (e) { log(`last-wake write fail: ${e.message}`) } }
+
+  // 冷却期攒下的待唤醒内容 (只有声明了 mergeCtx 的 target 会用到):
+  // 硬上限生效的那几轮不能白扫 —— 把筛出的条目攒下来, 到点合并成一条摘要发出, 避免漏报。
+  // 注意: 必须持久化, 且 decideOnce 在没有新事实时也要跑 (否则"攒了但之后没新数据"就永远发不出去)。
+  const pendingPath = join(dirname(cfg.l0.storeDir), 'pending-wakes.json')
+  let pendingWakes = {}
+  try { if (existsSync(pendingPath)) pendingWakes = JSON.parse(readFileSync(pendingPath, 'utf8')) ?? {} } catch (e) { log(`pending read fail: ${e.message}`) }
+  function savePending(targetKey, ctx) {
+    if (ctx) pendingWakes = { ...pendingWakes, [targetKey]: ctx }
+    else { const rest = { ...pendingWakes }; delete rest[targetKey]; pendingWakes = rest }
+    try { writeFileSync(pendingPath, JSON.stringify(pendingWakes)) } catch (e) { log(`pending write fail: ${e.message}`) }
+    return pendingWakes
+  }
   function stateFingerprint(targetKey, ctx) {
     if (targetKey === 'disk') {
       const c = ctx?.current
@@ -648,34 +687,54 @@ function install(rt, ctx, cfg) {
       }
     } catch (e) { log(`TEST-WAKE error: ${e.message}`) }
     const { facts, nextSrc, nextFile, nextLine } = readNewFacts()
-    if (!facts.length) return
-    // 无论要不要唤醒, 都推进游标 (已消费这些事实)
-    advanceCursor(nextSrc, nextFile, nextLine)
+    // 没有新事实时不能直接 return: 冷却期内攒下的 pending 需要在这里【到点补发】
+    if (facts.length) advanceCursor(nextSrc, nextFile, nextLine)
+    if (!facts.length && !Object.keys(pendingWakes).length) return
     for (const targetKey of activeTargets) {
       const target = TARGETS[targetKey]
       try {
-        // 唤醒硬上限 (内容类源): 放在 collect 之前, 被限流的那轮连 SemIf 都不用跑
         const rateLimit = target.minIntervalMs ?? 0
-        if (rateLimit && Date.now() - (lastWake[targetKey]?.at ?? 0) < rateLimit) {
+        const limited = !!rateLimit && (Date.now() - (lastWake[targetKey]?.at ?? 0)) < rateLimit
+        const buffers = typeof target.mergeCtx === 'function'
+
+        // 不支持累积的 target: 冷却期内直接短路, 连 collect 都不跑
+        if (limited && !buffers) {
           log(`L1[${targetKey}]: 距上次唤醒不足 ${Math.round(rateLimit / 60000)} 分钟, 本轮跳过`)
           continue
         }
-        const ctx = await target.collect(facts)
+
+        // 支持累积的 target: 冷却期内照常筛选, 命中项攒进 pending 等下次合并发出 (不漏报)
+        let ctx = facts.length ? await target.collect(facts) : null
+        const pending = pendingWakes[targetKey]
+        if (buffers && pending) {
+          ctx = target.mergeCtx(pending, ctx)
+          if (ctx) log(`L1[${targetKey}]: 合并冷却期累积 (共 ${ctx.notable?.length ?? 0} 条, 其中 ${ctx.carried ?? 0} 条为累积)`)
+        }
         if (!ctx) continue
+
         const fp = stateFingerprint(targetKey, ctx)
         // 硬规则先决 (target 专属); 部分 target(如 feed-timeline)把 SemIf 前置进 collect, 用 interimReason 说明
         if (target.interim?.(ctx)) {
           const label = target.interimReason ?? '硬规则触发'
+          if (limited) {
+            savePending(targetKey, ctx)
+            log(`L1[${targetKey}]: ${label} 但距上次唤醒不足 ${Math.round(rateLimit / 60000)} 分钟, 已攒 ${ctx.notable?.length ?? '?'} 条待下次合并`)
+            continue
+          }
           if (contentChanged(targetKey, fp)) {
             log(`L1[${targetKey}]: ${label}`)
             await wakeL2(target.render(ctx, `(${label})`))
             saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: label } })
+            if (pending) savePending(targetKey, null)
           } else {
-            log(`L1[${targetKey}]: ${label} 但状态冷却中, 跳过重复唤醒`)
+            log(`L1[${targetKey}]: ${label} 但内容与上次唤醒相同且未过冷却期, 跳过重复唤醒`)
+            // 内容与上次唤醒完全重合 → pending 已无新信息, 清掉避免无限累积
+            if (pending) savePending(targetKey, null)
           }
           continue
         }
-        // SemIf 边界 (target 专属 question)
+        // SemIf 边界 (target 专属 question) —— 走到这里说明该 target 没有在 collect 里前置判定
+        if (limited) { log(`L1[${targetKey}]: 冷却中, 跳过 SemIf 边界判定`); continue }
         const state = {
           since: facts[0]?.ts ?? Date.now(),
           count: facts.length,

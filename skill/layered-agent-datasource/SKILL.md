@@ -81,7 +81,9 @@ exit 0
 在 `TARGETS` 注册表加 target（collect/interim/semif/render），再配 `l1.targets` 启用。三条最常翻车的：
 
 1. **必须给 `stateFingerprint` 补该 target 的分支**。不补 → 指纹恒为 null → **每轮都唤醒**（刷屏）。
-2. **内容类源必须设 `minIntervalMs`**（唤醒硬上限，放在 collect 前判断，被限流那轮连 SemIf 都不跑）。
+2. **内容类源必须设 `minIntervalMs`**（唤醒硬上限）。冷却期内命中项**会漏报**，所以要再声明
+   `mergeCtx(prev, next)` 把它们攒进 `pending-wakes.json`，冷却期一到合并成一条摘要发出。
+   注意：攒了就必须发得出去 —— `decideOnce` 在**没有新事实时也要继续跑**，否则 pending 会永远躺在文件里。
 3. **SemIf 判据必须拿真实历史 facts 校准**，别拍脑袋：逐条拼 `{id,state,question,options}` 批量跑
    `run_score.sh` 看 p(yes) 分布。实测 4B 模型下「收紧判据」比「调高阈值」更容易把 target 压死到
    永不触发；加用户画像（`l1.profile`）会显著改变灵敏度。
