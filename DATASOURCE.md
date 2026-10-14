@@ -1,8 +1,8 @@
 # 添加数据源规则（DATASOURCE 契约）
 
-> 本文档是 `ds-bot-layered-agent` 插件的官方规则，随代码版本走。
-> Bot（L2/Chief）在「添加数据源」任务触发时，通过同名 skill 自动加载本文档。
-> 以 `~/SourceCode/ds-bot-layered-agent/` 代码为唯一事实来源。
+> 本文档是 `ds-bot-layered-agent` 插件的官方规则，随代码版本走（Git 管理）。
+> Bot（L2/Chief）在「添加数据源」任务触发时，通过同名 skill 自动加载。
+> 本机路径不在文档中写死：统一目录用环境变量 `LAYERED_HOME`（默认 `$HOME/.dsh/bot/layered-agent/`）；插件安装目录可由 `npm ls ds-bot-layered-agent` 或运行报错路径定位。
 
 ## 1. 规则速览
 
