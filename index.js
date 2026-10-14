@@ -119,7 +119,7 @@ function install(rt, ctx, cfg) {
       await svc.create(sessionId, {
         title: `分层智能体唤醒-${Date.now()}`,
         prompt,
-        after: { seconds: 0 }, // 立即 (DSH 支持 after)
+        after_seconds: 1, // 与宿主 schedule_create 实测可用的格式一致 (DSH kind=after)
       })
       log(`L2: woken "${targetName}" (${sessionId}) via schedule`)
     } catch (e) {
@@ -226,6 +226,11 @@ function install(rt, ctx, cfg) {
 
   // ---------- L1: 决策 ----------
   async function decideOnce() {
+    // 测试钩子: 存在 ~/.dsh/bot/wake-test 标记时, 强制真实触发一次 L2 唤醒 (端到端验证用)
+    try {
+      const marker = join(dirname(cfg.l0.storeDir), 'wake-test')
+      if (existsSync(marker)) { unlinkSync(marker); log('L1: TEST-WAKE marker → forcing wakeL2'); await wakeL2('端到端投递测试 (wake-test 标记触发)'); return }
+    } catch {}
     const facts = readNewFacts()
     if (!facts.length) return
     const disk = facts.filter(f => f.source === 'disk').slice(-1)[0]?.raw
