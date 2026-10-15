@@ -14,6 +14,11 @@ LLMs are a bad fit for polling. Waking one every five minutes to ask "anything n
 
 dsh-reflex **moves the judgement down to where it is cheap**. The cheap layers run continuously (collecting facts, scoring them with a local decision model); the expensive layer is woken only when something crosses a threshold. Hence "reflex": a decision made without the brain.
 
+![dsh-reflex: the two cheap layers always run; the expensive one is woken only when needed](docs/layers.en.png)
+
+<details>
+<summary>Plain-text version (same diagram, terminal-friendly)</summary>
+
 ```
                ┌─── always running, nearly free ───┐   ┌─ only when needed ─┐
   sources  ──►   L0 fact layer  ──►  L1 decision layer  ──►  L2 reasoning layer
@@ -21,6 +26,8 @@ dsh-reflex **moves the judgement down to where it is cheap**. The cheap layers r
                                             │
                                             └─ most of the time: do nothing, stay quiet
 ```
+
+</details>
 
 ## What each layer does
 
@@ -31,6 +38,12 @@ dsh-reflex **moves the judgement down to where it is cheap**. The cheap layers r
 | **L2** | Decide whether to interrupt a human, and how | High | Wakes a Bot inside ds-bot |
 
 **Why the split**: deciding whether to interrupt a human is genuinely an LLM's job — it just shouldn't happen after every single collection cycle. L1 filters first with a local decision model ([SemIf](https://github.com/TheoLeeCJ/SemIf) reads answer-slot logits, ~0.3 s, no network) and keeps 99% of the "not worth it" away from L2.
+
+## What a wake-up looks like
+
+When L1 fires, what reaches L2 is a structured notice (field names come from a real built-in target's renderer). Whether to interrupt a human — and how — is L2's call:
+
+![L1 decides, L2 acts](docs/wake.en.png)
 
 ## Relationship to ds-bot
 

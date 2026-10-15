@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" font-family="Hiragino Sans GB, Helvetica Neue, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+
+  <!-- 页眉 -->
+  <text x="60" y="62" font-size="22" font-weight="bold" fill="#e6edf3">dsh-reflex</text>
+  <text x="216" y="62" font-size="16" fill="#6e7681">L1 判定 → L2 动手</text>
+  <rect x="1046" y="42" width="94" height="26" rx="13" fill="none" stroke="#30363d"/>
+  <text x="1093" y="60" font-size="14" fill="#6e7681" text-anchor="middle">示意</text>
+
+  <!-- 卡片1: L1 通知 -->
+  <rect x="60" y="96" width="1080" height="300" rx="14" fill="#161b22" stroke="#30363d"/>
+  <rect x="60" y="96" width="5" height="300" rx="2.5" fill="#58a6ff"/>
+  <text x="92" y="134" font-size="17" font-weight="bold" fill="#58a6ff">分层智能体 · L1 · 磁盘存储</text>
+  <text x="1108" y="134" font-size="15" fill="#6e7681" text-anchor="end">00:12</text>
+  <line x1="92" y1="150" x2="1108" y2="150" stroke="#21262d"/>
+
+  <text x="92" y="182" font-size="16" fill="#e6edf3">检测到需关注事件</text>
+
+  <text x="92" y="218" font-size="15" fill="#8b949e">状态</text>
+  <text x="176" y="218" font-size="15" fill="#c9d1d9">可用 11.8GB / 已用 448GB (97%) / 总量 460GB</text>
+
+  <text x="92" y="248" font-size="15" fill="#8b949e">趋势</text>
+  <text x="176" y="248" font-size="15" fill="#c9d1d9">120 条采样内 Δ-38.4GB</text>
+
+  <text x="92" y="278" font-size="15" fill="#8b949e">swap</text>
+  <text x="176" y="278" font-size="15" fill="#c9d1d9">已用 21.0GB / 占用磁盘 21.0GB / 20 个 swapfile</text>
+
+  <text x="92" y="308" font-size="15" fill="#8b949e">判读</text>
+  <text x="176" y="308" font-size="15" fill="#c9d1d9">窗口内可用减少 38.4GB，其中 18.2GB 来自 swap 增长</text>
+
+  <text x="92" y="338" font-size="15" fill="#8b949e">阈值</text>
+  <text x="176" y="338" font-size="15" fill="#c9d1d9">可用 &lt; 20GB 或 使用率 &gt; 90%</text>
+
+  <text x="92" y="366" font-size="14" fill="#d29922">(硬规则触发 · 穿透安静时段)</text>
+
+  <!-- 卡片2: L2 动作 -->
+  <rect x="60" y="420" width="1080" height="164" rx="14" fill="#161b22" stroke="#30363d"/>
+  <rect x="60" y="420" width="5" height="164" rx="2.5" fill="#3fb950"/>
+  <text x="92" y="458" font-size="17" font-weight="bold" fill="#3fb950">Chief</text>
+  <text x="156" y="458" font-size="14" fill="#6e7681">L2</text>
+  <text x="1108" y="458" font-size="15" fill="#6e7681" text-anchor="end">00:13</text>
+  <line x1="92" y1="474" x2="1108" y2="474" stroke="#21262d"/>
+
+  <text x="92" y="506" font-size="15" fill="#c9d1d9">磁盘 97% 了。其中 18.2GB 是 swap 涨到 21GB 造成的 —— 不是你的文件在长。</text>
+  <text x="92" y="534" font-size="15" fill="#c9d1d9">已清 DerivedData 和两个旧模拟器镜像，回收 24GB；swap 要重启才收得回，先不动。</text>
+  <text x="92" y="562" font-size="15" fill="#7ee787">现在可用 36GB。</text>
+
+  <!-- 页脚 -->
+  <text x="60" y="632" font-size="17" fill="#8b949e">从 L1 判定到 L2 动手 —— 中间没有人被叫醒</text>
+  <text x="1140" y="632" font-size="16" fill="#6e7681" text-anchor="end">github.com/onesmash/dsh-reflex</text>
+</svg>
