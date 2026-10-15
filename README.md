@@ -39,19 +39,18 @@ dsh-reflex 的做法是**把判断上移到便宜的地方**：便宜的层一�
 ## 安装
 
 ```bash
-# 1. 拿到插件
-git clone https://github.com/onesmash/dsh-reflex.git
-cd dsh-reflex && pnpm install     # 依赖必须装在这里(见下方说明)
-
-# 2. 装进你的 DSH profile (以 desktop 为例)
-cd ~/.dsh/profiles/desktop
-#    在 package.json 的 dependencies 加:
-#      "dsh-reflex": "link:/绝对路径/dsh-reflex"
-#    并把它加进 dsh.profile.bundles 数组
-pnpm install
+dsh plugin --profile <你的 profile> add github:onesmash/dsh-reflex
 ```
 
-> **为什么依赖必须装在仓库里**：profile 用 `link:` 指向插件源码（而不是拷贝），Node 按**仓库真实路径**解析依赖，所以 `pnpm install` 要在仓库目录跑一次。
+`dsh plugin` 把参数转发给 profile 目录里的 pnpm：它拉取并安装这个包，并因为本包在
+`package.json` 里声明了 `dsh.bundle`，同时把 `dsh-reflex` 追加进该 profile 的
+`dsh.profile.bundles`。依赖随包一起装在 profile 里，不需要额外步骤。
+
+不启动、先验证层已生效：
+
+```bash
+dsh --profile <你的 profile> --dump-config    # 应出现 "# == dsh-reflex"
+```
 
 然后在同一个 profile 的 `cordis.patch.yml` 里给插件留配置块：
 
@@ -71,6 +70,23 @@ pnpm install
 ```
 dsh-reflex installed: L0=60000ms L1=60000ms target="Chief" sources=[disk,swap]
 ```
+
+### 本地开发：指向你的 checkout
+
+改这个插件本身时，用**路径**安装 —— pnpm 会建符号链接，改动直接随源码走：
+
+```bash
+dsh plugin --profile <你的 profile> add /绝对路径/dsh-reflex
+```
+
+**这种方式下依赖要装在 checkout 里**：linked 安装保留自己的 `node_modules`，
+Node 按仓库真实路径解析依赖，所以要单独跑一次：
+
+```bash
+cd /绝对路径/dsh-reflex && pnpm install
+```
+
+（从 GitHub 安装没有这个问题 —— 包和依赖一起装进 profile。）
 
 ## 配置
 
