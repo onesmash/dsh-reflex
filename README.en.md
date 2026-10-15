@@ -12,12 +12,12 @@ A sibling plugin for DSH (DeepSeek Harness). It runs alongside ds-bot and **modi
 
 LLMs are a bad fit for polling. Waking one every five minutes to ask "anything new?" wastes money and quota on a question whose answer is almost always "no" — and each round still has to chew through its context.
 
-dsh-reflex **moves the judgement down to where it is cheap**. The cheap layers run continuously (collecting facts, scoring them with a small local model); the expensive layer is woken only when something crosses a threshold. Hence "reflex": a decision made without the brain.
+dsh-reflex **moves the judgement down to where it is cheap**. The cheap layers run continuously (collecting facts, scoring them with a local decision model); the expensive layer is woken only when something crosses a threshold. Hence "reflex": a decision made without the brain.
 
 ```
                ┌─── always running, nearly free ───┐   ┌─ only when needed ─┐
   sources  ──►   L0 fact layer  ──►  L1 decision layer  ──►  L2 reasoning layer
-  (scripts)      (append-only store)  (small local model)      (ds-bot / LLM)
+  (scripts)      (append-only store)  (local decision model)   (ds-bot / LLM)
                                             │
                                             └─ most of the time: do nothing, stay quiet
 ```
@@ -27,10 +27,10 @@ dsh-reflex **moves the judgement down to where it is cheap**. The cheap layers r
 | Layer | Responsibility | Cost | How |
 |---|---|---|---|
 | **L0** | Collect facts into a traceable timeline | Very low | Script-driven; auto-discovers `collectors/*.sh` |
-| **L1** | Decide whether something deserves L2's attention | Very low (local model, one forward pass) | Script-driven; auto-discovers `targets/*.sh` |
+| **L1** | Decide whether something deserves L2's attention | Very low (local decision model, one forward pass) | Script-driven; auto-discovers `targets/*.sh` |
 | **L2** | Decide whether to interrupt a human, and how | High | Wakes a Bot inside ds-bot |
 
-**Why the split**: deciding whether to interrupt a human is genuinely an LLM's job — it just shouldn't happen after every single collection cycle. L1 filters first with a small local model ([SemIf](https://github.com/TheoLeeCJ/SemIf) reads answer-slot logits, ~0.3 s, no network) and keeps 99% of the "not worth it" away from L2.
+**Why the split**: deciding whether to interrupt a human is genuinely an LLM's job — it just shouldn't happen after every single collection cycle. L1 filters first with a local decision model ([SemIf](https://github.com/TheoLeeCJ/SemIf) reads answer-slot logits, ~0.3 s, no network) and keeps 99% of the "not worth it" away from L2.
 
 ## Relationship to ds-bot
 
