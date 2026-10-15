@@ -4,6 +4,7 @@ window.__ModuleLoader__.load({
 		var module = { exports: {} };
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+		const react = require("react");
 		const react_jsx_runtime = require("react/jsx-runtime");
 		const ui = require("@deepseek-ai/dsh-client-ui-primitives");
 
@@ -26,7 +27,8 @@ window.__ModuleLoader__.load({
 			unavailable: "插件未加载，暂时无法配置。",
 			save: "保存",
 			saving: "保存中…",
-			saveFailed: "保存失败，已保留你的输入。"
+			saveFailed: "保存失败，已保留你的输入。",
+			saveError: "保存被拒绝的原因："
 		};
 
 		const en = {
@@ -45,7 +47,8 @@ window.__ModuleLoader__.load({
 			unavailable: "This plugin is not loaded, so it cannot be configured right now.",
 			save: "Save",
 			saving: "Saving…",
-			saveFailed: "The deployment did not accept these values; they were left for you to correct."
+			saveFailed: "The deployment did not accept these values; they were left for you to correct.",
+			saveError: "Why the save was refused:"
 		};
 
 		function formLabels(t) {
@@ -99,6 +102,21 @@ window.__ModuleLoader__.load({
 		function Card(props) {
 			const { t } = props;
 			const state = props.useCard((snapshot) => snapshot);
+			// 保存失败时把【真实原因】显出来。
+			// 为什么需要: 上游 SettingsFormModel 的 save() 是
+			//   try { ... } catch (_error) { this.failed = true }
+			// —— 异常被丢弃, 只留一个布尔, 界面只显示一句笼统的"保存失败"。
+			// 在 desktop 版里没有开发者工具可以看, 于是失败原因完全不可达。
+			// 这里包一层把 message 抓出来渲染, 否则只能靠猜。
+			const [saveError, setSaveError] = react.useState("");
+			const save = async () => {
+				setSaveError("");
+				try {
+					await props.save();
+				} catch (error) {
+					setSaveError(error && error.message ? error.message : String(error));
+				}
+			};
 			if (props.view === "summary") return t("description");
 			const disabled = !state.writable;
 			const text = (id, key, label, hint) =>
@@ -116,12 +134,16 @@ window.__ModuleLoader__.load({
 			return (0, react_jsx_runtime.jsxs)(ui.SettingsForm, {
 				labels: formLabels(t),
 				state,
-				onSave: props.save,
+				onSave: save,
 				onDiscard: props.discard,
 				children: [
 					text("layered-decide-backend", "backend", t("backend"), t("backendHint")),
 					text("layered-decide-baseurl", "jevBaseUrl", t("jevBaseUrl"), t("jevBaseUrlHint")),
 					text("layered-decide-model", "jevModel", t("jevModel"), t("jevModelHint")),
+					saveError
+						? (0, react_jsx_runtime.jsx)("p", { style: { color: "#c0392b", whiteSpace: "pre-wrap" },
+							children: t("saveError") + "\n" + saveError })
+						: null,
 					(0, react_jsx_runtime.jsx)("p", { children: t("keyNote") })
 				]
 			});

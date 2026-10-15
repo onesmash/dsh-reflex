@@ -46,11 +46,12 @@ check(`exports["./client"] -> ${clientRel}`, existsSync(clientAbs), existsSync(c
 console.log('\n=== 3. bundle 可加载且导出齐全 ===')
 let loaded = null
 globalThis.window = { __ModuleLoader__: { load: (def) => { loaded = def } } }
-const knownDeps = new Set(['react/jsx-runtime', '@deepseek-ai/dsh-client-ui-primitives'])
+const knownDeps = new Set(['react', 'react/jsx-runtime', '@deepseek-ai/dsh-client-ui-primitives'])
 const missingDeps = []
 const fakeRequire = (name) => {
   if (!knownDeps.has(name)) missingDeps.push(name)
   if (name === 'react/jsx-runtime') return { jsx: () => ({}), jsxs: () => ({}) }
+  if (name === 'react') return { useState: () => ['', () => {}] }
   return {
     SettingsFormModel: class { constructor() {} bind() { return {} } field() { return {} } shell() { return {} } actions() { return {} } dispose() {} },
     SettingsForm: () => ({}), SettingsValueField: () => ({}),
@@ -66,7 +67,7 @@ try {
     check('导出 apply 函数', typeof mod.apply === 'function')
     check('导出 inject 数组', Array.isArray(mod.inject), JSON.stringify(mod.inject))
     check('导出 NS', typeof mod.NS === 'string' && mod.NS.length > 0, mod.NS)
-    check('依赖集合与官方一致', missingDeps.length === 0, missingDeps.length ? '出现了未知依赖: ' + missingDeps.join(', ') : '只用 react/jsx-runtime 与 ui-primitives')
+    check('依赖集合与官方一致', missingDeps.length === 0, missingDeps.length ? '出现了未知依赖: ' + missingDeps.join(', ') : '依赖集合与官方一致')
   }
 } catch (e) {
   check('bundle 可加载', false, e.message)
