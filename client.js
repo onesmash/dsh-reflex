@@ -91,6 +91,8 @@ window.__ModuleLoader__.load({
 				this.ctx = ctx;
 				this.credential = { ref: "", configured: false, writable: true };
 				this.form = new ui.SettingsFormModel(scope, [
+					// ⚠️ 字段名就是【配置根下的路径】, 必须与宿主 Config schema 的顶层键一致。
+					//    嵌套(decide.backend)会让表单写出 path:["backend"] 而校验失败。
 					ui.settingsTextField("backend"),
 					ui.settingsTextField("jevBaseUrl"),
 					ui.settingsTextField("jevModel")

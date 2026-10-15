@@ -21,15 +21,18 @@ const execFileP = promisify(execFile)
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // ---------- 配置 (可通过 profile patch 覆盖: layered-agent: {...}) ----------
+/** DSH 主目录。原先各处内联重复了三遍, 这里统一 —— 也是默认凭据文件位置的基准。 */
+const DSH_HOME = process.env.DSH_HOME || join(process.env.HOME || '.', '.dsh')
+
 const DEFAULTS = {
   enabled: true,
-  statePath: join(process.env.DSH_HOME || join(process.env.HOME || '.', '.dsh'), 'bot', 'state.json'),
+  statePath: join(DSH_HOME, 'bot', 'state.json'),
   l0: {
     intervalMs: 60_000,
     // 采集源在配置层决定(profile patch l0.sources), 插件默认最小; 可用: disk/cpu/uptime/mail/自写脚本源
     sources: ['disk'],
     // 统一目录: 数据源工作区根 — collectors/ 脚本、facts/ 数据、manifest/状态全在此之下
-    homeDir: process.env.LAYERED_HOME || join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'layered-agent'),
+    homeDir: process.env.LAYERED_HOME || join(DSH_HOME, 'bot', 'layered-agent'),
     // storeDir / collectorsDir 由 homeDir 派生 (若显式传则优先)
   },
   l1: {
@@ -57,22 +60,14 @@ const DEFAULTS = {
   //   semif    本地 MLX 读答案槽 logits (默认, 不联网)
   //   jev      TypeSafe 托管 POST /v1/systemone (联网, 内容会离开本机)
   //   jevlocal 本地同款线格式, 端点由 jevBaseUrl 指向
-  decide: {
-    backend: '',                 // '' = 不覆盖, 交给 target 脚本自己的默认(semif)
-    jevBaseUrl: 'https://api.typesafe.ai',
-    jevModel: 'jev-latest',
-    // 托管 Jev 的 key 从这两个文件里找(按顺序):
-    //   1. credentialsFile —— DSH 自己的凭据存储(.credentials.yaml, mode 600)的 refs 段
-    //      用户明确要求 key 写这里; 值就是明文, 且 README 说明该存储本来就无法向 agent 隔离
-    //   2. secretsFile     —— ds-bot 的密钥库(其在聊天里用 request_secret 存的那份)
-    // 两处都没有就告警, 不让它静默变成"空 key"。
-    credentialsFile: join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), '.credentials.yaml'),
-    secretsFile: join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'secrets.json'),
-    // 只把【本插件需要】的密钥注入脚本环境。不设白名单就会把用户所有密钥
-    // 都递给每个采集器/target 脚本 —— 而那些脚本会调外部 API、跑第三方命令。
-    // 主名用 JEV_API_KEY(用户指定); 后两个是兼容既有的存量命名, 按顺序回退。
-    secretAllow: ['JEV_API_KEY', 'LAYERED_JEV_API_KEY', 'TYPESAFE_API_KEY'],
-  },
+  // 决策后端(与 Config schema 的顶层字段一一对应, 见上方注释)
+  backend: '',
+  jevBaseUrl: 'https://api.typesafe.ai',
+  jevModel: 'jev-latest',
+  credentialsFile: join(DSH_HOME, '.credentials.yaml'),
+  secretsFile: join(DSH_HOME, 'bot', 'secrets.json'),
+  // 主名用 JEV_API_KEY(用户指定); 后两个是兼容既有的存量命名, 按顺序回退。
+  secretAllow: ['JEV_API_KEY', 'LAYERED_JEV_API_KEY', 'TYPESAFE_API_KEY'],
 }
 
 // 子进程实现。默认就是 child_process 的 spawn —— 这里做成模块级引用
@@ -93,21 +88,26 @@ export function __setSpawnForTest(fn) { spawnImpl = fn }
 // ⚠️ 不要给字段加 .default(): 那会让"未配置"被填成默认值,
 //    而本插件的语义是"未配置 = 不注入环境变量 = 保持既有行为"。
 export const Config = Schema.object({
-  decide: Schema.object({
-    // ⚠️ 每个字段必须 .volatile() —— 否则 DSH 的 settings 服务不认为它可编辑,
-    //    插件页里根本不会出现配置表单(实测: 不标就什么都没有, 且不报错)。
-    //    官方插件也都是逐字段标: z.string().required().volatile()
-    backend: Schema.string()
-      .description('决策后端: 留空=semif(本地,不联网) | jev=托管(内容会离开本机) | jevlocal=本地端点')
-      .default('').volatile(),
-    jevBaseUrl: Schema.string()
-      .description('Jev 端点。TypeSafe: https://api.typesafe.ai | OpenRouter: https://openrouter.ai/api/v1 | 本地: http://127.0.0.1:30001')
-      .default('https://api.typesafe.ai').volatile(),
-    jevModel: Schema.string()
-      .description('Jev 模型名: jev-latest(TypeSafe) | typesafe/jev-1.13(OpenRouter)')
-      .default('jev-latest').volatile(),
-  }).description('L1 语义判定的后端'),
+  // ⚠️ 字段必须在【配置根的顶层】, 不能嵌套。
+  //    面板表单把字段名当作配置根下的路径写: ops=[{op:'set',path:['backend'],...}]。
+  //    嵌套一层(decide.backend)会让宿主的路径校验找不到 'backend' 而抛
+  //    "Config field backend is not volatile" -> mutate 未落地 -> 界面只显示
+  //    "保存失败, 已保留你的输入", 且不报任何具体原因(上游 catch 丢了异常)。
+  //    实测踩过: 嵌套写法下 ops 的 path 就是 ["backend"] 而不是 ["decide","backend"]。
+  //
+  // ⚠️ 每个字段还要 .volatile() —— 否则 settings 服务不认为它可编辑, 面板里
+  //    根本不会出现表单(实测: 不标就什么都没有, 也不报错)。
+  backend: Schema.string()
+    .description('决策后端: 留空=semif(本地,不联网) | jev=托管(内容会离开本机) | jevlocal=本地端点')
+    .default('').volatile(),
+  jevBaseUrl: Schema.string()
+    .description('Jev 端点。TypeSafe: https://api.typesafe.ai | OpenRouter: https://openrouter.ai/api/v1 | 本地: http://127.0.0.1:30001')
+    .default('https://api.typesafe.ai').volatile(),
+  jevModel: Schema.string()
+    .description('Jev 模型名: jev-latest(TypeSafe) | typesafe/jev-1.13(OpenRouter)')
+    .default('jev-latest').volatile(),
 }).description('分层智能体: 数据源 / 判定目标 / 决策后端')
+// 注: key 不在这里 —— 它走凭据域(只写不读), 见 client.js
 
 export const name = 'ds-bot-layered-agent'
 
@@ -139,7 +139,7 @@ function normalize(c) {
     decide: { ...DEFAULTS.decide, ...(c?.decide ?? {}) },
   }
   // 统一目录派生: 默认 homeDir/facts, homeDir/collectors; 显式传 storeDir/collectorsDir 优先
-  cfg.l0.homeDir ||= join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'layered-agent')
+  cfg.l0.homeDir ||= join(DSH_HOME, 'bot', 'layered-agent')
   cfg.l0.storeDir ||= process.env.LAYERED_FACT_DIR || join(cfg.l0.homeDir, 'facts')
   cfg.l0.collectorsDir ||= process.env.LAYERED_COLLECTORS_DIR || join(cfg.l0.homeDir, 'collectors')
   cfg.l0.logFile = join(cfg.l0.homeDir, 'layered-agent.log')
@@ -167,7 +167,7 @@ function install(rt, ctx, cfg) {
   }
   // 迁移: 旧版 layed-facts/ (旧默认 storeDir) → 新统一目录 homeDir/facts
   try {
-    const legacyStore = join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'layered-facts')
+    const legacyStore = join(DSH_HOME, 'bot', 'layered-facts')
     if (legacyStore !== cfg.l0.storeDir && existsSync(legacyStore) && !existsSync(join(cfg.l0.storeDir, 'disk'))) {
       for (const item of readdirSync(legacyStore)) {
         try { cpSync(join(legacyStore, item), join(cfg.l0.storeDir, item), { recursive: true, force: true }) } catch {}
@@ -207,45 +207,6 @@ function install(rt, ctx, cfg) {
     }
     return n
   }
-  // ---------- 临时诊断: 配置页保存为何被拒(查清后删除) ----------
-  // 背景: 面板里改 decide 段保存报"保存失败", 但原因在上游被吞掉
-  // (SettingsFormModel.save 的 catch 只置一个布尔), desktop 版又没有开发者工具。
-  // 已从外部复现过整条写入链(schema / 路径校验 / JSON 形状 / patch 可写)全部通过,
-  // 所以只能在这里把宿主侧真实状态打出来。
-  // write() 的第一句是 configEditor.entries().find(r => r.options.id === ns),
-  // 找不到就抛 "No configurable plugin entry" —— 这是头号嫌疑, 先验它。
-  // ⚠️ 注意: 本插件的 log() 不做 printf 格式化, 必须用字符串拼接, 别用 %s/%d。
-  try {
-    // 先试 ctx.get, 再试 inject(本插件取 sessionController 用的就是 inject ——
-    // 第一版只用 ctx.get 得到 undefined, 不足以断定服务不存在)。
-    let ed = ctx.get ? ctx.get('configEditor') : undefined
-    if (ed === undefined && typeof ctx.inject === 'function') {
-      try { ctx.inject(['configEditor'], (sub) => { ed = sub && sub.configEditor }) } catch (e2) { /* ignore */ }
-      log('DIAG: ctx.get 取不到 configEditor; ctx.inject 之后 = ' + (ed === undefined ? '仍为 undefined' : '取到了'))
-    }
-    if (ed === undefined) {
-      log('DIAG: ctx.get("configEditor") = undefined (配置编辑器不可见)')
-    } else {
-      const rows = typeof ed.entries === 'function' ? ed.entries() : []
-      const ids = rows.map((r) => (r && r.options ? r.options.id : undefined))
-      log('DIAG: configEditor 可见, entries 共 ' + rows.length + ' 条')
-      log('DIAG: entries 的 id 列表 = ' + JSON.stringify(ids))
-      const mine = rows.find((r) => r && r.options && r.options.id === 'layered-agent')
-      if (mine === undefined) {
-        log('DIAG: 找不到 id==="layered-agent" 的条目 -> write() 会抛 No configurable plugin entry')
-        log('DIAG: 名字含 layered 的 id = '
-          + JSON.stringify(ids.filter((x) => typeof x === 'string' && x.indexOf('layered') >= 0)))
-      } else {
-        log('DIAG: 找到条目 layered-agent | fiber.state='
-          + (mine.fiber ? mine.fiber.state : '(无 fiber)')
-          + ' (需为 2) | options.config 键 = '
-          + JSON.stringify(Object.keys(mine.options.config || {})))
-      }
-    }
-  } catch (e) {
-    log('DIAG: 诊断失败: ' + e.message)
-  }
-
   try {
     const pkgSkills = join(__dirname, 'skill')
     const skillsRoot = process.env.AGENTS_SKILLS_DIR || join(process.env.HOME || '', '.agents', 'skills')
@@ -566,8 +527,8 @@ function install(rt, ctx, cfg) {
     // 1) .credentials.yaml 的 refs 段 —— 只做极简解析, 不引 yaml 依赖:
     //    该段是扁平的 "KEY: value" 列表, 取白名单内的键即可。多行/引号也顺手处理。
     try {
-      if (existsSync(cfg.decide.credentialsFile)) {
-        const text = readFileSync(cfg.decide.credentialsFile, 'utf8')
+      if (existsSync(cfg.credentialsFile)) {
+        const text = readFileSync(cfg.credentialsFile, 'utf8')
         let inRefs = false
         for (const raw of text.split('\n')) {
           const line = raw.replace(/\s+$/, '')
@@ -578,7 +539,7 @@ function install(rt, ctx, cfg) {
           const m = /^\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/.exec(line)
           if (!m) continue
           const name = m[1]
-          if (!cfg.decide.secretAllow.includes(name)) continue     // 白名单之外一律不碰
+          if (!cfg.secretAllow.includes(name)) continue     // 白名单之外一律不碰
           let v = m[2].trim()
           if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
             v = v.slice(1, -1)
@@ -587,27 +548,27 @@ function install(rt, ctx, cfg) {
         }
       }
     } catch (e) {
-      log(`凭据文件读取失败 ${cfg.decide.credentialsFile}: ${e.message}`)
+      log(`凭据文件读取失败 ${cfg.credentialsFile}: ${e.message}`)
     }
     // 2) ds-bot 的密钥库(有则以它为准, 因为那是用户显式通过安全卡片存的)
     try {
-      if (existsSync(cfg.decide.secretsFile)) {
-        const parsed = JSON.parse(readFileSync(cfg.decide.secretsFile, 'utf8'))
+      if (existsSync(cfg.secretsFile)) {
+        const parsed = JSON.parse(readFileSync(cfg.secretsFile, 'utf8'))
         for (const entry of Array.isArray(parsed?.secrets) ? parsed.secrets : []) {
           const name = String(entry?.name ?? '')
           if (!name || typeof entry.value !== 'string') continue
-          if (!cfg.decide.secretAllow.includes(name)) continue
+          if (!cfg.secretAllow.includes(name)) continue
           if (entry.value.trim()) values.set(name, entry.value)
         }
       }
     } catch (e) {
-      log(`密钥库读取失败 ${cfg.decide.secretsFile}: ${e.message}`)
+      log(`密钥库读取失败 ${cfg.secretsFile}: ${e.message}`)
     }
     secretsCache = { at: now, values }
     return values
   }
   function secretValue(name) {
-    if (!cfg.decide.secretAllow.includes(name)) return undefined
+    if (!cfg.secretAllow.includes(name)) return undefined
     const v = loadSecrets().get(name)
     return typeof v === 'string' && v.trim() ? v : undefined
   }
@@ -615,7 +576,7 @@ function install(rt, ctx, cfg) {
   // 解包 volatile 字段。
   // ⚠️ 声明了 .volatile() 的字段在运行时不是裸值, 而是 `Volatile<T>` 取值器 ——
   //    官方写法是 `this.config.provider.get()`。直接当字符串用会静默出错:
-  //    `cfg.decide.backend === 'jev'` 永远 false, 于是"切后端"看起来配了却不生效,
+  //    `cfg.backend === 'jev'` 永远 false, 于是"切后端"看起来配了却不生效,
   //    而且不报任何错。这里统一解包, 兼顾未标 volatile 的字段(仍是裸值)。
   function unwrap(v, fallback) {
     if (v === undefined || v === null) return fallback
@@ -647,11 +608,11 @@ function install(rt, ctx, cfg) {
     }
     // 决策后端: 只在显式配了才注入 —— 不配就别动, 让 target 自己的默认(semif)生效。
     // 注意 'semif' 也要注入: 它是"从默认切回本地"的显式选择。
-    const backend = String(unwrap(cfg.decide.backend, '') ?? '').trim()
+    const backend = String(unwrap(cfg.backend, '') ?? '').trim()
     if (backend) env.LAYERED_DECIDE_BACKEND = backend
     if (backend === 'jev' || backend === 'jevlocal') {
-      env.LAYERED_JEV_BASE_URL = String(unwrap(cfg.decide.jevBaseUrl, '') ?? '')
-      env.LAYERED_JEV_MODEL = String(unwrap(cfg.decide.jevModel, '') ?? '')
+      env.LAYERED_JEV_BASE_URL = String(unwrap(cfg.jevBaseUrl, '') ?? '')
+      env.LAYERED_JEV_MODEL = String(unwrap(cfg.jevModel, '') ?? '')
       const key = secretValue('JEV_API_KEY')
         ?? secretValue('LAYERED_JEV_API_KEY')
         ?? secretValue('TYPESAFE_API_KEY')
@@ -661,7 +622,7 @@ function install(rt, ctx, cfg) {
         warnedNoJevKey = true
         log('决策后端=%s 但没找到密钥(找过 %s 的 refs) —— 判定会因缺 key 失败。'
           + '存法: 把 JEV_API_KEY 写进凭据文件的 refs 段(或聊天里用 request_secret)',
-          backend, cfg.decide.credentialsFile, cfg.decide.secretAllow.join('/'))
+          backend, cfg.credentialsFile, cfg.secretAllow.join('/'))
       }
     }
     return env

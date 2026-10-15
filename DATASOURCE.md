@@ -509,6 +509,33 @@ DSH 的 `settings` 服务只渲染 **`.volatile()` 声明的字段**；不标就
 `ctx.slots.inject('plugins.row.config', ...)` 注册，key 是 `<包名>#<行 id>`。
 上线前跑 `node tests/check-client-bundle.mjs`（它会检查成对性/导出/依赖，并复现过崩溃条件）。
 
+**⚠️ 致命坑：字段必须在配置根顶层，不能嵌套。**
+
+面板表单把**字段名当作配置根下的路径**写：
+
+```
+ops = [{op:'set', path:['backend'], value:'jev'}, ...]     ← 没有 decide 前缀
+```
+
+宿主的 `write()` 会逐条校验 `isVolatilePath(schema, path)`，还会遍历写入后的文档
+校验每个键。所以 schema 一旦嵌套（`decide.backend`），表单写出的 `['backend']`
+在 schema 里找不到 → 抛 `Config field backend is not volatile` → **mutate 未落地**
+→ 界面只有一句"保存失败，已保留你的输入"。
+
+**为什么极难查**：上游 `SettingsFormModel.save()` 是
+
+```js
+try { ... } catch (_error) { this.failed = true }   // 异常被丢弃
+if (!landed) { this.failed = true; return }         // 连异常都没有
+```
+
+两种失败在界面上是同一句话，而 desktop 版没有开发者工具。**最后的定位手段是把
+`scope.mutate` 本身包起来记录真实返回**（见 `client.js`），才看到 `path:['backend']`。
+
+`tests/test-config-schema.mjs` 锁死这条：断言 schema 顶层就是那三个字段、
+`isVolatilePath` 认得表单实际写的路径、且没有 `decide` 中间层。
+（已反向验证：改回嵌套时该测试 2/12，扁平后 12/12。）
+
 **⚠️ 踩过的坑：标了 `.volatile()` 之后字段不再是裸值。**
 
 运行时它变成 `Volatile<T>` **取值器**，官方读法是 `this.config.provider.get()`。

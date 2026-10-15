@@ -55,22 +55,22 @@ let pass = 0, total = 0
 const T = (...a) => { total++; if (check(...a)) pass++ }
 
 console.log('=== A. backend=jev (托管): 端点+key 都要注入 ===')
-T('jev', { decide: { backend: 'jev', secretsFile, jevBaseUrl: 'https://api.typesafe.ai' }, l0: { sources: ['disk'] } },
+T('jev', { backend: 'jev', secretsFile, jevBaseUrl: 'https://api.typesafe.ai', l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: 'test-key-DO-NOT-USE' })
 
 console.log('\n=== B. 不配 backend: 三个都不注入(走脚本默认 semif) ===')
-T('默认', { decide: { secretsFile }, l0: { sources: ['disk'] } },
+T('默认', { secretsFile, l0: { sources: ['disk'] } },
   { backend: undefined, baseUrl: undefined, key: undefined })
 
 console.log('\n=== C. backend=semif: 只注入 backend, 不带 key/端点 ===')
-T('semif', { decide: { backend: 'semif', secretsFile }, l0: { sources: ['disk'] } },
+T('semif', { backend: 'semif', secretsFile, l0: { sources: ['disk'] } },
   { backend: 'semif', baseUrl: undefined, key: undefined })
 
 console.log('\n=== D. backend=jev 但密钥库为空: backend/端点注入, key 缺 ===')
 const bare = mkdtempSync(join(tmpdir(), 'layered-nosecret-'))
 const bareFile = join(bare, 'secrets.json')
 writeFileSync(bareFile, JSON.stringify({ secrets: [] }), 'utf8')
-T('缺key', { decide: { backend: 'jev', secretsFile: bareFile, jevBaseUrl: 'http://127.0.0.1:30001' }, l0: { sources: ['disk'] } },
+T('缺key', { backend: 'jev', secretsFile: bareFile, jevBaseUrl: 'http://127.0.0.1:30001', l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'http://127.0.0.1:30001', key: undefined })
 
 // ---- E/F/G: 从 .credentials.yaml 的 refs 段读(fake 值, 不碰真实凭据) ----
@@ -89,11 +89,11 @@ writeFileSync(credFile, [
 chmodSync(credFile, 0o600)
 
 console.log('\n=== E. backend=jev, key 在 .credentials.yaml 的 refs 段 ===')
-T('cred-ok', { decide: { backend: 'jev', credentialsFile: credFile, secretsFile: join(cdir, 'nope.json'), jevBaseUrl: 'https://api.typesafe.ai' }, l0: { sources: ['disk'] } },
+T('cred-ok', { backend: 'jev', credentialsFile: credFile, secretsFile: join(cdir, 'nope.json'), jevBaseUrl: 'https://api.typesafe.ai', l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: 'fake-cred-key' })
 
 console.log('\n=== F. 两个文件都没有 key: 只有 backend/端点 ===')
-T('cred-none', { decide: { backend: 'jev', credentialsFile: join(cdir, 'absent.yaml'), secretsFile: join(cdir, 'absent.json'), jevBaseUrl: 'https://api.typesafe.ai' }, l0: { sources: ['disk'] } },
+T('cred-none', { backend: 'jev', credentialsFile: join(cdir, 'absent.yaml'), secretsFile: join(cdir, 'absent.json'), jevBaseUrl: 'https://api.typesafe.ai', l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: undefined })
 
 console.log('\n=== G. refs 段结束后的内容不能被误读(key 在 records 段里) ===')
@@ -106,7 +106,7 @@ writeFileSync(c2, [
   '  LAYERED_JEV_API_KEY:',
   "    kind: 'grant'",
 ].join('\n'), 'utf8')
-T('cred-boundary', { decide: { backend: 'jev', credentialsFile: c2, secretsFile: join(cdir, 'absent.json') }, l0: { sources: ['disk'] } },
+T('cred-boundary', { backend: 'jev', credentialsFile: c2, secretsFile: join(cdir, 'absent.json'), l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: undefined })
 
 console.log('\n=== H. 旧名 LAYERED_JEV_API_KEY 仍应被读到(向后兼容) ===')
@@ -115,7 +115,7 @@ const oldSecret = join(olddir, 'secrets.json')
 writeFileSync(oldSecret, JSON.stringify({
   secrets: [{ name: 'LAYERED_JEV_API_KEY', value: 'old-name-key', purpose: 'legacy' }],
 }), 'utf8')
-T('旧名回退', { decide: { backend: 'jev', credentialsFile: join(olddir, 'none.yaml'), secretsFile: oldSecret }, l0: { sources: ['disk'] } },
+T('旧名回退', { backend: 'jev', credentialsFile: join(olddir, 'none.yaml'), secretsFile: oldSecret, l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: 'old-name-key' })
 
 console.log('\n=== I. 主名优先于旧名(两个都在时取主名) ===')
@@ -127,7 +127,7 @@ writeFileSync(bothSecret, JSON.stringify({
     { name: 'JEV_API_KEY', value: 'primary-key', purpose: 'primary' },
   ],
 }), 'utf8')
-T('主名优先', { decide: { backend: 'jev', credentialsFile: join(bothdir, 'none.yaml'), secretsFile: bothSecret }, l0: { sources: ['disk'] } },
+T('主名优先', { backend: 'jev', credentialsFile: join(bothdir, 'none.yaml'), secretsFile: bothSecret, l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: 'primary-key' })
 
 console.log('\n=== J. volatile 字段必须被解包(否则切后端静默失效) ===')
@@ -138,7 +138,7 @@ console.log('\n=== J. volatile 字段必须被解包(否则切后端静默失效
   try {
     api = apply(fakeCtx(), {
       l0: { sources: ['disk'] },
-      decide: { backend: 'jev', jevBaseUrl: 'https://openrouter.ai/api/v1', jevModel: 'typesafe/jev-1.13' },
+      backend: 'jev', jevBaseUrl: 'https://openrouter.ai/api/v1', jevModel: 'typesafe/jev-1.13',
     })
   } catch (e) { console.log('  apply 抛错:', e.message) }
   const env = api?.scriptEnv?.() ?? {}
@@ -149,7 +149,7 @@ console.log('\n=== J. volatile 字段必须被解包(否则切后端静默失效
   //    于是汇总数字偏小、看起来"通过"其实漏了这条(本文件就踩过一次)。
   T('volatile', {
     l0: { sources: ['disk'] },
-    decide: { backend: 'jev', jevBaseUrl: 'https://openrouter.ai/api/v1', jevModel: 'typesafe/jev-1.13' },
+    backend: 'jev', jevBaseUrl: 'https://openrouter.ai/api/v1', jevModel: 'typesafe/jev-1.13',
   }, { backend: 'jev', baseUrl: 'https://openrouter.ai/api/v1', key: undefined })
   if (!body) console.log('     ⚠️ volatile 解包异常: 端点/模型与预期不符')
 }
