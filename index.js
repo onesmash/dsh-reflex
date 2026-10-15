@@ -216,7 +216,13 @@ function install(rt, ctx, cfg) {
   // 找不到就抛 "No configurable plugin entry" —— 这是头号嫌疑, 先验它。
   // ⚠️ 注意: 本插件的 log() 不做 printf 格式化, 必须用字符串拼接, 别用 %s/%d。
   try {
-    const ed = ctx.get ? ctx.get('configEditor') : undefined
+    // 先试 ctx.get, 再试 inject(本插件取 sessionController 用的就是 inject ——
+    // 第一版只用 ctx.get 得到 undefined, 不足以断定服务不存在)。
+    let ed = ctx.get ? ctx.get('configEditor') : undefined
+    if (ed === undefined && typeof ctx.inject === 'function') {
+      try { ctx.inject(['configEditor'], (sub) => { ed = sub && sub.configEditor }) } catch (e2) { /* ignore */ }
+      log('DIAG: ctx.get 取不到 configEditor; ctx.inject 之后 = ' + (ed === undefined ? '仍为 undefined' : '取到了'))
+    }
     if (ed === undefined) {
       log('DIAG: ctx.get("configEditor") = undefined (配置编辑器不可见)')
     } else {

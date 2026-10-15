@@ -95,6 +95,28 @@ window.__ModuleLoader__.load({
 					ui.settingsTextField("jevBaseUrl"),
 					ui.settingsTextField("jevModel")
 				], [{ field: API_KEY_FIELD, write: (text) => this.writeKey(text) }]);
+				// 把 scope.mutate 包起来记录真实失败原因。
+				// 为什么: 上游 save() 里 `catch (_error) { this.failed = true }` 把异常丢了,
+				// 而且 `if (!landed) { this.failed = true; return }` 连异常都没有 ——
+				// 两种失败在界面上是同一句话, desktop 版又没有开发者工具可查。
+				this.diag = "";
+				const inner = scope.mutate.bind(scope);
+				const self = this;
+				scope.mutate = async function (ops, revision) {
+					const snap = scope.getSnapshot ? scope.getSnapshot() : {};
+					try {
+						const ok = await inner(ops, revision);
+						if (!ok) {
+							self.diag = "mutate 返回 false(未落地) | writable=" + snap.writable
+								+ " | revision=" + JSON.stringify(revision) + " | ops=" + JSON.stringify(ops);
+						}
+						return ok;
+					} catch (error) {
+						self.diag = "mutate 抛错: " + (error && error.message ? error.message : String(error))
+							+ " | writable=" + snap.writable;
+						throw error;
+					}
+				};
 				this.store = this.form.bind(() => this.projection());
 				this.unsubscribe = scope.subscribe(() => { this.readCredential(); });
 				this.readCredential();
@@ -107,7 +129,9 @@ window.__ModuleLoader__.load({
 					jevModel: this.form.field("jevModel"),
 					apiKey: this.form.field(API_KEY_FIELD),
 					apiKeyConfigured: this.credential.configured,
-					apiKeyWritable: this.credential.writable
+					apiKeyWritable: this.credential.writable,
+					scopeWritable: this.form.shell().writable,
+					diag: this.diag
 				};
 			}
 			/** 问凭据域：这个引用现在配了没有、能不能写。回复只带状态，不带值。 */
@@ -165,6 +189,13 @@ window.__ModuleLoader__.load({
 			};
 			if (props.view === "summary") return t("description");
 			const disabled = !state.writable;
+			// 表单是否可写 + mutate 的真实失败原因。两者都必须可见:
+			// writable=false 时保存按钮会静默什么都不做(外观与可用时一样)。
+			const diagLine = (0, react_jsx_runtime.jsx)("p", {
+				style: { color: "#c0392b", whiteSpace: "pre-wrap", fontSize: "12px" },
+				children: "writable=" + String(state.writable) + " | scopeWritable=" + String(state.scopeWritable)
+					+ (state.diag ? "\n" + state.diag : "")
+			});
 			const text = (id, key, label, hint) =>
 				(0, react_jsx_runtime.jsx)(ui.SettingsValueField, {
 					id,
@@ -200,7 +231,8 @@ window.__ModuleLoader__.load({
 						? (0, react_jsx_runtime.jsx)("p", { style: { color: "#c0392b", whiteSpace: "pre-wrap" },
 							children: t("saveError") + "\n" + saveError })
 						: null,
-					(0, react_jsx_runtime.jsx)("p", { children: t("keyNote") })
+					(0, react_jsx_runtime.jsx)("p", { children: t("keyNote") }),
+					diagLine
 				]
 			});
 		}
