@@ -6,3 +6,15 @@ node_modules/
 # 运行期产物 / 本机状态, 不进仓库
 *.log
 .DS_Store
+
+# ---- 本机专有配置不进仓库 ----
+# 这些文件里是【本机的标识】: 你自己的 IM userId、私有频道 id、姓名别名…
+# 插件会把它们 cpSync 给任何安装本插件的人, 所以绝不能作为种子分发。
+# 它们只活在统一目录 (~/.dsh/bot/layered-agent/) 里, 由使用者自己填。
+# 需要样例时看同目录的 *.env.example.json。
+*.env.json
+# 个人身份文件(默认通知收件人 = 你自己的 userId)
+notify.to
+# Python 字节码
+__pycache__/
+*.pyc

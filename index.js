@@ -9,7 +9,7 @@
 //   不修改原版 ds-bot 任何代码; 通过 ctx.get('schedule') + 读 bot state.json 定位目标会话。
 
 import { join, dirname } from 'node:path'
-import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync, statSync, cpSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync, statSync, cpSync, chmodSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { execFile, spawn } from 'node:child_process'
 import Schema from '@deepseek-ai/schemastery'
@@ -180,6 +180,8 @@ function install(rt, ctx, cfg) {
     const pkgCollectors = join(__dirname, 'collectors')
     if (existsSync(pkgCollectors)) {
       for (const f of readdirSync(pkgCollectors)) {
+        // *.env.json 是本机专有(个人 userId / 私有频道 id), 不作为种子外发
+        if (f.endsWith('.env.json')) continue
         if (!existsSync(join(cfg.l0.collectorsDir, f))) {
           try { cpSync(join(pkgCollectors, f), join(cfg.l0.collectorsDir, f)) } catch {}
         }
@@ -407,12 +409,43 @@ function install(rt, ctx, cfg) {
     if (existsSync(pkgTargets)) {
       mkdirSync(targetsDir, { recursive: true })
       for (const f of readdirSync(pkgTargets)) {
+        if (f.endsWith('.env.json')) continue
         if (!existsSync(join(targetsDir, f))) {
           try { cpSync(join(pkgTargets, f), join(targetsDir, f)) } catch {}
         }
       }
     }
   } catch (e) { log(`seed targets fail: ${e.message}`) }
+
+  // 种子工具: 插件包内置 tools/ → 统一目录 tools/ (仅当缺失), 与前两者同一规则。
+  //
+  // 为什么补这条: tools/ 里的东西是【运行时依赖】——targets 脚本会调
+  // tools/semif-adapt.py、tools/decide-calibrate.py、tools/notify.sh。
+  // 但原先没有 seed 逻辑, 所以装这个插件的人拿不到它们, 一跑就缺文件;
+  // 而仓库里那份又因为"没有唯一来源"被手工来回拷(见 DATASOURCE.md 的约定一节)。
+  // 补上之后: 仓库 = 分发源, 统一目录 = 运行副本, 两边各就其位。
+  try {
+    const pkgTools = join(__dirname, 'tools')
+    const toolsDir = cfg.l0.toolsDir ?? join(cfg.l0.homeDir, 'tools')
+    if (existsSync(pkgTools)) {
+      mkdirSync(toolsDir, { recursive: true })
+      // 永不外发本机身份文件 —— tools/notify.to 装的是收件人 userId,
+      // 属于【个人标识】而不是工具。它只该活在使用者自己的统一目录里。
+      const NEVER_SEED = new Set(['notify.to'])
+      for (const f of readdirSync(pkgTools)) {
+        if (NEVER_SEED.has(f) || f === '__pycache__') continue
+        if (existsSync(join(toolsDir, f))) continue
+        try {
+          cpSync(join(pkgTools, f), join(toolsDir, f))
+          // 脚本保持可执行 —— 少了这一位, 采集器/target 里 spawn 会直接失败
+          if (f.endsWith('.sh') || f.endsWith('.py')) {
+            try { chmodSync(join(toolsDir, f), 0o755) } catch {}
+          }
+        } catch {}
+      }
+    }
+  } catch (e) { log(`seed tools fail: ${e.message}`) }
+
   const SCRIPT_TARGETS = {}
   try {
     if (existsSync(targetsDir)) {

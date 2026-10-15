@@ -4,6 +4,50 @@
 > Bot（L2/Chief）在「添加数据源」任务触发时，通过同名 skill 自动加载。
 > 本机路径不在文档中写死：统一目录用环境变量 `LAYERED_HOME`（默认 `$HOME/.dsh/bot/layered-agent/`）；插件安装目录可由 `npm ls ds-bot-layered-agent` 或运行报错路径定位。
 
+## 0. 仓库与运行目录的分工（别混，混过）
+
+**两个地方都有 `collectors/` `targets/` `tools/`，但它们的身份不同：**
+
+| | 仓库里的 | 统一目录(`~/.dsh/bot/layered-agent/`)里的 |
+|---|---|---|
+| 身份 | **分发源**(种子) | **运行副本** |
+| 谁写 | 改功能时改这里 | 插件安装时从仓库 `cpSync`(仅当缺失) |
+| 装给谁 | 任何安装本插件的人 | 只有本机 |
+
+**规则：不要手工在两边来回拷。** 改功能 = 改仓库 + 重启让种子补缺；调本机参数 = 只改统一目录。
+
+### 什么进仓库、什么不进
+
+**进：** `*.sh`(脚本)、`*.schema.json`(自描述)、`*.py`(工具)、`*.env.example.json`(样例)
+
+**不进**（已在 `.gitignore`）：
+
+```
+*.env.json        本机专有配置 —— 里面是自己的 IM userId、私有频道 id、姓名别名
+notify.to    收件人 userId, 属于个人标识而不是工具
+__pycache__/ *.pyc
+```
+
+**为什么这条必须硬性**：插件会把仓库里的 `collectors/` `targets/` `tools/` **原样 `cpSync` 给任何安装者**。
+把本机 `*.env.json` 放进去 = 把你的 userId 和私有频道 id 一起分发出去。
+所以种子逻辑里也加了防线(`index.js`)：
+
+- `collectors/` `targets/`：跳过 `*.env.json`
+- `tools/`：跳过 `notify.to`
+
+**踩过的具体例子**：`tools/notify.to` 一度被跟踪并进了种子 —— 它里面是本机收件人 userId。
+仓库里曾经还混进过 `__pycache__/*.pyc`。
+
+### 本机参数放哪(按"改完要不要重启"选)
+
+| 放哪 | 生效 | 适合 |
+|---|---|---|
+| `targets/<name>.sh` 脚本内 | **立即** | 判据文字、判定逻辑、阈值表达式 |
+| `collectors/<name>.env.json` / `targets/<name>.env.json` | **要重启** | 采集间隔、超时、本机标识、别名 |
+| profile 的 `cordis.patch.yml` | **要重启** | 启用哪些源/目标、安静时段、用户画像 |
+
+（原因：`.env.json` 是插件**启动时读一次**；而脚本 target 每轮都是全新 `bash` 执行。）
+
 ## 1. 规则速览
 
 | 步骤 | 做什么 | 是否需要改代码 |
