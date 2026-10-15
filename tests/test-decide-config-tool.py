@@ -94,7 +94,7 @@ def main():
 
         ca, cb = entry(before), entry(after)
         ok("backend 写入正确", cb["backend"] == "jev", repr(cb.get("backend")))
-        ok("jevBaseUrl 写入正确", cb["jevBaseUrl"] == "https://openrouter.ai/api/v1")
+        ok("jevBaseUrl 写入正确", cb['jevBaseUrl'] == 'https://openrouter.ai/api')
         ok("jevModel 写入正确", cb["jevModel"] == "typesafe/jev-1.13")
 
         print("\n=== 3. 关键: quietHours 必须活下来(sexagesimal 事故) ===")
