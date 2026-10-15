@@ -1,7 +1,7 @@
 ---
 name: layered-agent-datasource
 description: "为分层智能体(ds-bot-layered-agent)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（LAYERED_HOME / $HOME）推导，不写死绝对路径。"
-version: 2.0.0
+version: 2.1.0
 ---
 
 # 添加分层智能体数据源
@@ -142,6 +142,12 @@ targets/tickets-progress.sh  →  判断"频道消息里的票号 ∈ 这个集�
 应在 collector 里算好存成字段，而不是让本地小模型数正则 —— 正则确定、算一次所有消费方都能用、
 target 里只剩集合判断（连 SemIf 都省了）。对应地 **collector 不为"取舍"负责**：
 忠实采集 + 打标，判断留给 L1；采集层做取舍会漏数据。
+
+**判据必须锚定在"属于用户的"那一侧**：该频道每条消息都带版本号和日期，
+写成"含日期 + 排期词就报"会全量命中。实测 15 条消息里别人版本(`7.2.5`)出现 11 次、
+用户的版本(`7.3.0`)只 1 次 —— 锚定到"用户 fixVersion 里实际存在的版本"后
+才只需 1 条。**先量数据分布再定判据。** 另外正文截断长度要够判据用
+（300 字符会把长消息里的日期切掉，判定静默失败）。
 
 **target 测试必须有反例**：只验正例只能证明通路，不能证明它**不会乱叫**。
 `tickets-progress` 用 3 正例 + 4 反例（别人名下的票号、有排期词但没 @我、我的票没变化、
