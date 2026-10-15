@@ -52,7 +52,27 @@ const DEFAULTS = {
   semif: {
     skillDir: join(process.env.HOME || '', '.agents', 'skills', 'semif-decide'),
   },
+  // 决策后端: L1 的判定由谁打分。三种后端同构(见 tools/semif-adapt.py):
+  //   semif    本地 MLX 读答案槽 logits (默认, 不联网)
+  //   jev      TypeSafe 托管 POST /v1/systemone (联网, 内容会离开本机)
+  //   jevlocal 本地同款线格式, 端点由 jevBaseUrl 指向
+  decide: {
+    backend: '',                 // '' = 不覆盖, 交给 target 脚本自己的默认(semif)
+    jevBaseUrl: 'https://api.typesafe.ai',
+    jevModel: 'jev-latest',
+    // 托管 Jev 的 key 从这里取。默认与 ds-bot 的密钥库同一个文件 ——
+    // 用户在聊天里用 request_secret 存的那份, 插件直接复用, 不需要第二套。
+    secretsFile: join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'secrets.json'),
+    // 只把【本插件需要】的密钥注入脚本环境。不设白名单就会把用户所有密钥
+    // 都递给每个采集器/target 脚本 —— 而那些脚本会调外部 API、跑第三方命令。
+    secretAllow: ['LAYERED_JEV_API_KEY', 'TYPESAFE_API_KEY'],
+  },
 }
+
+// 子进程实现。默认就是 child_process 的 spawn —— 这里做成模块级引用
+// 只是为了让测试能截获"插件递给脚本的环境变量"(密钥注入必须可验证, 不能靠读代码相信)。
+let spawnImpl = spawn
+export function __setSpawnForTest(fn) { spawnImpl = fn }
 
 export const name = 'ds-bot-layered-agent'
 
@@ -81,6 +101,7 @@ function normalize(c) {
     l0: { ...DEFAULTS.l0, ...(c?.l0 ?? {}) },
     l1: { ...DEFAULTS.l1, ...(c?.l1 ?? {}) },
     semif: { ...DEFAULTS.semif, ...(c?.semif ?? {}) },
+    decide: { ...DEFAULTS.decide, ...(c?.decide ?? {}) },
   }
   // 统一目录派生: 默认 homeDir/facts, homeDir/collectors; 显式传 storeDir/collectorsDir 优先
   cfg.l0.homeDir ||= join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'layered-agent')
@@ -458,11 +479,48 @@ function install(rt, ctx, cfg) {
 
   // 脚本驱动的 collector: 运行 cmd, 解析 stdout 每行一个 JSON fact
   // 用 bash -c 执行, 并注入 IM 内部 CA 证书与完整 PATH (helper/内部 API 依赖, 否则 TLS 失败)
+  //
+  // ---------- 密钥: 自己读密钥库(见 scriptEnv 的说明) ----------
+  // 格式与 ds-bot 的密钥库一致: { secrets: [ {name, value, scope, ...} ] }
+  // 只按白名单取, 不把整库递给脚本。
+  let secretsCache = { at: 0, values: new Map() }
+  let warnedNoJevKey = false
+  function loadSecrets() {
+    const now = Date.now()
+    if (now - secretsCache.at < 30_000) return secretsCache.values   // 30s 缓存: 别每轮都读盘
+    const values = new Map()
+    try {
+      if (existsSync(cfg.decide.secretsFile)) {
+        const parsed = JSON.parse(readFileSync(cfg.decide.secretsFile, 'utf8'))
+        for (const entry of Array.isArray(parsed?.secrets) ? parsed.secrets : []) {
+          const name = String(entry?.name ?? '')
+          if (!name || typeof entry.value !== 'string') continue
+          if (!cfg.decide.secretAllow.includes(name)) continue       // 白名单之外一律不碰
+          values.set(name, entry.value)
+        }
+      }
+    } catch (e) {
+      log(`密钥库读取失败 ${cfg.decide.secretsFile}: ${e.message}`)
+    }
+    secretsCache = { at: now, values }
+    return values
+  }
+  function secretValue(name) {
+    if (!cfg.decide.secretAllow.includes(name)) return undefined
+    const v = loadSecrets().get(name)
+    return typeof v === 'string' && v.trim() ? v : undefined
+  }
+
   // 脚本运行的公共环境: 统一目录 / 内部 CA / 完整 PATH / SemIf 打分脚本位置
   // (GUI 子进程 PATH 可能精简, 不补会导致 helper / 内部 API 的 TLS 失败)
+  //
+  // 密钥注入: 这里【必须自己读】密钥库, 不能指望 process.env 里已经有。
+  // ds-bot 把密钥注册进 DSH 的 shellEnv 服务(按需解析, 只对 DSH 的 bash 工具有效),
+  // 而本插件是用 spawn 直接起子进程 —— 实测 process.env 里 DSH_SECRET_* 为 0 个。
+  // 不自己读的话, LAYERED_JEV_API_KEY 永远是空的, 切到托管 Jev 必然失败。
   function scriptEnv(extra) {
     const ca = join(process.env.HOME || '', '.ca_bundle.pem')
-    return {
+    const env = {
       ...process.env,
       LAYERED_HOME: cfg.l0.homeDir,
       PATH: `/usr/local/bin:/opt/homebrew/bin:/bin:/usr/bin:/sbin:/usr/sbin:${process.env.HOME}/.local/bin:${process.env.PATH ?? ''}`,
@@ -473,6 +531,23 @@ function install(rt, ctx, cfg) {
       LAYERED_SEMIF_RUN: join(cfg.semif.skillDir, 'scripts', 'run_score.sh'),
       ...(extra ?? {}),
     }
+    // 决策后端: 只在显式配了才注入 —— 不配就别动, 让 target 自己的默认(semif)生效。
+    // 注意 'semif' 也要注入: 它是"从默认切回本地"的显式选择。
+    if (cfg.decide.backend) env.LAYERED_DECIDE_BACKEND = cfg.decide.backend
+    if (cfg.decide.backend === 'jev' || cfg.decide.backend === 'jevlocal') {
+      env.LAYERED_JEV_BASE_URL = cfg.decide.jevBaseUrl
+      env.LAYERED_JEV_MODEL = cfg.decide.jevModel
+      const key = secretValue('LAYERED_JEV_API_KEY') ?? secretValue('TYPESAFE_API_KEY')
+      if (key) {
+        env.LAYERED_JEV_API_KEY = key
+      } else if (!warnedNoJevKey) {
+        warnedNoJevKey = true
+        log('决策后端=%s 但没找到密钥(%s 里的 %s) —— 判定会因缺 key 失败。'
+          + '存法: 在 Bot 聊天里用 request_secret 存 LAYERED_JEV_API_KEY',
+          cfg.decide.backend, cfg.decide.secretsFile, cfg.decide.secretAllow.join('/'))
+      }
+    }
+    return env
   }
 
   async function runScriptCollector(c, src) {
@@ -492,7 +567,7 @@ function install(rt, ctx, cfg) {
   // 跑子进程并把 input 写进 stdin —— 异步 execFile 不支持 input 选项, 所以用 spawn 自己接
   function runWithStdin(cmd, args, input, { timeoutMs, env }) {
     return new Promise((resolve, reject) => {
-      const child = spawn(cmd, args, { env })
+      const child = spawnImpl(cmd, args, { env })
       let out = '', err = '', timedOut = false
       const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL') }, timeoutMs)
       child.stdout.on('data', d => { out += d })
@@ -971,5 +1046,7 @@ function install(rt, ctx, cfg) {
   try { ctx.effect(() => () => { clearInterval(t0); clearInterval(t1) }, 'layered-agent: L0/L1 timers') } catch {}
 
   log(`layered-agent installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}" sources=[${cfg.l0.sources.join(',')}]`)
-  return { collectOnce, decideOnce, wakeL2 }
+  // scriptEnv 一并返回: 密钥注入是"必须可验证"的逻辑(读代码相信不算证据),
+  // 测试直接调它比对环境变量, 不必真跑一轮采集。
+  return { collectOnce, decideOnce, wakeL2, scriptEnv }
 }
