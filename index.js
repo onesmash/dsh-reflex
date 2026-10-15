@@ -187,6 +187,35 @@ function install(rt, ctx, cfg) {
     }
   } catch (e) { log(`seed collectors fail: ${e.message}`) }
 
+  // ---------- 临时探针: 记录配置写入失败的真实原因(查清后删除) ----------
+  // 为什么在这里: 面板保存失败的真正错误会经 configEditor.edit() 抛出, 但
+  // 一路被吞掉(upload 的 SettingsFormModel.save catch 丢掉异常; desktop 版
+  // 没有开发者工具; 客户端侧我加的显示也没生效)。宿主是唯一能确定拿到错误的地方。
+  // 拦截 edit() 把异常原文写进日志 —— 不需要用户看任何界面。
+  try {
+    const ed = ctx.get ? ctx.get('configEditor') : undefined
+    if (ed === undefined || typeof ed.edit !== 'function') {
+      log('PROBE: configEditor 不可见, 无法拦截 (get=' + (ed === undefined ? 'undefined' : typeof ed) + ')')
+    } else {
+      const origEdit = ed.edit.bind(ed)
+      ed.edit = async function (entry, change) {
+        try {
+          const r = await origEdit(entry, change)
+          log('PROBE: configEditor.edit 成功 (entry=' + (entry && entry.options ? entry.options.id : '?') + ')')
+          return r
+        } catch (e) {
+          log('PROBE: configEditor.edit 失败 -> ' + (e && e.message ? e.message : String(e))
+            + ' | code=' + (e && e.code ? e.code : '(无)')
+            + ' | stack=' + (e && e.stack ? String(e.stack).split('\n').slice(0, 4).join(' <- ') : '(无)'))
+          throw e
+        }
+      }
+      log('PROBE: 已拦截 configEditor.edit, 保存时会记录成败')
+    }
+  } catch (e) {
+    log('PROBE: 安装拦截失败: ' + e.message)
+  }
+
   // 自动部署 skill: 仓库 skill/<name>/ → agent skills 目录 (~/.agents/skills/<name>/)
   // 整个目录递归部署(有的 skill 带 scripts/ assets/ 边车, 只拷 SKILL.md 会装出个残废)。
   // 策略由 skill/<name>/.deploy.json 的 policy 决定:
