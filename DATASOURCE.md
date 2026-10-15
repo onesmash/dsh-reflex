@@ -509,6 +509,23 @@ DSH 的 `settings` 服务只渲染 **`.volatile()` 声明的字段**；不标就
 `ctx.slots.inject('plugins.row.config', ...)` 注册，key 是 `<包名>#<行 id>`。
 上线前跑 `node tests/check-client-bundle.mjs`（它会检查成对性/导出/依赖，并复现过崩溃条件）。
 
+**⚠️ 工具改动 profile patch 时，绝不要做整份 YAML 往返。**
+
+实测事故：`tools/decide-config.py` 原先用 `yaml.safe_load` 读整份 patch、
+`safe_dump` 写回。而 YAML 1.1 把「双位:两位」当 **sexagesimal（时分）**：
+
+```
+yaml.safe_load('18:00')  ==  1080      # 18 × 60
+yaml.safe_load('09:00')  ==  '09:00'   # 前导零侥幸躲过
+```
+
+于是 `l1.quietHours.from` 被静默写成 `1080`，插件的 `isQuietNow` 判格式错误
+→ **安静时段直接失效**。只在某些取值上显现（`09:00` 就没事），所以极难发现。
+
+现在的做法是**行级外科手术**：只替换 `backend` / `jevBaseUrl` / `jevModel` 三行，
+其余字节原样保留；写前备份、写后回读校验，并额外断言 `quietHours.from` 不是数字。
+`tests/test-decide-config-tool.py` 锁死这条（21 项；用旧实现跑会失败 6 项）。
+
 **⚠️ 致命坑：字段必须在配置根顶层，不能嵌套。**
 
 面板表单把**字段名当作配置根下的路径**写：
