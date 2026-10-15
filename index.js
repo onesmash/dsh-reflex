@@ -13,7 +13,7 @@ import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, rea
 import { fileURLToPath } from 'node:url'
 import { execFile, spawn } from 'node:child_process'
 import Schema from '@deepseek-ai/schemastery'
-import { promisify } from 'node:util'
+import { promisify, format } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { loadavg } from 'node:os'
 
@@ -160,8 +160,11 @@ function install(rt, ctx, cfg) {
   try { mkdirSync(cfg.l0.storeDir, { recursive: true }) } catch {}
   try { mkdirSync(cfg.l0.collectorsDir, { recursive: true }) } catch {}
   const logFile = cfg.l0.logFile
-  const log = (m) => {
-    const line = `[${new Date().toISOString()}] ${m}`
+  const log = (m, ...args) => {
+    // 支持 printf 风格: 调用方写过 log('...%s...', x, y), 但旧实现只收一个参数,
+    // 多余实参被静默丢掉 —— 日志里留下字面量 %s, 恰好把"哪个后端 / 去哪找 key"
+    // 这类最有用的信息吞了。用 format 兜住, 以后再有 %s 调用也不会退化。
+    const line = `[${new Date().toISOString()}] ${args.length ? format(m, ...args) : m}`
     try { appendFileSync(logFile, line + '\n') } catch {}
     try { ctx.logger?.info?.(line) } catch {}
   }
