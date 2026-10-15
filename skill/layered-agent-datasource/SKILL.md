@@ -35,7 +35,7 @@ version: 2.1.0
 ## Collector 契约
 
 - **输出**：stdout 每行一个 JSON fact：`{"metric":"<m>","raw":{...},"meta":{...}}`；`source`/`ts` 由插件补齐
-- **环境**：插件注入 `LAYERED_HOME`（统一目录）、IM 内部 CA（`SSL_CERT_FILE`/`CURL_CA_BUNDLE`/`REQUESTS_CA_BUNDLE`）、常用 PATH
+- **环境**：插件注入 `LAYERED_HOME`（统一目录）、公司内部 CA（`SSL_CERT_FILE`/`CURL_CA_BUNDLE`/`REQUESTS_CA_BUNDLE`）、常用 PATH
 - **行为**：退出 0 + 空输出 = 本轮无数据（正常）；退出非 0 = 记 `L0 <name> failed`，不影响其他源；必须幂等
 - **自动发现**：插件启动扫描 `collectors/`，每个 `*.sh` 自动注册为源（源名 = 文件名去 `.sh`）
 - **伴生文件**（都是纯数据，加源不改代码）：
@@ -121,14 +121,14 @@ exit 0
 ### 跨源关联的 target（源 A 要判断"跟我有关吗"）
 
 场景：频道消息里出现一个票号，但"这个票号是不是我的"只有另一个源知道。
-（实例：`tickets-progress` —— release 排期 × 我的 工单系统 任务。）
+（实例：`tickets-progress` —— release 排期 × 我的工单系统任务。）
 
 **关键约束：target 脚本只拿到本轮新事实，没有历史。** 判"这条提到我名下的票"
 需要"我名下有哪些票"这份**存量**，它不在本轮事实里。存量从**采集器的状态文件**读 ——
 同一个脚本源自己的状态，不是新机制：
 
 ```
-collectors/工单-my-tasks.sh  →  工单-my-tasks-state.json  (票号 → {status, fixVersion})
+collectors/tickets-my-tasks.sh  →  tickets-my-tasks-state.json  (票号 → {status, fixVersion})
                                  ↓ target 直接读它当上下文
 targets/tickets-progress.sh  →  判断"频道消息里的票号 ∈ 这个集合"
 ```
@@ -204,12 +204,12 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 需要让用户注意的事，可以推到他的 IM：
 
 ```bash
-~/.dsh/bot/layered-agent/tools/notify.sh "正文"       # 或 echo 正文 | 脚本
+~/.dsh/bot/layered-agent/tools/im-notify.sh "正文"       # 或 echo 正文 | 脚本
 ```
 
-- 收件人取 `$LAYERED_IM_NOTIFY_TO` 或 `tools/notify.to`
+- 收件人取 `$LAYERED_IM_NOTIFY_TO` 或 `tools/im-notify.to`
 - **消息是"用户发给自己"的**（helper 以用户本人身份认证，没有机器人账号），
-  落在 IM 的"自己/备注"会话里 —— 能当通知渠道，但不显示成机器人
+  落在 IM 的"发给自己"会话里 —— 能当通知渠道，但不显示成机器人
 - 脚本强制 `text` 模式：默认的 markdown 模式**禁止裸 URL**，我们的通知里全是链接
 - 超 3200 字符自动分段；退出码非 0 时按需降级
 
@@ -219,7 +219,7 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 按它实现会一次标出 17 个会话（含三个月前的 `👍`、`好的`）。必须加时间上限
 （只看最近 N 分钟到达且无人回的），再叠加判断 —— 判断归 L2，不放进 L1。
 
-链路：采集器产 `dm-awaiting` 事实 → target 只叫醒 L2 → L2 判断 → `notify.sh --to "<会话id>"`。
+链路：采集器产 `dm-awaiting` 事实 → target 只叫醒 L2 → L2 判断 → `im-notify.sh --to "<会话id>"`。
 
 **先跑影子模式**：给同事发消息不可撤回，且以用户本人身份发出。样本不足时别给
 "是否需要回复"定阈值。
@@ -253,7 +253,7 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 ## 注意
 
 - 先看现有脚本参照：`collectors/` 下 `uptime.sh`（最简单）、`net.sh`（系统命令+meta）、
-  `mail.sh`（有状态去重+内部 API）、`feed-timeline.sh`（登录态+虚拟列表两段式快照）；
+  `im-mail.sh`（有状态去重+内部 API）、`feed-timeline.sh`（登录态+虚拟列表两段式快照）；
   `targets/feed-timeline.sh`（L1 判定 + 批量 SemIf + items 决策）
 - 敏感数据（如邮件）只采元数据，不落正文；登录态文件要有 600 权限
 - 详尽的契约、schema 登记、L1 target 做法见插件安装目录的 `DATASOURCE.md`

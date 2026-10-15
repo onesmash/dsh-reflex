@@ -526,7 +526,7 @@ function install(rt, ctx, cfg) {
   }
 
   // 脚本驱动的 collector: 运行 cmd, 解析 stdout 每行一个 JSON fact
-  // 用 bash -c 执行, 并注入 IM 内部 CA 证书与完整 PATH (helper/内部 API 依赖, 否则 TLS 失败)
+  // 用 bash -c 执行, 并注入公司内部 CA 证书与完整 PATH (helper/内部 API 依赖, 否则 TLS 失败)
   //
   // ---------- 密钥: 自己读密钥库(见 scriptEnv 的说明) ----------
   // 格式与 ds-bot 的密钥库一致: { secrets: [ {name, value, scope, ...} ] }
@@ -607,7 +607,14 @@ function install(rt, ctx, cfg) {
   // 而本插件是用 spawn 直接起子进程 —— 实测 process.env 里 DSH_SECRET_* 为 0 个。
   // 不自己读的话, LAYERED_JEV_API_KEY 永远是空的, 切到托管 Jev 必然失败。
   function scriptEnv(extra) {
-    const ca = join(process.env.HOME || '', '.ca_bundle.pem')
+    // 内部 CA: 可显式指定, 否则按候选路径找 —— 不写死某一家的文件名。
+    // 最后一项是历史默认, 保留它, 免得已装好的机器升级后 TLS 突然失败。
+    const home = process.env.HOME || ''
+    const ca = [
+      process.env.LAYERED_INTERNAL_CA,
+      join(home, '.internal_ca_bundle.pem'),
+      join(home, '.ca_bundle.pem'),
+    ].filter(Boolean).find((f) => existsSync(f)) || join(home, '.internal_ca_bundle.pem')
     const env = {
       ...process.env,
       LAYERED_HOME: cfg.l0.homeDir,
