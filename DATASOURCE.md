@@ -486,6 +486,36 @@ score  (n 个有序层)    :  1 - 加权平均层距 / 均匀层距
 `"probability_status": "conditional option score; uncalibrated as decision confidence"`
 —— 它有意不提供校准。confidence 补的是这个，但补上的是**新的尺**，不是旧尺的新名字。
 
+### 插件配置页要能被"服务"：两个必须做对的点
+
+想让插件的配置出现在**插件页**（而不是只有 `cordis.patch.yml` 手改），缺一不可：
+
+**1. 宿主必须声明 schema，且每个字段标 `.volatile()`**
+
+```js
+export const Config = Schema.object({
+  decide: Schema.object({
+    backend: Schema.string().default('').volatile(),   // ← 少了 .volatile() 就没有配置页
+  }),
+})
+```
+
+DSH 的 `settings` 服务只渲染 **`.volatile()` 声明的字段**；不标就没表单，**而且不报错**
+（插件页里静悄悄地什么都没有）。loader 也靠这个元数据做"只更新字段、不重挂插件"。
+
+**2. 加 `dsh.client` 时必须同时有可用的 `./client` 导出**
+
+否则宿主**致命崩溃**（`DesktopHostFatalError`，整个 DSH 起不来）。client 半侧用
+`ctx.slots.inject('plugins.row.config', ...)` 注册，key 是 `<包名>#<行 id>`。
+上线前跑 `node tests/check-client-bundle.mjs`（它会检查成对性/导出/依赖，并复现过崩溃条件）。
+
+**⚠️ 踩过的坑：标了 `.volatile()` 之后字段不再是裸值。**
+
+运行时它变成 `Volatile<T>` **取值器**，官方读法是 `this.config.provider.get()`。
+直接当字符串用会**静默失效**（`cfg.decide.backend === 'jev'` 永远 false —— 配了后端却不生效，
+不报任何错）。本仓库用 `unwrap()` 统一解包，兼顾未标 volatile 的字段（仍是裸值）。
+`tests/test-secrets-inject.mjs` 场景 J 盯着这条。
+
 ### confidence 必须在本地复算，不能信后端报的
 
 独立实现之间 `confidence` **不可移植** —— 实测（[jevcompat](https://github.com/mandu5/jevcompat)

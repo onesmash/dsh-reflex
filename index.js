@@ -94,13 +94,18 @@ export function __setSpawnForTest(fn) { spawnImpl = fn }
 //    而本插件的语义是"未配置 = 不注入环境变量 = 保持既有行为"。
 export const Config = Schema.object({
   decide: Schema.object({
+    // ⚠️ 每个字段必须 .volatile() —— 否则 DSH 的 settings 服务不认为它可编辑,
+    //    插件页里根本不会出现配置表单(实测: 不标就什么都没有, 且不报错)。
+    //    官方插件也都是逐字段标: z.string().required().volatile()
     backend: Schema.string()
-      .description('决策后端: 留空=semif(本地,不联网) | jev=TypeSafe托管(内容会离开本机) | jevlocal=本地同款线格式')
-      .default(''),
+      .description('决策后端: 留空=semif(本地,不联网) | jev=托管(内容会离开本机) | jevlocal=本地端点')
+      .default('').volatile(),
     jevBaseUrl: Schema.string()
-      .description('Jev 端点。托管填 https://api.typesafe.ai; jevlocal 填本地端点(如 http://127.0.0.1:30001)')
-      .default('https://api.typesafe.ai'),
-    jevModel: Schema.string().description('Jev 模型名, 如 jev-latest').default('jev-latest'),
+      .description('Jev 端点。TypeSafe: https://api.typesafe.ai | OpenRouter: https://openrouter.ai/api/v1 | 本地: http://127.0.0.1:30001')
+      .default('https://api.typesafe.ai').volatile(),
+    jevModel: Schema.string()
+      .description('Jev 模型名: jev-latest(TypeSafe) | typesafe/jev-1.13(OpenRouter)')
+      .default('jev-latest').volatile(),
   }).description('L1 语义判定的后端'),
 }).description('分层智能体: 数据源 / 判定目标 / 决策后端')
 
@@ -568,6 +573,19 @@ function install(rt, ctx, cfg) {
     return typeof v === 'string' && v.trim() ? v : undefined
   }
 
+  // 解包 volatile 字段。
+  // ⚠️ 声明了 .volatile() 的字段在运行时不是裸值, 而是 `Volatile<T>` 取值器 ——
+  //    官方写法是 `this.config.provider.get()`。直接当字符串用会静默出错:
+  //    `cfg.decide.backend === 'jev'` 永远 false, 于是"切后端"看起来配了却不生效,
+  //    而且不报任何错。这里统一解包, 兼顾未标 volatile 的字段(仍是裸值)。
+  function unwrap(v, fallback) {
+    if (v === undefined || v === null) return fallback
+    if (typeof v === 'object' && typeof v.get === 'function') {
+      try { return v.get() ?? fallback } catch { return fallback }
+    }
+    return v
+  }
+
   // 脚本运行的公共环境: 统一目录 / 内部 CA / 完整 PATH / SemIf 打分脚本位置
   // (GUI 子进程 PATH 可能精简, 不补会导致 helper / 内部 API 的 TLS 失败)
   //
@@ -590,10 +608,11 @@ function install(rt, ctx, cfg) {
     }
     // 决策后端: 只在显式配了才注入 —— 不配就别动, 让 target 自己的默认(semif)生效。
     // 注意 'semif' 也要注入: 它是"从默认切回本地"的显式选择。
-    if (cfg.decide.backend) env.LAYERED_DECIDE_BACKEND = cfg.decide.backend
-    if (cfg.decide.backend === 'jev' || cfg.decide.backend === 'jevlocal') {
-      env.LAYERED_JEV_BASE_URL = cfg.decide.jevBaseUrl
-      env.LAYERED_JEV_MODEL = cfg.decide.jevModel
+    const backend = String(unwrap(cfg.decide.backend, '') ?? '').trim()
+    if (backend) env.LAYERED_DECIDE_BACKEND = backend
+    if (backend === 'jev' || backend === 'jevlocal') {
+      env.LAYERED_JEV_BASE_URL = String(unwrap(cfg.decide.jevBaseUrl, '') ?? '')
+      env.LAYERED_JEV_MODEL = String(unwrap(cfg.decide.jevModel, '') ?? '')
       const key = secretValue('JEV_API_KEY')
         ?? secretValue('LAYERED_JEV_API_KEY')
         ?? secretValue('TYPESAFE_API_KEY')
@@ -603,7 +622,7 @@ function install(rt, ctx, cfg) {
         warnedNoJevKey = true
         log('决策后端=%s 但没找到密钥(找过 %s 的 refs) —— 判定会因缺 key 失败。'
           + '存法: 把 JEV_API_KEY 写进凭据文件的 refs 段(或聊天里用 request_secret)',
-          cfg.decide.backend, cfg.decide.credentialsFile, cfg.decide.secretAllow.join('/'))
+          backend, cfg.decide.credentialsFile, cfg.decide.secretAllow.join('/'))
       }
     }
     return env

@@ -130,5 +130,30 @@ writeFileSync(bothSecret, JSON.stringify({
 T('主名优先', { decide: { backend: 'jev', credentialsFile: join(bothdir, 'none.yaml'), secretsFile: bothSecret }, l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: 'primary-key' })
 
+console.log('\n=== J. volatile 字段必须被解包(否则切后端静默失效) ===')
+{
+  // 场景 A-J 用的都是 Config 声明过的 volatile 字段。
+  // 若哪天忘了解包, backend/端点会变成取值器对象, 注入的环境变量就不对 —— 且不报错。
+  let api
+  try {
+    api = apply(fakeCtx(), {
+      l0: { sources: ['disk'] },
+      decide: { backend: 'jev', jevBaseUrl: 'https://openrouter.ai/api/v1', jevModel: 'typesafe/jev-1.13' },
+    })
+  } catch (e) { console.log('  apply 抛错:', e.message) }
+  const env = api?.scriptEnv?.() ?? {}
+  const body = env.LAYERED_DECIDE_BACKEND === 'jev'
+    && env.LAYERED_JEV_BASE_URL === 'https://openrouter.ai/api/v1'
+    && env.LAYERED_JEV_MODEL === 'typesafe/jev-1.13'
+  // ⚠️ 必须走 T() —— 直接调 check() 会打印 ✅ 却不计入 pass/total,
+  //    于是汇总数字偏小、看起来"通过"其实漏了这条(本文件就踩过一次)。
+  T('volatile', {
+    l0: { sources: ['disk'] },
+    decide: { backend: 'jev', jevBaseUrl: 'https://openrouter.ai/api/v1', jevModel: 'typesafe/jev-1.13' },
+  }, { backend: 'jev', baseUrl: 'https://openrouter.ai/api/v1', key: undefined })
+  if (!body) console.log('     ⚠️ volatile 解包异常: 端点/模型与预期不符')
+}
+
 console.log(`\n结果: ${pass}/${total} 通过`)
+if (pass !== total) console.log(`⚠️ 有 ${total - pass} 项未通过`)
 process.exit(pass === total ? 0 : 1)
