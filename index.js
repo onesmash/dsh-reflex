@@ -175,19 +175,10 @@ function install(rt, ctx, cfg) {
       log(`L0: migrated legacy ${legacyStore} → ${cfg.l0.storeDir}`)
     }
   } catch (e) { log(`migrate legacy store fail: ${e.message}`) }
-  // 种子脚本: 插件包内置 collectors/ → 统一目录 collectors/ (仅当缺失)
-  try {
-    const pkgCollectors = join(__dirname, 'collectors')
-    if (existsSync(pkgCollectors)) {
-      for (const f of readdirSync(pkgCollectors)) {
-        // *.env.json 是本机专有(个人 userId / 私有频道 id), 不作为种子外发
-        if (f.endsWith('.env.json')) continue
-        if (!existsSync(join(cfg.l0.collectorsDir, f))) {
-          try { cpSync(join(pkgCollectors, f), join(cfg.l0.collectorsDir, f)) } catch {}
-        }
-      }
-    }
-  } catch (e) { log(`seed collectors fail: ${e.message}`) }
+  // collectors/ 由使用者自己放在统一目录 —— 插件包【不内置】任何采集器。
+  // 早期版本在包内也留一份并 seed 过来, 结果是同一脚本存在两份副本: 改了包内
+  // 那份, 统一目录那份因为"已存在不覆盖"永远不更新, 插件实际跑的是旧版。
+  // 采集器是使用者自己的东西(接哪些源、什么口径), 不由插件分发。
 
   // ---------- 临时探针: 记录配置写入失败的真实原因(查清后删除) ----------
   // 为什么在这里: 面板保存失败的真正错误会经 configEditor.edit() 抛出, 但
@@ -403,48 +394,8 @@ function install(rt, ctx, cfg) {
   // 契约: stdin 收到本轮新事实(JSONL); stdout 输出一行 JSON; 无输出=本轮不唤醒; 非 0 退出=记 failed
   //   { wake, reason, fingerprint, header?, scanned?, items?: [{id,title,body}] }  或 { notice } 全权模式
   const targetsDir = cfg.l1.targetsDir ?? join(cfg.l0.homeDir, 'targets')
-  // 种子脚本: 插件包内置 targets/ → 统一目录 targets/ (仅当缺失), 与 collectors 同一规则
-  try {
-    const pkgTargets = join(__dirname, 'targets')
-    if (existsSync(pkgTargets)) {
-      mkdirSync(targetsDir, { recursive: true })
-      for (const f of readdirSync(pkgTargets)) {
-        if (f.endsWith('.env.json')) continue
-        if (!existsSync(join(targetsDir, f))) {
-          try { cpSync(join(pkgTargets, f), join(targetsDir, f)) } catch {}
-        }
-      }
-    }
-  } catch (e) { log(`seed targets fail: ${e.message}`) }
-
-  // 种子工具: 插件包内置 tools/ → 统一目录 tools/ (仅当缺失), 与前两者同一规则。
-  //
-  // 为什么补这条: tools/ 里的东西是【运行时依赖】——targets 脚本会调
-  // tools/semif-adapt.py、tools/decide-calibrate.py、tools/notify.sh。
-  // 但原先没有 seed 逻辑, 所以装这个插件的人拿不到它们, 一跑就缺文件;
-  // 而仓库里那份又因为"没有唯一来源"被手工来回拷(见 DATASOURCE.md 的约定一节)。
-  // 补上之后: 仓库 = 分发源, 统一目录 = 运行副本, 两边各就其位。
-  try {
-    const pkgTools = join(__dirname, 'tools')
-    const toolsDir = cfg.l0.toolsDir ?? join(cfg.l0.homeDir, 'tools')
-    if (existsSync(pkgTools)) {
-      mkdirSync(toolsDir, { recursive: true })
-      // 永不外发本机身份文件 —— tools/notify.to 装的是收件人 userId,
-      // 属于【个人标识】而不是工具。它只该活在使用者自己的统一目录里。
-      const NEVER_SEED = new Set(['notify.to'])
-      for (const f of readdirSync(pkgTools)) {
-        if (NEVER_SEED.has(f) || f === '__pycache__') continue
-        if (existsSync(join(toolsDir, f))) continue
-        try {
-          cpSync(join(pkgTools, f), join(toolsDir, f))
-          // 脚本保持可执行 —— 少了这一位, 采集器/target 里 spawn 会直接失败
-          if (f.endsWith('.sh') || f.endsWith('.py')) {
-            try { chmodSync(join(toolsDir, f), 0o755) } catch {}
-          }
-        } catch {}
-      }
-    }
-  } catch (e) { log(`seed tools fail: ${e.message}`) }
+  // targets/ 与 tools/ 同样只从统一目录读, 插件包不内置 (与 collectors 同因)。
+  // 判定脚本、回执脚本这些是使用者自己的口径与渠道, 不属于插件。
 
   const SCRIPT_TARGETS = {}
   try {
