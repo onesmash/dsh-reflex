@@ -1034,12 +1034,19 @@ function install(rt, ctx, cfg) {
   // 安静时段判定 (支持跨午夜, 如 18:00 -> 09:00)
   function isQuietNow(q) {
     if (!q || !q.from || !q.to) return false
-    const toMin = (str) => {
-      const m = String(str).match(/^(\d{1,2}):(\d{2})$/)
+    // 容忍数字: YAML 1.1 把「双位:两位」当 sexagesimal(时分), 所以
+    //   from: 18:00        (无引号) -> 解析成 1080
+    //   from: "18:00"      (有引号) -> 字符串
+    // 谁写的 patch 都可能漏引号(宿主加载器重写整个文件时就会把引号去掉),
+    // 而 1080 恰好就是"当日第 1080 分钟" = 18:00 —— 语义完全等价, 应当接受。
+    // 不兜住的话这里会判格式错误并静默返回 false, 安静时段就悄悄失效了。
+    const toMin = (v) => {
+      if (typeof v === 'number') return Number.isFinite(v) && v >= 0 && v <= 1440 ? v : null
+      const m = String(v).match(/^(\d{1,2}):(\d{2})$/)
       return m ? (Number(m[1]) * 60 + Number(m[2])) : null
     }
     const from = toMin(q.from), to = toMin(q.to)
-    if (from === null || to === null) { log(`quietHours 格式错误(应为 HH:MM): ${q.from}/${q.to}`); return false }
+    if (from === null || to === null) { log(`quietHours 格式错误(应为 HH:MM 或分钟数): ${JSON.stringify(q.from)}/${JSON.stringify(q.to)}`); return false }
     const d = new Date()
     const cur = d.getHours() * 60 + d.getMinutes()
     return from <= to ? (cur >= from && cur < to) : (cur >= from || cur < to)
