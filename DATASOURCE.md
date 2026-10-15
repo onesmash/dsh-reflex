@@ -576,6 +576,46 @@ TypeSafe 会送人工的。**概率在实现对之间可比；`confidence` 不�
 ⚠️ 但**这不等于阈值可以跨后端搬**：概率本身仍会因模型不同而漂移，阈值依然要在
 你自己的标注上重拟合（见下）。
 
+### 接 Jev 兼容端点时的两个硬坑（实测）
+
+**1. base URL 要拼得出 `/v1/systemone`。**
+
+适配器是按 `{base}/v1/systemone` 拼的。所以：
+
+| 提供方 | base 正确写法 | 拼出来 |
+|---|---|---|
+| TypeSafe | `https://api.typesafe.ai` | `https://api.typesafe.ai/v1/systemone` |
+| **OpenRouter** | **`https://openrouter.ai/api`** | `https://openrouter.ai/api/v1/systemone` |
+| 本地 | `http://127.0.0.1:30001` | 同款线格式 |
+
+⚠️ 把 OpenRouter 写成 `https://openrouter.ai/api/v1` 会拼成
+`/api/v1/v1/systemone` → **404**。这是我踩过的（预设里写错过）。
+
+**2. `criteria` 的值不能是 `null`。**
+
+Jev 的 schema 要求每个 criteria 值是 **string / object / array**。SemIf 的选项
+常常没有 description，旧实现直接写 `null`，被端点 **400** 拒掉：
+
+```
+{"type":"noul","criteria":{"true":null,"false":null}}
+-> HTTP 400  path:["questions","q","criteria","true"]
+   expected string|record|array  received null
+```
+
+**而且这是静默失败**：适配器把单条失败记进 stderr 后继续，整轮可能 0 输出。
+现在没有 description 时给语义对等的回退文本（`_FALLBACK_CRIT`），
+`tests/test-jev-question.py` 锁死这条（12 项，反向验证过）。
+
+**顺带一条实测经验**：判定类型由端点按问题形状决定，不完全由我们指定 ——
+同样的 noul 意图，3 选项时回来的可能是 `choice`。confidence 公式要按**实际
+返回的 type** 选，不能按我们请求的类型预设。端到端实测输出：
+
+```json
+{"decision":"no","probability":0.88,"confidence":0.82,"confidence_formula":"choice",
+ "probabilities":{"yes":0.11,"no":0.88,"insufficient":0.01},
+ "meta":{"model":"typesafe/jev-1.13-20260917","usage":{"cost":2.52e-05}}}
+```
+
 ### 生态里已有的工具（别重复造）
 
 - **[jevcal](https://github.com/abhixhek/jevcal)** —— 在你的标注上拟合**每题**阈值、
