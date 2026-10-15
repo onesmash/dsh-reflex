@@ -40,6 +40,9 @@ const DEFAULTS = {
     escalateToChief: false,   // 目标就是 Chief, 无需再升级
     chiefBot: 'Chief',
     cooldownMs: 30 * 60 * 1000,  // 同状态异常冷却: 30 分钟内不重复唤醒
+    // 安静时段: 此区间内【内容类】target 的命中不打扰, 攒进 pending, 到点合并成一条摘要。
+    // 硬规则 target(磁盘) 通过 interruptAlways 穿透。null = 不启用。
+    quietHours: null,            // 例: { from: '18:00', to: '09:00' }
     // 用户画像: 内容类 target(如 feed-timeline)组装 SemIf 决策 context 用 —— 建议在 profile patch 里覆盖
     profile: '',
     // 内容类 target 的参数现在归 target 自己的 env.json 管 (targets/<name>.env.json 的 env 段),
@@ -586,7 +589,7 @@ function install(rt, ctx, cfg) {
     const items = ctx.items ?? []
     const parts = [`[分层智能体·L1·${displayName}] ${items.length ? `${items.length} 条值得关注` : '需要关注'}`]
     const meta = []
-    if (ctx.carried) meta.push(`其中 ${ctx.carried} 条为唤醒冷却期内累积`)
+    if (ctx.carried) meta.push(`其中 ${ctx.carried} 条为此前暂存（冷却期或安静时段）`)
     if ((ctx.rounds ?? 1) > 1) meta.push(`跨 ${ctx.rounds} 轮扫描`)
     if (ctx.scanned) meta.push(`累计扫描 ${ctx.scanned} 条`)
     if (meta.length) parts.push(meta.join(' · '))
@@ -700,6 +703,7 @@ function install(rt, ctx, cfg) {
   const TARGETS = {
     disk: {
       name: '磁盘存储',
+      interruptAlways: true,      // 硬规则不被安静时段拦住: 磁盘满是"现在就得知道"的事
       // ① 收集器: 该 target 作为"决策 context"的所有数据都在这组装 (含趋势, 供 L2 无状态决策)
       collect: async (facts) => {
         const diskFacts = facts.filter(f => f.source === 'disk')
@@ -776,6 +780,7 @@ function install(rt, ctx, cfg) {
       name: t.displayName ?? key,
       isScript: true,
       minIntervalMs: t.minIntervalMs === 'auto' ? sourceIntervalMs(key) : (t.minIntervalMs ?? 0),
+      interruptAlways: !!t.interruptAlways,      // 由 <name>.env.json 配置, 默认遵守安静时段
       collect: async (facts) => {
         // env.json 里声明了 sources 的 target: 本轮没有它关心的源的数据时, 连脚本都不用起。
         // 不加这道闸, target 脚本会被每分钟空跑一次 —— 因为 disk 每分钟产出一条事实,
@@ -844,6 +849,20 @@ function install(rt, ctx, cfg) {
     return true                                             // 同状态但超过冷却期 → 重新关注
   }
 
+  // 安静时段判定 (支持跨午夜, 如 18:00 -> 09:00)
+  function isQuietNow(q) {
+    if (!q || !q.from || !q.to) return false
+    const toMin = (str) => {
+      const m = String(str).match(/^(\d{1,2}):(\d{2})$/)
+      return m ? (Number(m[1]) * 60 + Number(m[2])) : null
+    }
+    const from = toMin(q.from), to = toMin(q.to)
+    if (from === null || to === null) { log(`quietHours 格式错误(应为 HH:MM): ${q.from}/${q.to}`); return false }
+    const d = new Date()
+    const cur = d.getHours() * 60 + d.getMinutes()
+    return from <= to ? (cur >= from && cur < to) : (cur >= from || cur < to)
+  }
+
   const activeTargets = Object.keys(ALL_TARGETS).filter(k => (cfg.l1.targets ?? ['disk']).includes(k))
 
   // 防重入: 脚本 target 可能要跑十几秒(要启浏览器、要调 SemIf), 一旦超过 l1.intervalMs,
@@ -879,12 +898,16 @@ function install(rt, ctx, cfg) {
       const target = ALL_TARGETS[targetKey]
       try {
         const rateLimit = target.minIntervalMs ?? 0
-        const limited = !!rateLimit && (Date.now() - (lastWake[targetKey]?.at ?? 0)) < rateLimit
+        // 安静时段与唤醒闸门是同一类限制(都靠 pending 累积绕过), 所以合并成一个 limited。
+        // interruptAlways 的 target(如磁盘硬规则)穿透安静时段 —— 磁盘满这类事没有"上班再说"。
+        const quiet = isQuietNow(cfg.l1.quietHours) && !target.interruptAlways
+        const limited = quiet || (!!rateLimit && (Date.now() - (lastWake[targetKey]?.at ?? 0)) < rateLimit)
+        const limitWhy = quiet ? '处于安静时段' : `距上次唤醒不足 ${Math.round(rateLimit / 60000)} 分钟`
         const buffers = typeof target.mergeCtx === 'function'
 
         // 不支持累积的 target: 冷却期内直接短路, 连 collect 都不跑
         if (limited && !buffers) {
-          log(`L1[${targetKey}]: 距上次唤醒不足 ${Math.round(rateLimit / 60000)} 分钟, 本轮跳过`)
+          log(`L1[${targetKey}]: ${limitWhy}, 本轮跳过`)
           continue
         }
 
@@ -893,7 +916,7 @@ function install(rt, ctx, cfg) {
         const pending = pendingWakes[targetKey]
         if (buffers && pending) {
           ctx = target.mergeCtx(pending, ctx)
-          if (ctx) log(`L1[${targetKey}]: 合并冷却期累积 (共 ${ctxItemCount(ctx)} 条, 其中 ${ctx.carried ?? 0} 条为累积)`)
+          if (ctx) log(`L1[${targetKey}]: 合并此前暂存 (共 ${ctxItemCount(ctx)} 条, 其中 ${ctx.carried ?? 0} 条为暂存)` )
         }
         if (!ctx) continue
 
@@ -903,7 +926,7 @@ function install(rt, ctx, cfg) {
           const label = (typeof target.interimReason === 'function' ? target.interimReason(ctx) : target.interimReason) ?? '硬规则触发'
           if (limited) {
             savePending(targetKey, ctx)
-            log(`L1[${targetKey}]: ${label} 但距上次唤醒不足 ${Math.round(rateLimit / 60000)} 分钟, 已攒 ${ctxItemCount(ctx)} 条待下次合并`)
+            log(`L1[${targetKey}]: ${label} 但${limitWhy}, 已攒 ${ctxItemCount(ctx)} 条待下次合并`)
             continue
           }
           if (contentChanged(targetKey, fp)) {

@@ -225,6 +225,25 @@ IM 的 `msg_mention_me_fetch` 只返回"这个线程里有人 @ 过你"，**不�
 
 然后配置启用：`l1.targets: [disk, mysource]`。
 
+### 安静时段（quietHours）
+
+工作之外不打扰，但也不丢消息 —— 靠**复用 pending 累积**实现，不额外写调度：
+
+```yaml
+l1:
+  quietHours: { from: "18:00", to: "09:00" }   # 支持跨午夜
+```
+
+- 安静时段内，**内容类** target 的命中不进唤醒，直接走已有的 pending 队列
+- 时段结束后的第一次决策，pending 自动合并成**一条摘要**发出（"睡醒看隔夜汇总"）
+- **硬规则 target 通过 `interruptAlways: true` 穿透** —— 磁盘满这类事没有"上班再说"
+  （内置 disk target 已标注；脚本 target 在 `<name>.env.json` 里写 `"interruptAlways": true`）
+- 与 `minIntervalMs` 是同一类限制（都产生 pending），实现上合并成一个 `limited` 判断
+
+> 为什么必须做这件事：内容类命中（AI 新闻、同事私聊）本身都"值得知道"，
+> 但半夜推三次之后，人会开始无视整个通知渠道 —— 而同一个渠道还承担着磁盘告警。
+> **和不要紧的消息混在一起按时段无差别推送，最后会一起被无视掉。**
+
 ### 六个必须遵守的点
 
 > 第 1、2、4 条针对**内置 target**（`TARGETS` 注册表）。脚本 target 由插件统一处理指纹兜底、

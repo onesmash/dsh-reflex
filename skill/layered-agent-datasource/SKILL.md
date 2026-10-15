@@ -1,7 +1,7 @@
 ---
 name: layered-agent-datasource
 description: "为分层智能体(ds-bot-layered-agent)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（LAYERED_HOME / $HOME）推导，不写死绝对路径。"
-version: 1.7.0
+version: 1.8.0
 ---
 
 # 添加分层智能体数据源
@@ -153,6 +153,15 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 
 分块时还要盯一眼磁盘：`df -h /System/Volumes/Data | tail -1` 和
 `du -sh /System/Volumes/VM`。跑之前记一下，跑完再对一次，异常增长要立刻停。
+
+## 安静时段
+
+`l1.quietHours: { from: "18:00", to: "09:00" }` —— 时段内**内容类** target 的命中不进唤醒，
+走已有的 pending 队列攒着；时段结束后第一次决策自动合并成一条摘要发出。
+**硬规则 target 用 `interruptAlways: true` 穿透**（内置 disk 已标；脚本 target 在 env.json 里写）。
+
+冷知识：它和 `minIntervalMs` 是同一类限制，实现上共用一个 `limited` 判断 —— 加这类
+"暂不打扰"的规则时，优先复用它，别另起一套调度。
 
 ## 输出通道：给用户发 IM
 
