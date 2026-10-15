@@ -586,6 +586,10 @@ function install(rt, ctx, cfg) {
     const env = {
       ...process.env,
       REFLEX_HOME: cfg.l0.homeDir,
+      // 标记"这次是插件在采集" —— 采集器据此区分正常采集与手工跑(排障)。
+      // 手工跑的输出只进终端、不会成为 facts, 若它也写去重表, 那批邮件就被
+      // 永久标记为已见、再也等不到 facts(实测踩过, 见 mail.sh 的 dry-run 分支)。
+      REFLEX_PLUGIN_INVOKED: '1',
       PATH: `/usr/local/bin:/opt/homebrew/bin:/bin:/usr/bin:/sbin:/usr/sbin:${process.env.HOME}/.local/bin:${process.env.PATH ?? ''}`,
       SSL_CERT_FILE: process.env.SSL_CERT_FILE || '',
       CURL_CA_BUNDLE: process.env.CURL_CA_BUNDLE || process.env.SSL_CERT_FILE || '',
