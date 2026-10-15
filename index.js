@@ -207,6 +207,39 @@ function install(rt, ctx, cfg) {
     }
     return n
   }
+  // ---------- 临时诊断: 配置页保存为何被拒(查清后删除) ----------
+  // 背景: 面板里改 decide 段保存报"保存失败", 但原因在上游被吞掉
+  // (SettingsFormModel.save 的 catch 只置一个布尔), desktop 版又没有开发者工具。
+  // 已从外部复现过整条写入链(schema / 路径校验 / JSON 形状 / patch 可写)全部通过,
+  // 所以只能在这里把宿主侧真实状态打出来。
+  // write() 的第一句是 configEditor.entries().find(r => r.options.id === ns),
+  // 找不到就抛 "No configurable plugin entry" —— 这是头号嫌疑, 先验它。
+  // ⚠️ 注意: 本插件的 log() 不做 printf 格式化, 必须用字符串拼接, 别用 %s/%d。
+  try {
+    const ed = ctx.get ? ctx.get('configEditor') : undefined
+    if (ed === undefined) {
+      log('DIAG: ctx.get("configEditor") = undefined (配置编辑器不可见)')
+    } else {
+      const rows = typeof ed.entries === 'function' ? ed.entries() : []
+      const ids = rows.map((r) => (r && r.options ? r.options.id : undefined))
+      log('DIAG: configEditor 可见, entries 共 ' + rows.length + ' 条')
+      log('DIAG: entries 的 id 列表 = ' + JSON.stringify(ids))
+      const mine = rows.find((r) => r && r.options && r.options.id === 'layered-agent')
+      if (mine === undefined) {
+        log('DIAG: 找不到 id==="layered-agent" 的条目 -> write() 会抛 No configurable plugin entry')
+        log('DIAG: 名字含 layered 的 id = '
+          + JSON.stringify(ids.filter((x) => typeof x === 'string' && x.indexOf('layered') >= 0)))
+      } else {
+        log('DIAG: 找到条目 layered-agent | fiber.state='
+          + (mine.fiber ? mine.fiber.state : '(无 fiber)')
+          + ' (需为 2) | options.config 键 = '
+          + JSON.stringify(Object.keys(mine.options.config || {})))
+      }
+    }
+  } catch (e) {
+    log('DIAG: 诊断失败: ' + e.message)
+  }
+
   try {
     const pkgSkills = join(__dirname, 'skill')
     const skillsRoot = process.env.AGENTS_SKILLS_DIR || join(process.env.HOME || '', '.agents', 'skills')
