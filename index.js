@@ -264,15 +264,18 @@ function install(rt, ctx, cfg) {
   }
 
   // ---------- L2 唤醒: 经 sessionController 直接投递 (ds-bot 同款) ----------
+  // 返回"是否真的投出去了"。调用方必须据此决定要不要记指纹 ——
+  // 投递失败还记指纹, 这条告警就被永久去重、再也发不出来(2026-10-15 20:55 实测丢过一次:
+  // 插件正在重载 → sessionController unavailable → 失败却记了指纹 → 那条"有人在等你回话"消失)。
   async function wakeL2(summary) {
     try {
       const targetName = cfg.l1.targetBot
       const sessionId = botSessionId(targetName)
-      if (!sessionId) { log(`L2 wake failed: no session for "${targetName}"`); return }
+      if (!sessionId) { log(`L2 wake failed: no session for "${targetName}"`); return false }
       const sc = sessionCtrlSvc()
-      if (!sc?.resolveAgent) { log('L2 wake failed: sessionController unavailable'); return }
+      if (!sc?.resolveAgent) { log('L2 wake failed: sessionController unavailable'); return false }
       const resolved = await sc.resolveAgent(sessionId)
-      if ('error' in resolved) { log(`L2 wake failed: ${resolved.error?.message}`); return }
+      if ('error' in resolved) { log(`L2 wake failed: ${resolved.error?.message}`); return false }
       const agent = resolved.agent
       // text 由 target.render 产出完整结构化通知; 这里不再加前缀 (原 'detected' 前缀已移入 render)
       const text = summary
@@ -282,10 +285,12 @@ function install(rt, ctx, cfg) {
       })
       if (agent?.followup) agent.followup(message)
       else if (agent?.steer) agent.steer(message)
-      else { log('L2 wake failed: agent has no followup/steer'); return }
+      else { log('L2 wake failed: agent has no followup/steer'); return false }
       log(`L2: woken "${targetName}" (${sessionId}) via sessionController`)
+      return true
     } catch (e) {
       log(`L2 wake error: ${e.message}`)
+      return false
     }
   }
 
@@ -1083,9 +1088,16 @@ function install(rt, ctx, cfg) {
           }
           if (contentChanged(targetKey, fp)) {
             log(`L1[${targetKey}]: ${label}`)
-            await wakeL2(target.render(ctx, `(${label})`))
-            saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: label } })
-            if (pending) savePending(targetKey, null)
+            const delivered = await wakeL2(target.render(ctx, `(${label})`))
+            if (delivered) {
+              saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: label } })
+              if (pending) savePending(targetKey, null)
+            } else {
+              // 没投出去就不能记指纹: 记了这条内容会被永久去重, 告警静默消失(踩过)。
+              // 攒进 pending, 下轮继续重试, 投递一恢复就补发。
+              savePending(targetKey, ctx)
+              log(`L1[${targetKey}]: 投递失败, 未记指纹, 已攒 ${ctxItemCount(ctx)} 条待下轮重试`)
+            }
           } else {
             log(`L1[${targetKey}]: ${label} 但内容与上次唤醒相同且未过冷却期, 跳过重复唤醒`)
             // 内容与上次唤醒完全重合 → pending 已无新信息, 清掉避免无限累积
@@ -1104,8 +1116,14 @@ function install(rt, ctx, cfg) {
         log(`L1[${targetKey}]: SemIf winning=${d.winning} pYes=${d.pYes.toFixed(3)}`)
         if (d.pYes >= cfg.l1.threshold) {
           if (contentChanged(targetKey, fp)) {
-            await wakeL2(target.render(ctx, `(SemIf pYes=${d.pYes.toFixed(2)})`))
-            saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: 'semif' } })
+            const delivered = await wakeL2(target.render(ctx, `(SemIf pYes=${d.pYes.toFixed(2)})`))
+            if (delivered) {
+              saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: 'semif' } })
+              if (pending) savePending(targetKey, null)
+            } else {
+              savePending(targetKey, ctx)
+              log(`L1[${targetKey}]: 投递失败, 未记指纹, 已攒 ${ctxItemCount(ctx)} 条待下轮重试`)
+            }
           } else {
             log(`L1[${targetKey}]: SemIf 触发但状态冷却中, 跳过重复唤醒`)
           }
