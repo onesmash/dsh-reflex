@@ -70,7 +70,8 @@ const DEFAULTS = {
     secretsFile: join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'secrets.json'),
     // 只把【本插件需要】的密钥注入脚本环境。不设白名单就会把用户所有密钥
     // 都递给每个采集器/target 脚本 —— 而那些脚本会调外部 API、跑第三方命令。
-    secretAllow: ['LAYERED_JEV_API_KEY', 'TYPESAFE_API_KEY'],
+    // 主名用 JEV_API_KEY(用户指定); 后两个是兼容既有的存量命名, 按顺序回退。
+    secretAllow: ['JEV_API_KEY', 'LAYERED_JEV_API_KEY', 'TYPESAFE_API_KEY'],
   },
 }
 
@@ -593,13 +594,15 @@ function install(rt, ctx, cfg) {
     if (cfg.decide.backend === 'jev' || cfg.decide.backend === 'jevlocal') {
       env.LAYERED_JEV_BASE_URL = cfg.decide.jevBaseUrl
       env.LAYERED_JEV_MODEL = cfg.decide.jevModel
-      const key = secretValue('LAYERED_JEV_API_KEY') ?? secretValue('TYPESAFE_API_KEY')
+      const key = secretValue('JEV_API_KEY')
+        ?? secretValue('LAYERED_JEV_API_KEY')
+        ?? secretValue('TYPESAFE_API_KEY')
       if (key) {
         env.LAYERED_JEV_API_KEY = key
       } else if (!warnedNoJevKey) {
         warnedNoJevKey = true
         log('决策后端=%s 但没找到密钥(找过 %s 的 refs) —— 判定会因缺 key 失败。'
-          + '存法: 把 LAYERED_JEV_API_KEY 写进凭据文件的 refs 段(或聊天里用 request_secret)',
+          + '存法: 把 JEV_API_KEY 写进凭据文件的 refs 段(或聊天里用 request_secret)',
           cfg.decide.backend, cfg.decide.credentialsFile, cfg.decide.secretAllow.join('/'))
       }
     }

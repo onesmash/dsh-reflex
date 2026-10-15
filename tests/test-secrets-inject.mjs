@@ -11,7 +11,7 @@ const dir = mkdtempSync(join(tmpdir(), 'layered-secrets-'))
 const secretsFile = join(dir, 'secrets.json')
 writeFileSync(secretsFile, JSON.stringify({
   secrets: [
-    { name: 'LAYERED_JEV_API_KEY', value: 'test-key-DO-NOT-USE', purpose: 'test' },
+    { name: 'JEV_API_KEY', value: 'test-key-DO-NOT-USE', purpose: 'test' },
     { name: 'SOME_OTHER_TOKEN', value: 'must-NOT-leak', purpose: 'unrelated' },
   ],
 }), 'utf8')
@@ -108,6 +108,27 @@ writeFileSync(c2, [
 ].join('\n'), 'utf8')
 T('cred-boundary', { decide: { backend: 'jev', credentialsFile: c2, secretsFile: join(cdir, 'absent.json') }, l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: undefined })
+
+console.log('\n=== H. 旧名 LAYERED_JEV_API_KEY 仍应被读到(向后兼容) ===')
+const olddir = mkdtempSync(join(tmpdir(), 'layered-oldname-'))
+const oldSecret = join(olddir, 'secrets.json')
+writeFileSync(oldSecret, JSON.stringify({
+  secrets: [{ name: 'LAYERED_JEV_API_KEY', value: 'old-name-key', purpose: 'legacy' }],
+}), 'utf8')
+T('旧名回退', { decide: { backend: 'jev', credentialsFile: join(olddir, 'none.yaml'), secretsFile: oldSecret }, l0: { sources: ['disk'] } },
+  { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: 'old-name-key' })
+
+console.log('\n=== I. 主名优先于旧名(两个都在时取主名) ===')
+const bothdir = mkdtempSync(join(tmpdir(), 'layered-both-'))
+const bothSecret = join(bothdir, 'secrets.json')
+writeFileSync(bothSecret, JSON.stringify({
+  secrets: [
+    { name: 'LAYERED_JEV_API_KEY', value: 'old-name-key', purpose: 'legacy' },
+    { name: 'JEV_API_KEY', value: 'primary-key', purpose: 'primary' },
+  ],
+}), 'utf8')
+T('主名优先', { decide: { backend: 'jev', credentialsFile: join(bothdir, 'none.yaml'), secretsFile: bothSecret }, l0: { sources: ['disk'] } },
+  { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: 'primary-key' })
 
 console.log(`\n结果: ${pass}/${total} 通过`)
 process.exit(pass === total ? 0 : 1)
