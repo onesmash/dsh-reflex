@@ -32,7 +32,9 @@ window.__ModuleLoader__.load({
 			save: "保存",
 			saving: "保存中…",
 			saveFailed: "保存失败，已保留你的输入。",
-			saveError: "保存被拒绝的原因："
+			saveError: "保存被拒绝的原因：",
+			diagNotLanded: "保存未生效 —— 改动没有被接受。",
+			diagErrorPrefix: "保存出错："
 		};
 
 		const en = {
@@ -56,7 +58,9 @@ window.__ModuleLoader__.load({
 			save: "Save",
 			saving: "Saving…",
 			saveFailed: "The deployment did not accept these values; they were left for you to correct.",
-			saveError: "Why the save was refused:"
+			saveError: "Why the save was refused:",
+			diagNotLanded: "Save did not take effect — the change was not accepted.",
+			diagErrorPrefix: "Save failed: "
 		};
 
 		function formLabels(t) {
@@ -89,6 +93,11 @@ window.__ModuleLoader__.load({
 		var CardController = class {
 			constructor(scope, ctx) {
 				this.ctx = ctx;
+				// 诊断文案必须跟随界面语言 —— 原来这两句是中文硬编码,
+				// 英文界面下会中英混排。
+				this.t = (ctx && ctx.locale && typeof ctx.locale.bind === "function")
+					? ctx.locale.bind(NS)
+					: (key) => key;
 				this.credential = { ref: "", configured: false, writable: true };
 				this.form = new ui.SettingsFormModel(scope, [
 					// ⚠️ 字段名就是【配置根下的路径】, 必须与宿主 Config schema 的顶层键一致。
@@ -105,17 +114,17 @@ window.__ModuleLoader__.load({
 				const inner = scope.mutate.bind(scope);
 				const self = this;
 				scope.mutate = async function (ops, revision) {
-					const snap = scope.getSnapshot ? scope.getSnapshot() : {};
 					try {
 						const ok = await inner(ops, revision);
 						if (!ok) {
-							self.diag = "mutate 返回 false(未落地) | writable=" + snap.writable
-								+ " | revision=" + JSON.stringify(revision) + " | ops=" + JSON.stringify(ops);
+							// 只说人话 —— 原来把 writable/revision/ops 的原始 JSON 也摊在
+							// 界面上, 用户看不懂, 而真正的原因早已被上游吞掉(见上面的注释)。
+							self.diag = self.t("diagNotLanded");
 						}
 						return ok;
 					} catch (error) {
-						self.diag = "mutate 抛错: " + (error && error.message ? error.message : String(error))
-							+ " | writable=" + snap.writable;
+						self.diag = self.t("diagErrorPrefix")
+							+ (error && error.message ? error.message : String(error));
 						throw error;
 					}
 				};
@@ -191,13 +200,18 @@ window.__ModuleLoader__.load({
 			};
 			if (props.view === "summary") return t("description");
 			const disabled = !state.writable;
-			// 表单是否可写 + mutate 的真实失败原因。两者都必须可见:
-			// writable=false 时保存按钮会静默什么都不做(外观与可用时一样)。
-			const diagLine = (0, react_jsx_runtime.jsx)("p", {
-				style: { color: "#c0392b", whiteSpace: "pre-wrap", fontSize: "12px" },
-				children: "writable=" + String(state.writable) + " | scopeWritable=" + String(state.scopeWritable)
-					+ (state.diag ? "\n" + state.diag : "")
-			});
+			// 只在【真有问题】时显示诊断: 不可写(保存按钮会静默失效), 或 mutate 报错。
+			// 原来无条件显示 "writable=... | scopeWritable=..." —— 那是排查期的残留:
+			// 正常用户看到一行红色技术文字只是噪音, 而且它硬编码英文、不跟随界面语言。
+			const diagBits = [];
+			if (!state.writable) diagBits.push(t("readOnly"));
+			if (state.diag) diagBits.push(state.diag);
+			const diagLine = diagBits.length
+				? (0, react_jsx_runtime.jsx)("p", {
+					style: { color: "#c0392b", whiteSpace: "pre-wrap", fontSize: "12px" },
+					children: diagBits.join("\n")
+				})
+				: null;
 			const text = (id, key, label, hint) =>
 				(0, react_jsx_runtime.jsx)(ui.SettingsValueField, {
 					id,
@@ -254,7 +268,21 @@ window.__ModuleLoader__.load({
 
 		function apply(ctx) {
 			const t = ctx.locale.bind(NS);
-			ctx.effect(() => ctx.locale.register(NS, { zh, en }), "dsh-reflex: dictionaries");
+			// 注册词典 —— 签名是 register(namespace, lang, dict), 三个参数。
+			// 原来写成 register(NS, { zh, en })(把字典对象当成了 lang), 所以两份词典
+			// 从未注册进去: 界面取不到词条, 只能回退到兜底文案 —— 表现为"多语言没生效"。
+			// 写法对齐官方实现见 ds-bot/client.js 的 installLocale。
+			// 注意 effect 必须【双箭头】: 单箭头时返回值会被当作 dispose 立刻执行。
+			ctx.effect(() => {
+				const offs = [];
+				for (const [lang, dict] of [["zh", zh], ["en", en]]) {
+					try {
+						const off = ctx.locale.register(NS, lang, dict);
+						if (typeof off === "function") offs.push(off);
+					} catch (e) { /* locale 服务不可用时静默降级, 不拖垮宿主 */ }
+				}
+				return () => { for (const off of offs) { try { off(); } catch (e) { /* 忽略 */ } } };
+			}, "dsh-reflex: dictionaries");
 			const card = new CardController(ctx.configForms.get(ROW_NS), ctx);
 			ctx.effect(() => () => card.dispose(), "dsh-reflex: form subscription");
 			// whileServed: 宿主服务该行的配置时注册，停止服务时注销 ——
