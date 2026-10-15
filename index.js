@@ -526,7 +526,7 @@ function install(rt, ctx, cfg) {
   }
 
   // 脚本驱动的 collector: 运行 cmd, 解析 stdout 每行一个 JSON fact
-  // 用 bash -c 执行, 并注入公司内部 CA 证书与完整 PATH (helper/内部 API 依赖, 否则 TLS 失败)
+  // 用 bash -c 执行, 并注入自定义 CA 证书与完整 PATH (受控服务依赖, 否则 TLS 失败)
   //
   // ---------- 密钥: 自己读密钥库(见 scriptEnv 的说明) ----------
   // 格式与 ds-bot 的密钥库一致: { secrets: [ {name, value, scope, ...} ] }
@@ -599,23 +599,23 @@ function install(rt, ctx, cfg) {
     return v
   }
 
-  // 脚本运行的公共环境: 统一目录 / 内部 CA / 完整 PATH / SemIf 打分脚本位置
-  // (GUI 子进程 PATH 可能精简, 不补会导致 helper / 内部 API 的 TLS 失败)
+  // 脚本运行的公共环境: 统一目录 / 自定义 CA(只透传) / 完整 PATH / SemIf 打分脚本位置
+  // (GUI 子进程 PATH 可能精简, 不补会导致 helper / 受控服务的 TLS 失败)
   //
   // 密钥注入: 这里【必须自己读】密钥库, 不能指望 process.env 里已经有。
   // ds-bot 把密钥注册进 DSH 的 shellEnv 服务(按需解析, 只对 DSH 的 bash 工具有效),
   // 而本插件是用 spawn 直接起子进程 —— 实测 process.env 里 DSH_SECRET_* 为 0 个。
   // 不自己读的话, LAYERED_JEV_API_KEY 永远是空的, 切到托管 Jev 必然失败。
   function scriptEnv(extra) {
-    // 内部 CA: 路径是平台约定, 不新增配置项 —— 要改用现成的 SSL_CERT_FILE 覆盖。
-    const ca = join(process.env.HOME || '', '.ca_bundle.pem')
+    // 不内置任何平台专有的 CA 文件名 —— 需要自定义 CA 的环境在宿主侧设好
+    // SSL_CERT_FILE / CURL_CA_BUNDLE / REQUESTS_CA_BUNDLE 即可, 这里只做透传兜底。
     const env = {
       ...process.env,
       LAYERED_HOME: cfg.l0.homeDir,
       PATH: `/usr/local/bin:/opt/homebrew/bin:/bin:/usr/bin:/sbin:/usr/sbin:${process.env.HOME}/.local/bin:${process.env.PATH ?? ''}`,
-      SSL_CERT_FILE: process.env.SSL_CERT_FILE || ca,
-      CURL_CA_BUNDLE: process.env.CURL_CA_BUNDLE || ca,
-      REQUESTS_CA_BUNDLE: process.env.REQUESTS_CA_BUNDLE || ca,
+      SSL_CERT_FILE: process.env.SSL_CERT_FILE || '',
+      CURL_CA_BUNDLE: process.env.CURL_CA_BUNDLE || process.env.SSL_CERT_FILE || '',
+      REQUESTS_CA_BUNDLE: process.env.REQUESTS_CA_BUNDLE || process.env.CURL_CA_BUNDLE || process.env.SSL_CERT_FILE || '',
       // target 脚本要调 SemIf 时用它, 不必写死路径
       LAYERED_SEMIF_RUN: join(cfg.semif.skillDir, 'scripts', 'run_score.sh'),
       ...(extra ?? {}),

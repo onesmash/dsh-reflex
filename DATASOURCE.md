@@ -85,7 +85,7 @@ L0 采集和 L1 判定**都是脚本驱动的**，两者同一套契约（自动
 
 ### 环境契约（插件注入到脚本进程）
 - `LAYERED_HOME`：统一目录 `~/.dsh/bot/layered-agent/`——脚本用它定位自己的状态文件
-- `SSL_CERT_FILE` / `CURL_CA_BUNDLE` / `REQUESTS_CA_BUNDLE`：公司内部 CA（访问内部 API 必需）
+- `SSL_CERT_FILE` / `CURL_CA_BUNDLE` / `REQUESTS_CA_BUNDLE`：自定义 CA（访问受控服务需要时由宿主提供）
 - `PATH`：已含 `/usr/local/bin`、`/opt/homebrew/bin`、`~/.local/bin`
 
 ### 行为约定
@@ -168,7 +168,7 @@ exit 0
 
 1. 登录态存成 JSON state 文件放统一目录，如 `$LAYERED_HOME/feed-timeline-state.json`
 2. 写一个**导出工具**放 `$LAYERED_HOME/tools/`（不要放 `collectors/`，那会被当成数据源）
-   参考 `tools/x-export-state.sh`：从本机 Chrome 复制 profile 副本 → 起带调试端口的 Chrome
+   参考 `tools/feed-export-state.sh`：从本机 Chrome 复制 profile 副本 → 起带调试端口的 Chrome
    → CDP 导出明文 cookie → 只保留目标站点 → 落盘 600 权限
 3. collector 用 `浏览器自动化工具 --session <私有会话名> --state <state 文件>` 采集，**用完 `close`**
    （不要常驻 headless 浏览器，占内存）
@@ -205,8 +205,8 @@ IM 的「谁 @ 过我」接口（如 `msg_mention_me_fetch`） 只返回"这个�
 
 采集"最新 N 条"时，先确认该列表**多次加载结果一致**（时间倒序流）。
 
-- ✅ `https://x.com/search?q=filter:follows&f=live` — 按时间倒序，三次加载 id 集合完全相同
-- ❌ `https://x.com/home`（"为你推荐"）— 算法流，每次加载都返回一批不同的旧推文，
+- ✅ `https://<feed-host>/search?q=filter:follows&f=live` — 按时间倒序，三次加载 id 集合完全相同
+- ❌ `https://<feed-host>/home`（"为你推荐"）— 算法流，每次加载都返回一批不同的旧内容，
   轮询会持续吐"新"噪音且丢掉真正最新的
 
 另外注意**虚拟列表**（如 X 的时间线）：滚动会把顶部条目挤出 DOM。
@@ -239,7 +239,7 @@ IM 的「谁 @ 过我」接口（如 `msg_mention_me_fetch`） 只返回"这个�
   "header": "可选：target 专属副标题",
   "items": [ { "id": "2110377288923758975",
                "title": "@someone · 08:56 · 相关度 0.94",
-               "body": "正文…\nhttps://x.com/...\n互动: …" } ] }
+               "body": "正文…\nhttps://<feed-host>/...\n互动: …" } ] }
 ```
 
 - **`items[].id` 是合并去重的依据** —— 没有它，插件无法跨轮去重，同样的内容会被重复列出
@@ -249,7 +249,7 @@ IM 的「谁 @ 过我」接口（如 `msg_mention_me_fetch`） 只返回"这个�
 - 脚本不必自己判重、不必输出标题栏/编号/L0 入口 —— 那些是插件的事
 
 插件注入的环境：`LAYERED_HOME`、`LAYERED_PROFILE`（用户画像）、`LAYERED_SEMIF_RUN`（SemIf 打分脚本路径，
-**别写死路径**）、`LAYERED_TARGET`、公司内部 CA、完整 PATH。
+**别写死路径**）、`LAYERED_TARGET`、自定义 CA、完整 PATH。
 
 `<name>.env.json`（可选，与 collector 同规则）：`{ "displayName": "X 关注流", "timeoutMs": 180000,
 "minIntervalMs": "auto", "env": { "LAYERED_X_THRESHOLD": "0.9" } }`
@@ -279,7 +279,7 @@ IM 的「谁 @ 过我」接口（如 `msg_mention_me_fetch`） 只返回"这个�
 ### 6.3 跨源关联的 target（源 A 的信息要判断"跟我有关吗"）
 
 典型场景：频道消息里出现一个票号，但"这个票号是不是我的"只有另一个源知道。
-（实例：`tickets-progress` —— release 排期 × 我的 工单系统 任务。）
+（实例：`tickets-progress` —— release 排期 × 工单系统任务。）
 
 **关键约束：target 脚本只拿到本轮新事实，没有历史。** 判"频道这条提到我名下的票"
 需要"我名下有哪些票"这份**存量**数据，它不在本轮事实里。存量从哪来：
@@ -314,7 +314,7 @@ targets/tickets-progress.sh   →  判断"频道消息里的票号 ∈ 这个集
 实测数据（近 2 天 15 条消息）：
 
 ```
-7.2.5   出现 11 次   ← 别人的版本（都在找 @REDACTED 批 scope）
+7.2.5   出现 11 次   ← 别人的版本（都在找 @<同事> 批 scope）
 7.3.0   出现  1 次   ← 用户真正在做的版本
 ```
 
@@ -826,8 +826,8 @@ L2 判断该不该回 → tools/im-notify.sh --to "<会话id>" "收到，我稍�
 |---|---|
 | `collectors/uptime.sh` | 最简单：单条 metric 的静态脚本 |
 | `collectors/net.sh` | 用系统命令采集、带 meta |
-| `collectors/im-mail.sh` | 有状态（seen 去重）+ 内部 API + 独立 env |
+| `collectors/im-mail.sh` | 有状态（seen 去重）+ 独立 env |
 | `collectors/feed-timeline.sh` | 浏览器登录态采集 + 时间线稳定性 + 虚拟列表两段式快照 + timeoutMs 放宽 |
 | `targets/feed-timeline.sh` | L1 target 脚本：stdin 收事实 → 批量 SemIf 逐条筛 → 输出 items 决策 |
 | `collectors/swap.sh` | 系统瞬时量（swap/磁盘占用），用于区分“文件涨了”和“内存换到磁盘” |
-| `tools/x-export-state.sh` | 从本机 Chrome 导出站点登录态（Chrome 136+ 禁默认 profile 调试的绕法） |
+| `tools/feed-export-state.sh` | 从本机 Chrome 导出站点登录态（Chrome 136+ 禁默认 profile 调试的绕法） |

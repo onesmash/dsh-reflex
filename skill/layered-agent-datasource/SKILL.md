@@ -35,7 +35,7 @@ version: 2.1.0
 ## Collector 契约
 
 - **输出**：stdout 每行一个 JSON fact：`{"metric":"<m>","raw":{...},"meta":{...}}`；`source`/`ts` 由插件补齐
-- **环境**：插件注入 `LAYERED_HOME`（统一目录）、公司内部 CA（`SSL_CERT_FILE`/`CURL_CA_BUNDLE`/`REQUESTS_CA_BUNDLE`）、常用 PATH
+- **环境**：插件注入 `LAYERED_HOME`（统一目录）、自定义 CA（`SSL_CERT_FILE`/`CURL_CA_BUNDLE`/`REQUESTS_CA_BUNDLE`）、常用 PATH
 - **行为**：退出 0 + 空输出 = 本轮无数据（正常）；退出非 0 = 记 `L0 <name> failed`，不影响其他源；必须幂等
 - **自动发现**：插件启动扫描 `collectors/`，每个 `*.sh` 自动注册为源（源名 = 文件名去 `.sh`）
 - **伴生文件**（都是纯数据，加源不改代码）：
@@ -59,9 +59,9 @@ exit 0
 
 要采的是「我的时间线 / 我的信息流」这类列表时，先验证**列表稳定性**，否则轮询全是噪音：
 
-1. **必须是时间倒序流**。算法推荐流（如 x.com 首页「为你推荐」）每次加载都返回一批不同的旧内容
+1. **必须是时间倒序流**。算法推荐流（如 feed 平台首页「为你推荐」）每次加载都返回一批不同的旧内容
    —— 轮询会持续吐"新"事实，还丢掉真正最新的。改成时间序入口
-   （X 用 `search?q=filter:follows&f=live`）。验证法：连开三次，比较 id 集合是否完全相同。
+   （某信息流平台用 `search?q=filter:follows&f=live`）。验证法：连开三次，比较 id 集合是否完全相同。
 2. **虚拟列表要两段式取快照**。滚动会把顶部条目挤出 DOM，所以顺序是
    「先取顶部 → 再滚动 → 再取一次 → 合并按 id 去重」，不能"先滚动再取"。
 3. **去重持久化**在 `$LAYERED_HOME/seen-<name>.json`（有序数组 + 截断上限），不要用 set 丢顺序。
@@ -72,8 +72,8 @@ exit 0
 
 - 登录态 state 文件放 `$LAYERED_HOME/<name>-state.json`，权限 600，**只保留目标站点的 cookie**
 - 配套写一个导出工具放 `$LAYERED_HOME/tools/`（**别放 `collectors/`，会被当成数据源**）；
-  参照 `tools/x-export-state.sh`：复制浏览器 profile 副本 → 起带调试端口的浏览器 → CDP 导出明文 cookie
-- collector 用独立会话名（如 `--session x-collect`）采集，结束 `close`，**不要常驻 headless 浏览器**
+  参照 `tools/feed-export-state.sh`：复制浏览器 profile 副本 → 起带调试端口的浏览器 → CDP 导出明文 cookie
+- collector 用独立会话名（如 `--session feed-collect`）采集，结束 `close`，**不要常驻 headless 浏览器**
 - **会话过期要以非 0 退出**（记 `L0 <name> failed`），绝不能把空数据伪装成"没有新事件"
 - 告诉用户失效后怎么恢复（一条命令重跑导出工具）
 
@@ -121,7 +121,7 @@ exit 0
 ### 跨源关联的 target（源 A 要判断"跟我有关吗"）
 
 场景：频道消息里出现一个票号，但"这个票号是不是我的"只有另一个源知道。
-（实例：`tickets-progress` —— release 排期 × 我的工单系统任务。）
+（实例：`tickets-progress` —— release 排期 × 工单系统任务。）
 
 **关键约束：target 脚本只拿到本轮新事实，没有历史。** 判"这条提到我名下的票"
 需要"我名下有哪些票"这份**存量**，它不在本轮事实里。存量从**采集器的状态文件**读 ——
@@ -253,7 +253,7 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 ## 注意
 
 - 先看现有脚本参照：`collectors/` 下 `uptime.sh`（最简单）、`net.sh`（系统命令+meta）、
-  `im-mail.sh`（有状态去重+内部 API）、`feed-timeline.sh`（登录态+虚拟列表两段式快照）；
+  `im-mail.sh`（有状态去重+凭据调用）、`feed-timeline.sh`（登录态+虚拟列表两段式快照）；
   `targets/feed-timeline.sh`（L1 判定 + 批量 SemIf + items 决策）
 - 敏感数据（如邮件）只采元数据，不落正文；登录态文件要有 600 权限
 - 详尽的契约、schema 登记、L1 target 做法见插件安装目录的 `DATASOURCE.md`
