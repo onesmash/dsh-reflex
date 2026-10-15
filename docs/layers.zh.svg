@@ -41,7 +41,6 @@
 
   <!-- 闸门 -->
   <line x1="780" y1="158" x2="780" y2="392" stroke="#58a6ff" stroke-width="2" stroke-dasharray="7 7"/>
-  <line x1="738" y1="289" x2="822" y2="289" stroke="#58a6ff" stroke-width="2" marker-end="url(#am)"/>
   <rect x="706" y="118" width="148" height="32" rx="16" fill="#0d1117" stroke="#1f6feb"/>
   <text x="780" y="140" font-size="17" font-weight="bold" fill="#58a6ff" text-anchor="middle">过线才叫醒</text>
 
@@ -54,6 +53,7 @@
   <text x="970" y="311" font-size="15" fill="#e3b341" text-anchor="middle">Bot · 大模型</text>
   <text x="970" y="333" font-size="14" fill="#8b949e" text-anchor="middle">决定要不要打扰人</text>
 
+  <line x1="738" y1="289" x2="822" y2="289" stroke="#58a6ff" stroke-width="2" marker-end="url(#am)"/>
   <!-- 安静路径 -->
   <line x1="629" y1="350" x2="629" y2="462" stroke="#3fb950" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#ag)"/>
   <text x="645" y="405" font-size="16" fill="#7ee787">不值得 → 安静</text>
