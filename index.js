@@ -142,7 +142,7 @@ function normalize(c) {
   cfg.l0.homeDir ||= join(DSH_HOME, 'dsh-reflex')
   cfg.l0.storeDir ||= process.env.LAYERED_FACT_DIR || join(cfg.l0.homeDir, 'facts')
   cfg.l0.collectorsDir ||= process.env.LAYERED_COLLECTORS_DIR || join(cfg.l0.homeDir, 'collectors')
-  cfg.l0.logFile = join(cfg.l0.homeDir, 'layered-agent.log')
+  cfg.l0.logFile = join(cfg.l0.homeDir, 'dsh-reflex.log')
   return cfg
 }
 

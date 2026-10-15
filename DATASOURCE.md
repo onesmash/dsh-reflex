@@ -814,7 +814,7 @@ L2 判断该不该回 → tools/im-notify.sh --to "<会话id>" "收到，我稍�
 
 | skill | policy | 说明 |
 |---|---|---|
-| `layered-agent-datasource` | sync | 本插件的加数据源规则，随代码版本走 |
+| `reflex-datasource` | sync | 本插件的加数据源规则，随代码版本走 |
 | `semif-decide` | seed-only | L1 决策依赖它打分；vendored 快照（MIT），不随上游自动更新 |
 
 > vendored 快照升级要手工做：重新 rsync 上游 skill 目录，并在 `.deploy.json` 里更新
