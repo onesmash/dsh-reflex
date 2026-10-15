@@ -60,8 +60,12 @@ const DEFAULTS = {
     backend: '',                 // '' = 不覆盖, 交给 target 脚本自己的默认(semif)
     jevBaseUrl: 'https://api.typesafe.ai',
     jevModel: 'jev-latest',
-    // 托管 Jev 的 key 从这里取。默认与 ds-bot 的密钥库同一个文件 ——
-    // 用户在聊天里用 request_secret 存的那份, 插件直接复用, 不需要第二套。
+    // 托管 Jev 的 key 从这两个文件里找(按顺序):
+    //   1. credentialsFile —— DSH 自己的凭据存储(.credentials.yaml, mode 600)的 refs 段
+    //      用户明确要求 key 写这里; 值就是明文, 且 README 说明该存储本来就无法向 agent 隔离
+    //   2. secretsFile     —— ds-bot 的密钥库(其在聊天里用 request_secret 存的那份)
+    // 两处都没有就告警, 不让它静默变成"空 key"。
+    credentialsFile: join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), '.credentials.yaml'),
     secretsFile: join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), 'bot', 'secrets.json'),
     // 只把【本插件需要】的密钥注入脚本环境。不设白名单就会把用户所有密钥
     // 都递给每个采集器/target 脚本 —— 而那些脚本会调外部 API、跑第三方命令。
@@ -489,14 +493,41 @@ function install(rt, ctx, cfg) {
     const now = Date.now()
     if (now - secretsCache.at < 30_000) return secretsCache.values   // 30s 缓存: 别每轮都读盘
     const values = new Map()
+    // 1) .credentials.yaml 的 refs 段 —— 只做极简解析, 不引 yaml 依赖:
+    //    该段是扁平的 "KEY: value" 列表, 取白名单内的键即可。多行/引号也顺手处理。
+    try {
+      if (existsSync(cfg.decide.credentialsFile)) {
+        const text = readFileSync(cfg.decide.credentialsFile, 'utf8')
+        let inRefs = false
+        for (const raw of text.split('\n')) {
+          const line = raw.replace(/\s+$/, '')
+          if (!line || line.trimStart().startsWith('#')) continue
+          if (/^refs:\s*$/.test(line)) { inRefs = true; continue }
+          if (inRefs && /^\S/.test(line)) break                    // 缩进结束, 离开 refs 段
+          if (!inRefs) continue
+          const m = /^\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/.exec(line)
+          if (!m) continue
+          const name = m[1]
+          if (!cfg.decide.secretAllow.includes(name)) continue     // 白名单之外一律不碰
+          let v = m[2].trim()
+          if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
+            v = v.slice(1, -1)
+          }
+          if (v) values.set(name, v)
+        }
+      }
+    } catch (e) {
+      log(`凭据文件读取失败 ${cfg.decide.credentialsFile}: ${e.message}`)
+    }
+    // 2) ds-bot 的密钥库(有则以它为准, 因为那是用户显式通过安全卡片存的)
     try {
       if (existsSync(cfg.decide.secretsFile)) {
         const parsed = JSON.parse(readFileSync(cfg.decide.secretsFile, 'utf8'))
         for (const entry of Array.isArray(parsed?.secrets) ? parsed.secrets : []) {
           const name = String(entry?.name ?? '')
           if (!name || typeof entry.value !== 'string') continue
-          if (!cfg.decide.secretAllow.includes(name)) continue       // 白名单之外一律不碰
-          values.set(name, entry.value)
+          if (!cfg.decide.secretAllow.includes(name)) continue
+          if (entry.value.trim()) values.set(name, entry.value)
         }
       }
     } catch (e) {
@@ -542,9 +573,9 @@ function install(rt, ctx, cfg) {
         env.LAYERED_JEV_API_KEY = key
       } else if (!warnedNoJevKey) {
         warnedNoJevKey = true
-        log('决策后端=%s 但没找到密钥(%s 里的 %s) —— 判定会因缺 key 失败。'
-          + '存法: 在 Bot 聊天里用 request_secret 存 LAYERED_JEV_API_KEY',
-          cfg.decide.backend, cfg.decide.secretsFile, cfg.decide.secretAllow.join('/'))
+        log('决策后端=%s 但没找到密钥(找过 %s 的 refs) —— 判定会因缺 key 失败。'
+          + '存法: 把 LAYERED_JEV_API_KEY 写进凭据文件的 refs 段(或聊天里用 request_secret)',
+          cfg.decide.backend, cfg.decide.credentialsFile, cfg.decide.secretAllow.join('/'))
       }
     }
     return env

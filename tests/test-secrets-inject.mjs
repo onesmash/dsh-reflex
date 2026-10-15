@@ -73,5 +73,41 @@ writeFileSync(bareFile, JSON.stringify({ secrets: [] }), 'utf8')
 T('缺key', { decide: { backend: 'jev', secretsFile: bareFile, jevBaseUrl: 'http://127.0.0.1:30001' }, l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'http://127.0.0.1:30001', key: undefined })
 
+// ---- E/F/G: 从 .credentials.yaml 的 refs 段读(fake 值, 不碰真实凭据) ----
+const cdir = mkdtempSync(join(tmpdir(), 'layered-cred-'))
+const credFile = join(cdir, '.credentials.yaml')
+writeFileSync(credFile, [
+  'version: 1',
+  'refs:',
+  "  LAYERED_JEV_API_KEY: 'fake-cred-key'",
+  "  SOME_OTHER_TOKEN: 'must-NOT-leak'",
+  "  TYPESAFE_API_KEY: 'fake-typesafe-key'",
+  'records:',
+  '  some/grant:',
+  "    kind: 'grant'",
+].join('\n'), 'utf8')
+chmodSync(credFile, 0o600)
+
+console.log('\n=== E. backend=jev, key 在 .credentials.yaml 的 refs 段 ===')
+T('cred-ok', { decide: { backend: 'jev', credentialsFile: credFile, secretsFile: join(cdir, 'nope.json'), jevBaseUrl: 'https://api.typesafe.ai' }, l0: { sources: ['disk'] } },
+  { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: 'fake-cred-key' })
+
+console.log('\n=== F. 两个文件都没有 key: 只有 backend/端点 ===')
+T('cred-none', { decide: { backend: 'jev', credentialsFile: join(cdir, 'absent.yaml'), secretsFile: join(cdir, 'absent.json'), jevBaseUrl: 'https://api.typesafe.ai' }, l0: { sources: ['disk'] } },
+  { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: undefined })
+
+console.log('\n=== G. refs 段结束后的内容不能被误读(key 在 records 段里) ===')
+const c2 = join(cdir, '.credentials2.yaml')
+writeFileSync(c2, [
+  'version: 1',
+  'refs:',
+  "  OTHER_KEY: 'x'",
+  'records:',
+  '  LAYERED_JEV_API_KEY:',
+  "    kind: 'grant'",
+].join('\n'), 'utf8')
+T('cred-boundary', { decide: { backend: 'jev', credentialsFile: c2, secretsFile: join(cdir, 'absent.json') }, l0: { sources: ['disk'] } },
+  { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: undefined })
+
 console.log(`\n结果: ${pass}/${total} 通过`)
 process.exit(pass === total ? 0 : 1)
