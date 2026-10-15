@@ -1,6 +1,6 @@
-# Mounts the Layered Agent as a sibling plugin to ds-bot.
-# It runs its own watchdog (L0 fact collection + L1 SemIf decision) inside the same
-# GUI process, and wakes L2 Bots through DSH's schedule service (no ds-bot changes).
+# Mounts dsh-reflex as a sibling plugin to ds-bot.
+# It runs its own watchdog (L0 fact collection + L1 local decision) inside the same
+# GUI process, and wakes L2 Bots through ds-bot's sessionController (no ds-bot changes).
 - insert:
     - id: dsh-reflex
       name: dsh-reflex
