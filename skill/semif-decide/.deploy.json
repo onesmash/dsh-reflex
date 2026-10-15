@@ -3,7 +3,7 @@
   "skill": "semif-decide",
   "source": "SemIf 项目随发行版分发的 skill（含 assets/semif 打包的 SemIf 源码仓库）",
   "upstreamVersion": "SemIf pyproject.toml version 0.1.0",
-  "license": "MIT — Copyright (c) 2026 SemIf contributors（LICENSE 随 assets/semif 一并保留）",
+  "license": "MIT（LICENSE 随 assets/semif 一并保留）",
   "bundledAt": "2026-10-15",
   "why": "L1 的决策全部依赖 SemIf 打分（run_score.sh）。随插件一起部署，换机器/重装插件时依赖自动就位，不必手工去找这个 skill。",
   "policyNote": "seed-only：只在 ~/.agents/skills/semif-decide 整个缺失时才安装。已存在则整体跳过 —— 用户可能装了更新的上游版本，插件不能把它悄悄降级成本仓库里的这份快照。要升级到本仓库这份，先删掉目标目录再重启插件。",
