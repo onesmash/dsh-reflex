@@ -3,6 +3,11 @@
 > 本文档是 `ds-bot-layered-agent` 插件的官方规则，随代码版本走（Git 管理）。
 > Bot（L2/Chief）在「添加数据源」任务触发时，通过同名 skill 自动加载。
 > 本机路径不在文档中写死：统一目录用环境变量 `LAYERED_HOME`（默认 `$HOME/.dsh/bot/layered-agent/`）；插件安装目录可由 `npm ls ds-bot-layered-agent` 或运行报错路径定位。
+>
+> **示例名是泛化的，不是本机真名。** 文档为了不暴露具体平台与个人身份，把示例统一写成
+> `im-*` / `tickets-*`：脚本名（`im-notify.sh`、`im-dm.sh`…）、环境变量（`LAYERED_IM_*`）、
+> 域名（`<im-host>`）都只是占位。你的实际名字以本机 `collectors/` `targets/` `tools/`
+> 目录里的文件和 `.env.json` 为准 —— 那些目录不进仓库，不会随本文档外发。
 
 ## 0. 仓库与统一目录的分工
 
@@ -34,8 +39,8 @@
 **另外挡住的**（属于个人标识，进了仓库就等于外发）：
 
 ```
-*.env.json        你的 IM userId、私有频道 id、姓名别名
-notify.to    收件人 userId, 属于个人标识而不是工具
+*.env.json        你的 userId、私有频道 id、姓名别名
+im-notify.to    收件人 userId, 属于个人标识而不是工具
 __pycache__/ *.pyc
 .local-backup/    本机杂项备份(如写死 /Users/<你>/... 绝对路径的 profile 副本)
 ```
@@ -80,7 +85,7 @@ L0 采集和 L1 判定**都是脚本驱动的**，两者同一套契约（自动
 
 ### 环境契约（插件注入到脚本进程）
 - `LAYERED_HOME`：统一目录 `~/.dsh/bot/layered-agent/`——脚本用它定位自己的状态文件
-- `SSL_CERT_FILE` / `CURL_CA_BUNDLE` / `REQUESTS_CA_BUNDLE`：IM 内部 CA（访问内部 API 必需）
+- `SSL_CERT_FILE` / `CURL_CA_BUNDLE` / `REQUESTS_CA_BUNDLE`：公司内部 CA（访问内部 API 必需）
 - `PATH`：已含 `/usr/local/bin`、`/opt/homebrew/bin`、`~/.local/bin`
 
 ### 行为约定
@@ -165,14 +170,14 @@ exit 0
 2. 写一个**导出工具**放 `$LAYERED_HOME/tools/`（不要放 `collectors/`，那会被当成数据源）
    参考 `tools/x-export-state.sh`：从本机 Chrome 复制 profile 副本 → 起带调试端口的 Chrome
    → CDP 导出明文 cookie → 只保留目标站点 → 落盘 600 权限
-3. collector 用 `agent-browser --session <私有会话名> --state <state 文件>` 采集，**用完 `close`**
+3. collector 用 `浏览器自动化工具 --session <私有会话名> --state <state 文件>` 采集，**用完 `close`**
    （不要常驻 headless 浏览器，占内存）
 4. **会话过期必须是非 0 退出**——让它记 `L0 <name> failed`，绝不能把空数据伪装成"没有新事件"
 5. 该源至少要 `intervalMs`（登录态类通常 10-15 分钟）+ `timeoutMs`（启浏览器需要 60-120s）
 
 ## 5.3 没有「批量入口」的源（逐会话扫描）
 
-有些源只提供**单会话**查询（IM Team Chat 就是：`message_fetch` 只收一个 `session_id`，
+有些源只提供**单会话**查询（IM 平台（单会话查询） 就是：`message_fetch` 只收一个 `session_id`，
 没有"取所有会话最近消息"的接口，`msg_search` 又强制要求 keyword）。这类源只能逐会话扫。
 
 要点：
@@ -186,7 +191,7 @@ exit 0
 
 ## 5.4 服务端不告诉你「具体是哪一条」
 
-IM 的 `msg_mention_me_fetch` 只返回"这个线程里有人 @ 过你"，**不标记具体哪条消息**。
+IM 的「谁 @ 过我」接口（如 `msg_mention_me_fetch`） 只返回"这个线程里有人 @ 过你"，**不标记具体哪条消息**。
 同一线程的后续普通讨论也会一起返回。若不处理，采集会被同线程闲聊灌满。
 
 做法：先看真实数据找规律，再用可配置的别名收紧。实测真正的提及消息都含 `@`，
@@ -244,7 +249,7 @@ IM 的 `msg_mention_me_fetch` 只返回"这个线程里有人 @ 过你"，**不�
 - 脚本不必自己判重、不必输出标题栏/编号/L0 入口 —— 那些是插件的事
 
 插件注入的环境：`LAYERED_HOME`、`LAYERED_PROFILE`（用户画像）、`LAYERED_SEMIF_RUN`（SemIf 打分脚本路径，
-**别写死路径**）、`LAYERED_TARGET`、IM 内部 CA、完整 PATH。
+**别写死路径**）、`LAYERED_TARGET`、公司内部 CA、完整 PATH。
 
 `<name>.env.json`（可选，与 collector 同规则）：`{ "displayName": "X 关注流", "timeoutMs": 180000,
 "minIntervalMs": "auto", "env": { "LAYERED_X_THRESHOLD": "0.9" } }`
@@ -282,7 +287,7 @@ IM 的 `msg_mention_me_fetch` 只返回"这个线程里有人 @ 过你"，**不�
 **从采集器的状态文件读 —— 这是同一个脚本源自己的状态，不是新机制。**
 
 ```
-collectors/工单-my-tasks.sh   →  state/工单-my-tasks-state.json   (票号 → {status, fixVersion})
+collectors/tickets-my-tasks.sh   →  state/tickets-my-tasks-state.json   (票号 → {status, fixVersion})
                                   ↓ target 直接读它当上下文
 targets/tickets-progress.sh   →  判断"频道消息里的票号 ∈ 这个集合"
 ```
@@ -454,11 +459,11 @@ l1:
 
 通知里带上链接，用户点一下就能跳到那条消息 —— 不然他得自己在 IM 里翻。
 
-**IM 的 `message_fetch` 不返回 deep_link**（只有 `@提及` 接口返回 `deep_link`），所以得自己拼。
-格式是从真实链接里逆出来的（`tools/deep-link.py` 实现了它并自带验证）：
+**IM 的消息拉取接口（如 `message_fetch`） 不返回 deep_link**（只有 `@提及` 接口返回 `deep_link`），所以得自己拼。
+格式是从真实链接里逆出来的（`tools/im-deeplink.py` 实现了它并自带验证）：
 
 ```
-https://im.example/launch/chat/v2/<base64url({"sid":..,"sid2":..,"mid":..,"time":..})>
+https://<im-host>/launch/chat/v2/<base64url({"sid":..,"sid2":..,"mid":..,"time":..})>
 ```
 
 | 字段 | 取值 | 坑 |
@@ -470,15 +475,15 @@ https://im.example/launch/chat/v2/<base64url({"sid":..,"sid2":..,"mid":..,"time"
 
 **两个实测出来的方向性坑（都是解码真实链接比对才知道的）：**
 
-1. **频道**：`sid = "<channelId>@conference.xmpp.im.example"`，没有 `sid2`。
-2. **私聊**：`sid` 是**我自己的 userId**（+ `@xmpp.im.example`），`sid2` 才是对方。
+1. **频道**：`sid = "<channelId>@conference.<im-domain>"`，没有 `sid2`。
+2. **私聊**：`sid` 是**我自己的 userId**（+ `@<im-domain>`），`sid2` 才是对方。
    **不是**会话 id 前缀那个对方 id —— 放反了跳不到那条消息。
    （我第一版就是放反的，靠"拿官方真实链接解码后逐字节比对"才发现。）
 
-**验证纪律**：`tools/deep-link.py` 的 `build()` 必须能用已知真实链接的解码字段
+**验证纪律**：`tools/im-deeplink.py` 的 `build()` 必须能用已知真实链接的解码字段
 重新生成出**逐字节一致**的结果。改这个文件后重跑该验证，别只看"链接能打开"。
 
-链接很长（200+ 字符），`notify.sh` 用 `text` 模式发裸 URL 没问题（见 7.5）。
+链接很长（200+ 字符），`im-notify.sh` 用 `text` 模式发裸 URL 没问题（见 7.5）。
 
 ## 7.4.1 决策后端适配层（SemIf / Jev 可切换）
 
@@ -510,12 +515,12 @@ score  (n 个有序层)    :  1 - 加权平均层距 / 均匀层距
 ```
 
 **同一个概率分布，在任何后端下算出同一个 confidence —— 但 confidence 和原始 p 不是一回事。**
-实测（im 三条真实消息，3 选项）：
+实测（im-dm 三条真实消息，3 选项）：
 
 | | p(yes) | confidence |
 |---|---|---|
-| REDACTED「725 可能提前」 | 0.861 | 0.791 |
-| REDACTED「要 merge 到 7x」 | 0.911 | 0.867 |
+| 同事A「725 可能提前」 | 0.861 | 0.791 |
+| 同事A「要 merge 到 7x」 | 0.911 | 0.867 |
 | 同事B「task created」 | 0.772 | 0.658 |
 
 这批样本里，`p>=0.78` 和 `confidence>=0.78` **恰好选中同一组** —— 但逐条数值都不同，
@@ -730,25 +735,25 @@ SemIf 是一次加载模型评 N 条，N 大会把内存压到 swap 进而吃光
 > 用户明确纠正过这一点。把 IM 投递焊进 `wakeL2`，等于让 L1 替 L2 决定要不要打扰用户，
 > 越过了分层边界。
 >
-> 正确链路：`L1 判定 → 唤醒 L2 → L2 判断是否推送 → 调 tools/notify.sh`
+> 正确链路：`L1 判定 → 唤醒 L2 → L2 判断是否推送 → 调 tools/im-notify.sh`
 >
 > 同理可推：任何"对人类做动作"的决定都归 L2，L1 只做"值不值得占用 L2"的筛选。
 > 唯一的例外是**批量投递**（安静时段的 pending 累积）—— 它必须留在 L1，
 > 因为 L2 是无状态的，没人替它暂存。
 
 ```bash
-~/.dsh/bot/layered-agent/tools/notify.sh "正文"
-echo "正文" | ~/.dsh/bot/layered-agent/tools/notify.sh
-~/.dsh/bot/layered-agent/tools/notify.sh --tag "磁盘告警" "正文"
+~/.dsh/bot/layered-agent/tools/im-notify.sh "正文"
+echo "正文" | ~/.dsh/bot/layered-agent/tools/im-notify.sh
+~/.dsh/bot/layered-agent/tools/im-notify.sh --tag "磁盘告警" "正文"
 ```
 
-收件人取 `$LAYERED_IM_NOTIFY_TO` 或 `tools/notify.to`。退出码非 0 会说明原因，
+收件人取 `$LAYERED_IM_NOTIFY_TO` 或 `tools/im-notify.to`。退出码非 0 会说明原因，
 调用方据此决定是否降级到别处投递（比如只留 L0 记录）。
 
 两个必须知道的约束：
 
 1. **消息是"用户发给自己"的**。helper CLI 以用户本人身份认证，没有机器人账号 ——
-   消息落在 IM 的"自己/备注"会话里，不会显示成系统/机器人发件人。
+   消息落在 IM 的"发给自己"会话里，不会显示成系统/机器人发件人。
    当通知渠道可用（手机端一样有提醒），但别指望它看起来像系统消息。
 2. **必须显式用 `text` 模式**。API 默认 markdown，而 markdown 模式**禁止裸 URL** ——
    我们的通知里全是 URL（推文链接 / deep link / L0 入口），用默认模式会失败或变形。
@@ -775,11 +780,11 @@ echo "正文" | ~/.dsh/bot/layered-agent/tools/notify.sh
 链路：
 
 ```
-collectors/im.sh   每轮扫私聊, 产出 kind=dm-awaiting 事实(带会话id, 5~120分钟窗口, 按消息去重)
+collectors/im-dm.sh   每轮扫私聊, 产出 kind=dm-awaiting 事实(带会话id, 5~120分钟窗口, 按消息去重)
       ↓
 targets/im-reply.sh  捞出来叫醒 L2, 【不判断、不发送】
       ↓
-L2 判断该不该回 → tools/notify.sh --to "<会话id>" "收到，我稍后回复你"
+L2 判断该不该回 → tools/im-notify.sh --to "<会话id>" "收到，我稍后回复你"
 ```
 
 `minIntervalMs: 0` + `interruptAlways: true`：回执有时效性，不该被唤醒闸门或安静时段拖到第二天；
@@ -821,7 +826,7 @@ L2 判断该不该回 → tools/notify.sh --to "<会话id>" "收到，我稍后�
 |---|---|
 | `collectors/uptime.sh` | 最简单：单条 metric 的静态脚本 |
 | `collectors/net.sh` | 用系统命令采集、带 meta |
-| `collectors/mail.sh` | 有状态（seen 去重）+ 内部 API + 独立 env |
+| `collectors/im-mail.sh` | 有状态（seen 去重）+ 内部 API + 独立 env |
 | `collectors/feed-timeline.sh` | 浏览器登录态采集 + 时间线稳定性 + 虚拟列表两段式快照 + timeoutMs 放宽 |
 | `targets/feed-timeline.sh` | L1 target 脚本：stdin 收事实 → 批量 SemIf 逐条筛 → 输出 items 决策 |
 | `collectors/swap.sh` | 系统瞬时量（swap/磁盘占用），用于区分“文件涨了”和“内存换到磁盘” |
