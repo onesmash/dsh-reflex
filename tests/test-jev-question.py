@@ -12,11 +12,25 @@
 本测试锁死: 无论选项有没有 description, criteria 的每个值都必须是非空字符串。
 """
 import importlib.util
+import os
 import pathlib
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
-TOOL = HERE.parent / 'tools' / 'semif-adapt.py'
+# semif-adapt.py 是运行时工具, 不在仓库里 —— 它在统一运行目录。
+# 旧版写 HERE.parent / 'tools'(仓库 tools/), 但 tools/ 已移出仓库不再跟踪,
+# 那样定位必然 FileNotFoundError。现在从 LAYERED_HOME/tools/ 找;
+# 找不到 = 本机不是装配环境, 跳过而不是假装失败。
+_la_home = pathlib.Path(os.environ.get("LAYERED_HOME") or (
+    pathlib.Path(os.environ.get("HOME", "~")).expanduser()
+    / ".dsh" / "bot" / "layered-agent"
+))
+TOOL = _la_home / "tools" / "semif-adapt.py"
+
+if not TOOL.is_file():
+    print(f"跳过: 未找到运行时工具 {TOOL}")
+    print("(semif-adapt.py 在 LAYERED_HOME/tools/, 仓库不跟踪 tools/)")
+    sys.exit(0)
 
 spec = importlib.util.spec_from_file_location('semif_adapt', TOOL)
 sa = importlib.util.module_from_spec(spec)
