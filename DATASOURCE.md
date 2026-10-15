@@ -486,6 +486,34 @@ score  (n 个有序层)    :  1 - 加权平均层距 / 均匀层距
 `"probability_status": "conditional option score; uncalibrated as decision confidence"`
 —— 它有意不提供校准。confidence 补的是这个，但补上的是**新的尺**，不是旧尺的新名字。
 
+### confidence 必须在本地复算，不能信后端报的
+
+独立实现之间 `confidence` **不可移植** —— 实测（[jevcompat](https://github.com/mandu5/jevcompat)
+的 confidence 研究，204 条相同答案、同一个 0.9 阈值）：TypeSafe 的公式自动接受 58%，
+另一个实现接受 30%（拒绝了 TypeSafe 会接受的 118 条里的 56 条），第三个接受了 10 条
+TypeSafe 会送人工的。**概率在实现对之间可比；`confidence` 不可比。**
+
+所以 `semif-adapt.py` 不读后端给的 `confidence`，而是**从 `probabilities` 用 TypeSafe 的公式
+本地复算**（choice / noul / score 三条，见 §7.4.1）。这样：
+
+- 同一份概率在任何后端下算出同一个 confidence → 换供应商时这个尺度是稳的
+- 后端报的原始 `confidence` 仍留在 `confidence_backend` 字段里，便于对账
+
+⚠️ 但**这不等于阈值可以跨后端搬**：概率本身仍会因模型不同而漂移，阈值依然要在
+你自己的标注上重拟合（见下）。
+
+### 生态里已有的工具（别重复造）
+
+- **[jevcal](https://github.com/abhixhek/jevcal)** —— 在你的标注上拟合**每题**阈值、
+  留出集验证、模型更新破坏阈值时让 CI 失败。我们的 `decide-calibrate.py` 是它的简化版。
+- **[jevcompat](https://github.com/mandu5/jevcompat)** —— 48 条可测试要求的 `/v1/systemone`
+  一致性规范，`uvx jevcompat test <URL>` 直接跑；还能当 proxy 把不合规的服务器包成合规的。
+  **接一个新端点时先用它验，别靠试错。**
+- **[wellposed](https://github.com/suraj-phanindra/wellposed)** / **[jevkit](https://github.com/ariel-frischer/jevkit)**
+  —— 离线 lint 你的问题，在花钱调用之前就发现措辞问题。
+- **官方 [typesafe-ai skill](https://github.com/typesafe-ai/skills)** —— 已装到
+  `~/.agents/skills/typesafe-ai/`，教怎么选问题类型和设计问题。
+
 ### 分块纪律同样适用
 
 `decide-calibrate.py` 内部硬性按 **40 行**分块喂 SemIf —— 这条不要放宽。
