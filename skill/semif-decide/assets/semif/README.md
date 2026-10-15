@@ -158,6 +158,10 @@ Returned probabilities are conditional on the supplied options. Calibrate and va
 - [Raw results and checksums](results/raw/)
 - [Third-party sources](THIRD_PARTY.md)
 
+## Star history
+
+[![SemIf star history](https://api.star-history.com/svg?repos=TheoLeeCJ/SemIf&type=Date)](https://www.star-history.com/#TheoLeeCJ/SemIf&Date)
+
 ## Evaluation sources
 
 - [TypeSafe public evaluations](https://evals.typesafe.ai/) — public comparison cases used for selected-subset agreement
