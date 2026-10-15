@@ -321,10 +321,10 @@ function install(rt, ctx, cfg) {
   //   - script:  { cmd: 'path/to/script.sh' }          外部脚本, stdout 每行一个 JSON fact
   // fact 形如 { source?, metric, raw, meta? }; source 缺省用源名; ts 缺省由 collectOnce 补
   //
-  // 脚本源自动发现: 插件启动时扫描 <collectorsDir> (默认插件包内 collectors/), 每个 *.sh 自动注册为源,
+  // 脚本源自动发现: 插件启动时扫描 <collectorsDir> (默认 LAYERED_HOME/collectors/), 每个 *.sh 自动注册为源,
   // 源名 = 脚本文件名(去 .sh)。加一个脚本源 = 丢脚本到此目录 + 配置 l0.sources 启用, 无需改插件代码。
   // 可选命名 companion 文件 <script>.env.json 提供该脚本源的 {intervalMs, env} 覆盖。
-  const collectorsDir = cfg.l0.collectorsDir ?? join(__dirname, 'collectors')
+  const collectorsDir = cfg.l0.collectorsDir ?? join(cfg.l0.homeDir, 'collectors')
   const BUILTIN_SOURCES = {
     disk: {
       builtin: async () => {
