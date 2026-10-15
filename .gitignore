@@ -1,0 +1,8 @@
+# 依赖目录不进仓库。加依赖后需在本仓库跑一次 pnpm install
+# (插件在 DSH 里是软链安装, Node 按【仓库真实路径】解析依赖,
+#  所以依赖必须装在这里, 不能只靠 profile 的 node_modules)。
+node_modules/
+
+# 运行期产物 / 本机状态, 不进仓库
+*.log
+.DS_Store

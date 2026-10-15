@@ -12,6 +12,7 @@ import { join, dirname } from 'node:path'
 import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync, statSync, cpSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { execFile, spawn } from 'node:child_process'
+import Schema from '@deepseek-ai/schemastery'
 import { promisify } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { loadavg } from 'node:os'
@@ -77,6 +78,30 @@ const DEFAULTS = {
 // 只是为了让测试能截获"插件递给脚本的环境变量"(密钥注入必须可验证, 不能靠读代码相信)。
 let spawnImpl = spawn
 export function __setSpawnForTest(fn) { spawnImpl = fn }
+
+// ---------- 配置 schema ----------
+// 作用有两个:
+//   1. DSH 据此"服务"这个配置 —— 插件面板里才会出现本插件的配置页
+//   2. 面板按字段渲染表单(标签/说明), 所以 decide 段逐字段声明
+//
+// ⚠️ 只声明 decide, 其余用 Schema.any() 透传 —— 这是【验证过的】选择, 不是省事:
+//    实测(见提交说明)本版本 schemastery 不会丢弃 schema 未声明的键,
+//    即便如此也不敢依赖该行为去枚举 l0/l1 的每个字段: 漏写一个就会让配置静默失效,
+//    而那是最难查的一类故障(本会话已踩过多次)。
+//
+// ⚠️ 不要给字段加 .default(): 那会让"未配置"被填成默认值,
+//    而本插件的语义是"未配置 = 不注入环境变量 = 保持既有行为"。
+export const Config = Schema.object({
+  decide: Schema.object({
+    backend: Schema.string()
+      .description('决策后端: 留空=semif(本地,不联网) | jev=TypeSafe托管(内容会离开本机) | jevlocal=本地同款线格式')
+      .default(''),
+    jevBaseUrl: Schema.string()
+      .description('Jev 端点。托管填 https://api.typesafe.ai; jevlocal 填本地端点(如 http://127.0.0.1:30001)')
+      .default('https://api.typesafe.ai'),
+    jevModel: Schema.string().description('Jev 模型名, 如 jev-latest').default('jev-latest'),
+  }).description('L1 语义判定的后端'),
+}).description('分层智能体: 数据源 / 判定目标 / 决策后端')
 
 export const name = 'ds-bot-layered-agent'
 
