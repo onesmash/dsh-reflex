@@ -73,5 +73,31 @@ try {
   check('bundle 可加载', false, e.message)
 }
 
+// —— inject 声明检查 ——
+// Cordis 里访问未声明的服务会抛 "cannot get property X without inject"。
+// 实测踩过: CardController 构造时就访问 ctx.remote, 但 inject 里没有 "remote"
+// -> 整个配置卡片渲染失败, 界面空白且无任何错误提示(desktop 版没 console)。
+// 官方 settings-web-search 声明的必需服务就是这份基准。
+const REQUIRED_INJECT = ['slots', 'locale', 'remote', 'remote.credentials', 'configForms']
+{
+  // 直接读源码解析 inject 数组 —— 比 import 更可靠:
+  // bundle 走的是 window.__ModuleLoader__, stub 模块加载器未必把 inject 暴露出来
+  // (试过 import, 结果对正确的文件也报"全部缺失")。
+  const src = readFileSync(clientAbs, 'utf8')
+  const decl = /const\s+inject\s*=\s*\[([^\]]*)\]/.exec(src)
+  const declared = new Set(
+    (decl ? decl[1] : '').split(',').map((x) => x.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
+  )
+  const missing = REQUIRED_INJECT.filter((name) => !declared.has(name))
+  if (missing.length === 0) {
+    console.log('  ✅ inject 声明齐全 — 含 ' + REQUIRED_INJECT.join(', '))
+    pass++
+  } else {
+    console.log('  ❌ inject 缺必需服务: ' + missing.join(', '))
+    console.log('     缺 "remote" 这类会让配置卡片渲染失败且无任何提示')
+    fail++
+  }
+}
+
 console.log(`\n结果: ${pass} 通过 / ${fail} 失败`)
 process.exit(fail ? 1 : 0)

@@ -244,7 +244,13 @@ window.__ModuleLoader__.load({
 		/** 本插件配置所在的 profile 行 id（cordis.patch.yml 里那条 `- id:`）。 */
 		const ROW_NS = "layered-agent";
 		/** 需要的客户端服务。 */
-		const inject = ["slots", "locale", "configForms"];
+		// ⚠️ "remote" 与 "remote.credentials" 是必需的, 不是可选的。
+		//    Cordis 里访问未声明的服务会抛 "cannot get property X without inject" ——
+		//    而 CardController 构造时就会调 readCredential() 访问 ctx.remote,
+		//    所以漏声明会让【整个配置卡片渲染失败】, 界面上什么都没有,
+		//    也不会有任何错误提示(desktop 版没 console 时完全不可见)。
+		//    官方 web-search 同样声明了这两个(settings-web-search 的 client.js)。
+		const inject = ["slots", "locale", "remote", "remote.credentials", "configForms"];
 
 		function apply(ctx) {
 			const t = ctx.locale.bind(NS);
