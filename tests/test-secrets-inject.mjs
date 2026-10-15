@@ -70,7 +70,7 @@ console.log('\n=== D. backend=jev 但密钥库为空: backend/端点注入, key 
 const bare = mkdtempSync(join(tmpdir(), 'layered-nosecret-'))
 const bareFile = join(bare, 'secrets.json')
 writeFileSync(bareFile, JSON.stringify({ secrets: [] }), 'utf8')
-T('缺key', { backend: 'jev', secretsFile: bareFile, jevBaseUrl: 'http://127.0.0.1:30001', l0: { sources: ['disk'] } },
+T('缺key', { backend: 'jev', secretsFile: bareFile, credentialsFile: join(bare, 'no-creds.yaml'), jevBaseUrl: 'http://127.0.0.1:30001', l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'http://127.0.0.1:30001', key: undefined })
 
 // ---- E/F/G: 从 .credentials.yaml 的 refs 段读(fake 值, 不碰真实凭据) ----
@@ -149,6 +149,11 @@ console.log('\n=== J. volatile 字段必须被解包(否则切后端静默失效
   //    于是汇总数字偏小、看起来"通过"其实漏了这条(本文件就踩过一次)。
   T('volatile', {
     l0: { sources: ['disk'] },
+    // ⚠️ 必须显式隔离凭据文件 —— 否则会读到用户真实的 ~/.dsh/.credentials.yaml。
+    //    踩过: 用户在面板里存好 JEV_API_KEY 之后, 本断言因为"本该缺 key 却读到了真 key"
+    //    而假失败, 看起来像是代码坏了, 其实是测试没隔离。
+    credentialsFile: join(bare, 'no-creds.yaml'),
+    secretsFile: join(bare, 'no-secrets.json'),
     backend: 'jev', jevBaseUrl: 'https://openrouter.ai/api/v1', jevModel: 'typesafe/jev-1.13',
   }, { backend: 'jev', baseUrl: 'https://openrouter.ai/api/v1', key: undefined })
   if (!body) console.log('     ⚠️ volatile 解包异常: 端点/模型与预期不符')
