@@ -19,9 +19,9 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 # semif-adapt.py 是运行时工具, 不在仓库里 —— 它在统一运行目录。
 # 旧版写 HERE.parent / 'tools'(仓库 tools/), 但 tools/ 已移出仓库不再跟踪,
-# 那样定位必然 FileNotFoundError。现在从 LAYERED_HOME/tools/ 找;
+# 那样定位必然 FileNotFoundError。现在从 REFLEX_HOME/tools/ 找;
 # 找不到 = 本机不是装配环境, 跳过而不是假装失败。
-_la_home = pathlib.Path(os.environ.get("LAYERED_HOME") or (
+_la_home = pathlib.Path(os.environ.get("REFLEX_HOME") or (
     pathlib.Path(os.environ.get("HOME", "~")).expanduser()
     / ".dsh" / "dsh-reflex"
 ))
@@ -29,7 +29,7 @@ TOOL = _la_home / "tools" / "semif-adapt.py"
 
 if not TOOL.is_file():
     print(f"跳过: 未找到运行时工具 {TOOL}")
-    print("(semif-adapt.py 在 LAYERED_HOME/tools/, 仓库不跟踪 tools/)")
+    print("(semif-adapt.py 在 REFLEX_HOME/tools/, 仓库不跟踪 tools/)")
     sys.exit(0)
 
 spec = importlib.util.spec_from_file_location('semif_adapt', TOOL)

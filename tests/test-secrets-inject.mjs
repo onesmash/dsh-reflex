@@ -33,9 +33,9 @@ function check(label, config, expect) {
   try { api = apply(fakeCtx(), config) } catch (e) { console.log(`  [${label}] apply 抛错: ${e.message}`); return false }
   const env = api?.scriptEnv?.() ?? {}
   const got = {
-    backend: env.LAYERED_DECIDE_BACKEND,
-    baseUrl: env.LAYERED_JEV_BASE_URL,
-    key: env.LAYERED_JEV_API_KEY,
+    backend: env.REFLEX_DECIDE_BACKEND,
+    baseUrl: env.REFLEX_JEV_BASE_URL,
+    key: env.REFLEX_JEV_API_KEY,
     leaked: Object.values(env).includes('must-NOT-leak'),
   }
   const ok =
@@ -44,9 +44,9 @@ function check(label, config, expect) {
     (expect.key === undefined ? got.key === undefined : got.key === expect.key) &&
     got.leaked === false
   console.log(`  [${label}] ${ok ? '✅ 通过' : '❌ 不符'}`)
-  console.log(`     LAYERED_DECIDE_BACKEND = ${got.backend ?? '(未注入)'}`)
-  console.log(`     LAYERED_JEV_BASE_URL   = ${got.baseUrl ?? '(未注入)'}`)
-  console.log(`     LAYERED_JEV_API_KEY    = ${got.key ? '已注入' : '(未注入)'}`)
+  console.log(`     REFLEX_DECIDE_BACKEND = ${got.backend ?? '(未注入)'}`)
+  console.log(`     REFLEX_JEV_BASE_URL   = ${got.baseUrl ?? '(未注入)'}`)
+  console.log(`     REFLEX_JEV_API_KEY    = ${got.key ? '已注入' : '(未注入)'}`)
   console.log(`     无关密钥(SOME_OTHER_TOKEN) = ${got.leaked ? '❌ 泄漏' : '未泄漏 ✓'}`)
   return ok
 }
@@ -79,7 +79,7 @@ const credFile = join(cdir, '.credentials.yaml')
 writeFileSync(credFile, [
   'version: 1',
   'refs:',
-  "  LAYERED_JEV_API_KEY: 'fake-cred-key'",
+  "  REFLEX_JEV_API_KEY: 'fake-cred-key'",
   "  SOME_OTHER_TOKEN: 'must-NOT-leak'",
   "  TYPESAFE_API_KEY: 'fake-typesafe-key'",
   'records:',
@@ -103,17 +103,17 @@ writeFileSync(c2, [
   'refs:',
   "  OTHER_KEY: 'x'",
   'records:',
-  '  LAYERED_JEV_API_KEY:',
+  '  REFLEX_JEV_API_KEY:',
   "    kind: 'grant'",
 ].join('\n'), 'utf8')
 T('cred-boundary', { backend: 'jev', credentialsFile: c2, secretsFile: join(cdir, 'absent.json'), l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: undefined })
 
-console.log('\n=== H. 旧名 LAYERED_JEV_API_KEY 仍应被读到(向后兼容) ===')
+console.log('\n=== H. 旧名 REFLEX_JEV_API_KEY 仍应被读到(向后兼容) ===')
 const olddir = mkdtempSync(join(tmpdir(), 'layered-oldname-'))
 const oldSecret = join(olddir, 'secrets.json')
 writeFileSync(oldSecret, JSON.stringify({
-  secrets: [{ name: 'LAYERED_JEV_API_KEY', value: 'old-name-key', purpose: 'legacy' }],
+  secrets: [{ name: 'REFLEX_JEV_API_KEY', value: 'old-name-key', purpose: 'legacy' }],
 }), 'utf8')
 T('旧名回退', { backend: 'jev', credentialsFile: join(olddir, 'none.yaml'), secretsFile: oldSecret, l0: { sources: ['disk'] } },
   { backend: 'jev', baseUrl: 'https://api.typesafe.ai', key: 'old-name-key' })
@@ -123,7 +123,7 @@ const bothdir = mkdtempSync(join(tmpdir(), 'layered-both-'))
 const bothSecret = join(bothdir, 'secrets.json')
 writeFileSync(bothSecret, JSON.stringify({
   secrets: [
-    { name: 'LAYERED_JEV_API_KEY', value: 'old-name-key', purpose: 'legacy' },
+    { name: 'REFLEX_JEV_API_KEY', value: 'old-name-key', purpose: 'legacy' },
     { name: 'JEV_API_KEY', value: 'primary-key', purpose: 'primary' },
   ],
 }), 'utf8')
@@ -142,9 +142,9 @@ console.log('\n=== J. volatile 字段必须被解包(否则切后端静默失效
     })
   } catch (e) { console.log('  apply 抛错:', e.message) }
   const env = api?.scriptEnv?.() ?? {}
-  const body = env.LAYERED_DECIDE_BACKEND === 'jev'
-    && env.LAYERED_JEV_BASE_URL === 'https://openrouter.ai/api/v1'
-    && env.LAYERED_JEV_MODEL === 'typesafe/jev-1.13'
+  const body = env.REFLEX_DECIDE_BACKEND === 'jev'
+    && env.REFLEX_JEV_BASE_URL === 'https://openrouter.ai/api/v1'
+    && env.REFLEX_JEV_MODEL === 'typesafe/jev-1.13'
   // ⚠️ 必须走 T() —— 直接调 check() 会打印 ✅ 却不计入 pass/total,
   //    于是汇总数字偏小、看起来"通过"其实漏了这条(本文件就踩过一次)。
   T('volatile', {

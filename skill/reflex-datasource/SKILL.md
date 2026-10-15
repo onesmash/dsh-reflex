@@ -1,6 +1,6 @@
 ---
 name: reflex-datasource
-description: "为分层智能体(dsh-reflex)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（LAYERED_HOME / $HOME）推导，不写死绝对路径。"
+description: "为分层智能体(dsh-reflex)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（REFLEX_HOME / $HOME）推导，不写死绝对路径。"
 version: 2.1.0
 ---
 
@@ -12,11 +12,11 @@ version: 2.1.0
 
 | 用途 | 路径（约定） | 说明 |
 |---|---|---|
-| 统一目录 | `$HOME/.dsh/dsh-reflex/`（环境变量 `LAYERED_HOME`） | 数据源的家：`collectors/` 脚本、`facts/` 数据、manifest、状态文件 |
+| 统一目录 | `$HOME/.dsh/dsh-reflex/`（环境变量 `REFLEX_HOME`） | 数据源的家：`collectors/` 脚本、`facts/` 数据、manifest、状态文件 |
 | 配置启用 | `$DSH_HOME`（默认 `$HOME/.dsh`）`/profiles/<当前 profile>/cordis.patch.yml` | 在 `layered-agent.l0.sources` 声明启用 |
 | 代码/详细规则 | 插件安装目录（见下方"定位插件安装目录"） | `DATASOURCE.md` 随代码版本走，是详细版 |
 | 本 skill | `~/.agents/skills/reflex-datasource/` | 由插件 install() 自动部署，随代码更新 |
-| SemIf skill | `~/.agents/skills/semif-decide/` | 同样是插件 install() 部署的（vendored 快照，只在缺失时装）；调 SemIf 用插件注入的 `$LAYERED_SEMIF_RUN`，别写死路径 |
+| SemIf skill | `~/.agents/skills/semif-decide/` | 同样是插件 install() 部署的（vendored 快照，只在缺失时装）；调 SemIf 用插件注入的 `$REFLEX_SEMIF_RUN`，别写死路径 |
 
 > 定位插件安装目录：Bot 收到本 skill 时若需读详细规则 `DATASOURCE.md`，用 `npm ls dsh-reflex`（在 profile 目录）或从运行报错中的文件路径反推，或直接读取 `$HOME/.dsh/dsh-reflex/manifest.json`（L0 自描述，给出了数据源布局）。不要假设某个固定的源码 checkout 路径。
 
@@ -24,7 +24,7 @@ version: 2.1.0
 
 1. **写 collector 脚本** → 丢进 `$HOME/.dsh/dsh-reflex/collectors/<name>.sh`
    - stdout 每行一个 JSON fact：`{"metric","raw","meta"?}`
-   - source/ts 由插件补；脚本可读注入环境（`LAYERED_HOME`/CA 证书/PATH）
+   - source/ts 由插件补；脚本可读注入环境（`REFLEX_HOME`/CA 证书/PATH）
    - 脚本要幂等（多次调用不重复，如 mail 用 seen 去重）
 2. **配置启用** → 当前 profile 的 `cordis.patch.yml` 里 `layered-agent.l0.sources` 加 `<name>`
 3. **验证** → 重启后日志出现 `auto-discovered script sources: [... <name>]`；数据进 `facts/<name>/`
@@ -35,7 +35,7 @@ version: 2.1.0
 ## Collector 契约
 
 - **输出**：stdout 每行一个 JSON fact：`{"metric":"<m>","raw":{...},"meta":{...}}`；`source`/`ts` 由插件补齐
-- **环境**：插件注入 `LAYERED_HOME`（统一目录）、自定义 CA（`SSL_CERT_FILE`/`CURL_CA_BUNDLE`/`REQUESTS_CA_BUNDLE`）、常用 PATH
+- **环境**：插件注入 `REFLEX_HOME`（统一目录）、自定义 CA（`SSL_CERT_FILE`/`CURL_CA_BUNDLE`/`REQUESTS_CA_BUNDLE`）、常用 PATH
 - **行为**：退出 0 + 空输出 = 本轮无数据（正常）；退出非 0 = 记 `L0 <name> failed`，不影响其他源；必须幂等
 - **自动发现**：插件启动扫描 `collectors/`，每个 `*.sh` 自动注册为源（源名 = 文件名去 `.sh`）
 - **伴生文件**（都是纯数据，加源不改代码）：
@@ -64,14 +64,14 @@ exit 0
    （某信息流平台用 `search?q=filter:follows&f=live`）。验证法：连开三次，比较 id 集合是否完全相同。
 2. **虚拟列表要两段式取快照**。滚动会把顶部条目挤出 DOM，所以顺序是
    「先取顶部 → 再滚动 → 再取一次 → 合并按 id 去重」，不能"先滚动再取"。
-3. **去重持久化**在 `$LAYERED_HOME/seen-<name>.json`（有序数组 + 截断上限），不要用 set 丢顺序。
+3. **去重持久化**在 `$REFLEX_HOME/seen-<name>.json`（有序数组 + 截断上限），不要用 set 丢顺序。
 
 ## 需要登录态的源
 
 没有 API token、靠浏览器/账号登录态的源（如 `feed-timeline`）：
 
-- 登录态 state 文件放 `$LAYERED_HOME/<name>-state.json`，权限 600，**只保留目标站点的 cookie**
-- 配套写一个导出工具放 `$LAYERED_HOME/tools/`（**别放 `collectors/`，会被当成数据源**）；
+- 登录态 state 文件放 `$REFLEX_HOME/<name>-state.json`，权限 600，**只保留目标站点的 cookie**
+- 配套写一个导出工具放 `$REFLEX_HOME/tools/`（**别放 `collectors/`，会被当成数据源**）；
   参照 `tools/feed-export-state.sh`：复制浏览器 profile 副本 → 起带调试端口的浏览器 → CDP 导出明文 cookie
 - collector 用独立会话名（如 `--session feed-collect`）采集，结束 `close`，**不要常驻 headless 浏览器**
 - **会话过期要以非 0 退出**（记 `L0 <name> failed`），绝不能把空数据伪装成"没有新事件"
@@ -81,7 +81,7 @@ exit 0
 
 ### 脚本 target（首选，不用改代码）
 
-写 `$LAYERED_HOME/targets/<name>.sh` + 在 `l1.targets` 启用。与 collector 同一套契约。
+写 `$REFLEX_HOME/targets/<name>.sh` + 在 `l1.targets` 启用。与 collector 同一套契约。
 
 **职责分界**（关键，别混）：**脚本**负责判定与条目内容；**插件**负责指纹去重、冷却、
 `minIntervalMs` 节流、pending 累积合并、**排版信封**（标题/编号/「其中 N 条为冷却期累积」/L0 入口）。
@@ -94,8 +94,8 @@ exit 0
 
 - **`items[].id` 必须有** —— 它是跨轮合并去重的唯一依据，缺了整个合并机制就退化
 - 脚本别自己判重、别输出标题栏/编号/L0 入口
-- 调 SemIf 用 `$LAYERED_SEMIF_RUN`（插件注入，别写死路径），**批量**打分别逐条起进程
-- 用户画像从 `$LAYERED_PROFILE` 读
+- 调 SemIf 用 `$REFLEX_SEMIF_RUN`（插件注入，别写死路径），**批量**打分别逐条起进程
+- 用户画像从 `$REFLEX_PROFILE` 读
 - **在 `<name>.env.json` 里声明 `sources: ["<源名>"]`** —— 否则 target 脚本会被每分钟空跑一次
   （disk 每分钟产出一条事实就触发一轮决策，而脚本对那批事实并不关心）
 - 想全权排版可输出 `{"notice": "整段文本"}`，代价是累积时插件只能粗暴拼接、无法跨轮去重
@@ -168,7 +168,7 @@ swap 文件写在磁盘上 → **磁盘被吃光**。表现在磁盘上，根因
 正确做法 —— 分块跑再合并（输入输出分开放，脚本可重复跑）：
 
 ```bash
-SEMIF="${LAYERED_SEMIF_RUN:-$HOME/.agents/skills/semif-decide/scripts/run_score.sh}"
+SEMIF="${REFLEX_SEMIF_RUN:-$HOME/.agents/skills/semif-decide/scripts/run_score.sh}"
 rm -rf /tmp/cal && mkdir -p /tmp/cal/in /tmp/cal/out
 split -l 40 all_rows.jsonl /tmp/cal/in/part_
 for f in /tmp/cal/in/part_*; do
@@ -178,7 +178,7 @@ done
 cat /tmp/cal/out/*.jsonl > all_results.jsonl
 ```
 
-（`LAYERED_SEMIF_RUN` 是插件注入给 target 脚本的；在手工 shell 里没这个变量，所以留了回退路径。）
+（`REFLEX_SEMIF_RUN` 是插件注入给 target 脚本的；在手工 shell 里没这个变量，所以留了回退路径。）
 
 注意区分两条链路：
 
@@ -207,7 +207,7 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 ~/.dsh/dsh-reflex/tools/im-notify.sh "正文"       # 或 echo 正文 | 脚本
 ```
 
-- 收件人取 `$LAYERED_IM_NOTIFY_TO` 或 `tools/im-notify.to`
+- 收件人取 `$REFLEX_IM_NOTIFY_TO` 或 `tools/im-notify.to`
 - **消息是"用户发给自己"的**（helper 以用户本人身份认证，没有机器人账号），
   落在 IM 的"发给自己"会话里 —— 能当通知渠道，但不显示成机器人
 - 脚本强制 `text` 模式：默认的 markdown 模式**禁止裸 URL**，我们的通知里全是链接

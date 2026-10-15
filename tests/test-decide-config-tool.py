@@ -22,10 +22,10 @@ import tempfile
 HERE = pathlib.Path(__file__).resolve().parent
 # decide-config.py 是运行时工具, 不在仓库里 —— 它在统一运行目录。
 # 上一版测试写 HERE.parent / 'tools'(仓库 tools/), 但 collectors/targets/tools
-# 已移出仓库不再跟踪, 那样定位必然失败。现在从 LAYERED_HOME
+# 已移出仓库不再跟踪, 那样定位必然失败。现在从 REFLEX_HOME
 # (默认 ~/.dsh/dsh-reflex/)/tools/ 找; 找不到 = 本机没配运行目录,
 # 直接跳过而不是假装失败。
-_la_home = pathlib.Path(os.environ.get("LAYERED_HOME") or (
+_la_home = pathlib.Path(os.environ.get("REFLEX_HOME") or (
     pathlib.Path(os.environ.get("HOME", "~")).expanduser()
     / ".dsh" / "dsh-reflex"
 ))
@@ -77,7 +77,7 @@ def main():
     # 工具不在仓库里, 在统一运行目录。没配运行目录 = 本机不是装配环境,
     # 跳过文件相关断言(fail-closed: 不假装成功, 也不在别处炸)。
     if not TOOL.is_file():
-        print(f"\n跳过: 未找到运行时工具 {TOOL}\n(decide-config.py 在 LAYERED_HOME/tools/, 仓库不跟踪 tools/)")
+        print(f"\n跳过: 未找到运行时工具 {TOOL}\n(decide-config.py 在 REFLEX_HOME/tools/, 仓库不跟踪 tools/)")
         return 0
 
     with tempfile.TemporaryDirectory() as td:

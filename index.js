@@ -5,7 +5,7 @@
 //   L1 SemIf 决策层: 轮询新事实, 硬规则先决 + SemIf 本地模型裁决边界
 //   L2 推理层: 被 L1 唤醒(事件驱动, 不轮询) — 通过 DSH schedule 服务投递消息给目标 Bot session
 //
-// 共存: 独立 cordis 插件, patch: cordis.patch.yml -> insert: { id: layered-agent }.
+// 共存: 独立 cordis 插件, patch: cordis.patch.yml -> insert: { id: dsh-reflex }.
 //   不修改原版 ds-bot 任何代码; 通过 ctx.get('schedule') + 读 bot state.json 定位目标会话。
 
 import { join, dirname } from 'node:path'
@@ -20,7 +20,7 @@ import { loadavg } from 'node:os'
 const execFileP = promisify(execFile)
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-// ---------- 配置 (可通过 profile patch 覆盖: layered-agent: {...}) ----------
+// ---------- 配置 (可通过 profile patch 覆盖: dsh-reflex: {...}) ----------
 /** DSH 主目录。原先各处内联重复了三遍, 这里统一 —— 也是默认凭据文件位置的基准。 */
 const DSH_HOME = process.env.DSH_HOME || join(process.env.HOME || '.', '.dsh')
 
@@ -32,7 +32,7 @@ const DEFAULTS = {
     // 采集源在配置层决定(profile patch l0.sources), 插件默认最小; 可用: disk/cpu/uptime/mail/自写脚本源
     sources: ['disk'],
     // 统一目录: 数据源工作区根 — collectors/ 脚本、facts/ 数据、manifest/状态全在此之下
-    homeDir: process.env.LAYERED_HOME || join(DSH_HOME, 'dsh-reflex'),
+    homeDir: process.env.REFLEX_HOME || join(DSH_HOME, 'dsh-reflex'),
     // storeDir / collectorsDir 由 homeDir 派生 (若显式传则优先)
   },
   l1: {
@@ -50,7 +50,7 @@ const DEFAULTS = {
     // 用户画像: 内容类 target(如 feed-timeline)组装 SemIf 决策 context 用 —— 建议在 profile patch 里覆盖
     profile: '',
     // 内容类 target 的参数现在归 target 自己的 env.json 管 (targets/<name>.env.json 的 env 段),
-    // 例如 feed-timeline 的阈值/候选数走 LAYERED_X_THRESHOLD / LAYERED_X_MAX_CANDIDATES。
+    // 例如 feed-timeline 的阈值/候选数走 REFLEX_X_THRESHOLD / REFLEX_X_MAX_CANDIDATES。
     // 唤醒闸门缺省跟随该源采集间隔, 见 ALL_TARGETS 里的 minIntervalMs。
   },
   semif: {
@@ -67,7 +67,7 @@ const DEFAULTS = {
   credentialsFile: join(DSH_HOME, '.credentials.yaml'),
   secretsFile: join(DSH_HOME, 'bot', 'secrets.json'),
   // 主名用 JEV_API_KEY(用户指定); 后两个是兼容既有的存量命名, 按顺序回退。
-  secretAllow: ['JEV_API_KEY', 'LAYERED_JEV_API_KEY', 'TYPESAFE_API_KEY'],
+  secretAllow: ['JEV_API_KEY', 'REFLEX_JEV_API_KEY', 'TYPESAFE_API_KEY'],
 }
 
 // 子进程实现。默认就是 child_process 的 spawn —— 这里做成模块级引用
@@ -121,13 +121,13 @@ export function apply(ctx, config = {}) {
     return install(rtOf(ctx), ctx, normalize(cfgOf(config)))
   } catch (e) {
     // 兄弟插件绝不拖垮宿主: 任何初始化错误都降级为记录并跳过
-    try { ctx.logger?.warn?.(`[layered-agent] init skipped: ${e.message}`) } catch {}
+    try { ctx.logger?.warn?.(`[dsh-reflex] init skipped: ${e.message}`) } catch {}
     return undefined
   }
 }
 
 function cfgOf(config) {
-  return config?.layeredAgent ?? config ?? {}
+  return config?.dshReflex ?? config ?? {}
 }
 function normalize(c) {
   const cfg = {
@@ -140,8 +140,8 @@ function normalize(c) {
   }
   // 统一目录派生: 默认 homeDir/facts, homeDir/collectors; 显式传 storeDir/collectorsDir 优先
   cfg.l0.homeDir ||= join(DSH_HOME, 'dsh-reflex')
-  cfg.l0.storeDir ||= process.env.LAYERED_FACT_DIR || join(cfg.l0.homeDir, 'facts')
-  cfg.l0.collectorsDir ||= process.env.LAYERED_COLLECTORS_DIR || join(cfg.l0.homeDir, 'collectors')
+  cfg.l0.storeDir ||= process.env.REFLEX_FACT_DIR || join(cfg.l0.homeDir, 'facts')
+  cfg.l0.collectorsDir ||= process.env.REFLEX_COLLECTORS_DIR || join(cfg.l0.homeDir, 'collectors')
   cfg.l0.logFile = join(cfg.l0.homeDir, 'dsh-reflex.log')
   return cfg
 }
@@ -265,7 +265,7 @@ function install(rt, ctx, cfg) {
       ctx.inject(['sessionController'], (sub) => {
         sessionCtrl = sub?.sessionController
         log(`sessionController attached (${sessionCtrl ? 'ok' : 'null'})`)
-        try { sub?.effect?.(() => () => { if (sessionCtrl) sessionCtrl = null }, 'layered-agent: sessionController') } catch {}
+        try { sub?.effect?.(() => () => { if (sessionCtrl) sessionCtrl = null }, 'dsh-reflex: sessionController') } catch {}
       })
     } else {
       log('ctx.inject unavailable at install')
@@ -324,7 +324,7 @@ function install(rt, ctx, cfg) {
   //   - script:  { cmd: 'path/to/script.sh' }          外部脚本, stdout 每行一个 JSON fact
   // fact 形如 { source?, metric, raw, meta? }; source 缺省用源名; ts 缺省由 collectOnce 补
   //
-  // 脚本源自动发现: 插件启动时扫描 <collectorsDir> (默认 LAYERED_HOME/collectors/), 每个 *.sh 自动注册为源,
+  // 脚本源自动发现: 插件启动时扫描 <collectorsDir> (默认 REFLEX_HOME/collectors/), 每个 *.sh 自动注册为源,
   // 源名 = 脚本文件名(去 .sh)。加一个脚本源 = 丢脚本到此目录 + 配置 l0.sources 启用, 无需改插件代码。
   // 可选命名 companion 文件 <script>.env.json 提供该脚本源的 {intervalMs, env} 覆盖。
   const collectorsDir = cfg.l0.collectorsDir ?? join(cfg.l0.homeDir, 'collectors')
@@ -608,33 +608,33 @@ function install(rt, ctx, cfg) {
   // 密钥注入: 这里【必须自己读】密钥库, 不能指望 process.env 里已经有。
   // ds-bot 把密钥注册进 DSH 的 shellEnv 服务(按需解析, 只对 DSH 的 bash 工具有效),
   // 而本插件是用 spawn 直接起子进程 —— 实测 process.env 里 DSH_SECRET_* 为 0 个。
-  // 不自己读的话, LAYERED_JEV_API_KEY 永远是空的, 切到托管 Jev 必然失败。
+  // 不自己读的话, REFLEX_JEV_API_KEY 永远是空的, 切到托管 Jev 必然失败。
   function scriptEnv(extra) {
     // 不内置任何平台专有的 CA 文件名 —— 需要自定义 CA 的环境在宿主侧设好
     // SSL_CERT_FILE / CURL_CA_BUNDLE / REQUESTS_CA_BUNDLE 即可, 这里只做透传兜底。
     const env = {
       ...process.env,
-      LAYERED_HOME: cfg.l0.homeDir,
+      REFLEX_HOME: cfg.l0.homeDir,
       PATH: `/usr/local/bin:/opt/homebrew/bin:/bin:/usr/bin:/sbin:/usr/sbin:${process.env.HOME}/.local/bin:${process.env.PATH ?? ''}`,
       SSL_CERT_FILE: process.env.SSL_CERT_FILE || '',
       CURL_CA_BUNDLE: process.env.CURL_CA_BUNDLE || process.env.SSL_CERT_FILE || '',
       REQUESTS_CA_BUNDLE: process.env.REQUESTS_CA_BUNDLE || process.env.CURL_CA_BUNDLE || process.env.SSL_CERT_FILE || '',
       // target 脚本要调 SemIf 时用它, 不必写死路径
-      LAYERED_SEMIF_RUN: join(cfg.semif.skillDir, 'scripts', 'run_score.sh'),
+      REFLEX_SEMIF_RUN: join(cfg.semif.skillDir, 'scripts', 'run_score.sh'),
       ...(extra ?? {}),
     }
     // 决策后端: 只在显式配了才注入 —— 不配就别动, 让 target 自己的默认(semif)生效。
     // 注意 'semif' 也要注入: 它是"从默认切回本地"的显式选择。
     const backend = String(unwrap(cfg.backend, '') ?? '').trim()
-    if (backend) env.LAYERED_DECIDE_BACKEND = backend
+    if (backend) env.REFLEX_DECIDE_BACKEND = backend
     if (backend === 'jev' || backend === 'jevlocal') {
-      env.LAYERED_JEV_BASE_URL = String(unwrap(cfg.jevBaseUrl, '') ?? '')
-      env.LAYERED_JEV_MODEL = String(unwrap(cfg.jevModel, '') ?? '')
+      env.REFLEX_JEV_BASE_URL = String(unwrap(cfg.jevBaseUrl, '') ?? '')
+      env.REFLEX_JEV_MODEL = String(unwrap(cfg.jevModel, '') ?? '')
       const key = secretValue('JEV_API_KEY')
-        ?? secretValue('LAYERED_JEV_API_KEY')
+        ?? secretValue('REFLEX_JEV_API_KEY')
         ?? secretValue('TYPESAFE_API_KEY')
       if (key) {
-        env.LAYERED_JEV_API_KEY = key
+        env.REFLEX_JEV_API_KEY = key
       } else if (!warnedNoJevKey) {
         warnedNoJevKey = true
         log('决策后端=%s 但没找到密钥(找过 %s 的 refs) —— 判定会因缺 key 失败。'
@@ -689,8 +689,8 @@ function install(rt, ctx, cfg) {
       timeoutMs: t.timeoutMs ?? 120_000,
       env: scriptEnv({
         // 用户画像: 内容类 target 组装 SemIf 决策 context 用 (由 profile patch 的 l1.profile 提供)
-        LAYERED_PROFILE: cfg.l1.profile ?? '',
-        LAYERED_TARGET: t.target,
+        REFLEX_PROFILE: cfg.l1.profile ?? '',
+        REFLEX_TARGET: t.target,
         ...(t.env ?? {}),
       }),
     })
@@ -1145,9 +1145,9 @@ function install(rt, ctx, cfg) {
   const t1 = setInterval(() => decideOnce().catch(e => log(`L1 err: ${e.message}`)), cfg.l1.intervalMs)
   t0.unref?.(); t1.unref?.()
   // cordis effect(setup): 立即调用 setup, 其返回值才是 dispose 回调 (照 ds-bot 惯例双箭头)
-  try { ctx.effect(() => () => { clearInterval(t0); clearInterval(t1) }, 'layered-agent: L0/L1 timers') } catch {}
+  try { ctx.effect(() => () => { clearInterval(t0); clearInterval(t1) }, 'dsh-reflex: L0/L1 timers') } catch {}
 
-  log(`layered-agent installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}" sources=[${cfg.l0.sources.join(',')}]`)
+  log(`dsh-reflex installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}" sources=[${cfg.l0.sources.join(',')}]`)
   // scriptEnv 一并返回: 密钥注入是"必须可验证"的逻辑(读代码相信不算证据),
   // 测试直接调它比对环境变量, 不必真跑一轮采集。
   return { collectOnce, decideOnce, wakeL2, scriptEnv }

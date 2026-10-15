@@ -9,7 +9,7 @@ window.__ModuleLoader__.load({
 		const ui = require("@deepseek-ai/dsh-client-ui-primitives");
 
 		//#region locales
-		const NS = "layeredAgent.config";
+		const NS = "dshReflex.config";
 
 		const zh = {
 			title: "分层智能体",
@@ -242,7 +242,7 @@ window.__ModuleLoader__.load({
 
 		//#region index
 		/** 本插件配置所在的 profile 行 id（cordis.patch.yml 里那条 `- id:`）。 */
-		const ROW_NS = "layered-agent";
+		const ROW_NS = "dsh-reflex";
 		/** 需要的客户端服务。 */
 		// ⚠️ "remote" 与 "remote.credentials" 是必需的, 不是可选的。
 		//    Cordis 里访问未声明的服务会抛 "cannot get property X without inject" ——
@@ -254,9 +254,9 @@ window.__ModuleLoader__.load({
 
 		function apply(ctx) {
 			const t = ctx.locale.bind(NS);
-			ctx.effect(() => ctx.locale.register(NS, { zh, en }), "layered-agent: dictionaries");
+			ctx.effect(() => ctx.locale.register(NS, { zh, en }), "dsh-reflex: dictionaries");
 			const card = new CardController(ctx.configForms.get(ROW_NS), ctx);
-			ctx.effect(() => () => card.dispose(), "layered-agent: form subscription");
+			ctx.effect(() => () => card.dispose(), "dsh-reflex: form subscription");
 			// whileServed: 宿主服务该行的配置时注册，停止服务时注销 ——
 			// 与官方设置页同一套写法, 所以插件被禁用时这一页不会残留。
 			ctx.effect(() => ctx.configForms.whileServed([ROW_NS], (served) => {
@@ -267,7 +267,7 @@ window.__ModuleLoader__.load({
 					locale: NS,
 					inject: () => card.inject()
 				}, Card));
-			}), "layered-agent: config page");
+			}), "dsh-reflex: config page");
 		}
 		//#endregion
 

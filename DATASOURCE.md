@@ -2,10 +2,10 @@
 
 > 本文档是 `dsh-reflex` 插件的官方规则，随代码版本走（Git 管理）。
 > Bot（L2/Chief）在「添加数据源」任务触发时，通过同名 skill 自动加载。
-> 本机路径不在文档中写死：统一目录用环境变量 `LAYERED_HOME`（默认 `$HOME/.dsh/dsh-reflex/`）；插件安装目录可由 `npm ls dsh-reflex` 或运行报错路径定位。
+> 本机路径不在文档中写死：统一目录用环境变量 `REFLEX_HOME`（默认 `$HOME/.dsh/dsh-reflex/`）；插件安装目录可由 `npm ls dsh-reflex` 或运行报错路径定位。
 >
 > **示例名是泛化的，不是本机真名。** 文档为了不暴露具体平台与个人身份，把示例统一写成
-> `im-*` / `tickets-*`：脚本名（`im-notify.sh`、`im-dm.sh`…）、环境变量（`LAYERED_IM_*`）、
+> `im-*` / `tickets-*`：脚本名（`im-notify.sh`、`im-dm.sh`…）、环境变量（`REFLEX_IM_*`）、
 > 域名（`<im-host>`）都只是占位。你的实际名字以本机 `collectors/` `targets/` `tools/`
 > 目录里的文件和 `.env.json` 为准 —— 那些目录不进仓库，不会随本文档外发。
 
@@ -84,7 +84,7 @@ L0 采集和 L1 判定**都是脚本驱动的**，两者同一套契约（自动
 - `meta` 可选，放非数据信息（来源、类型等）
 
 ### 环境契约（插件注入到脚本进程）
-- `LAYERED_HOME`：统一目录 `~/.dsh/dsh-reflex/`——脚本用它定位自己的状态文件
+- `REFLEX_HOME`：统一目录 `~/.dsh/dsh-reflex/`——脚本用它定位自己的状态文件
 - `SSL_CERT_FILE` / `CURL_CA_BUNDLE` / `REQUESTS_CA_BUNDLE`：自定义 CA（访问受控服务需要时由宿主提供）
 - `PATH`：已含 `/usr/local/bin`、`/opt/homebrew/bin`、`~/.local/bin`
 
@@ -166,8 +166,8 @@ exit 0
 
 有些源（如 `feed-timeline`）没有 API token，靠浏览器登录态采集。约定做法：
 
-1. 登录态存成 JSON state 文件放统一目录，如 `$LAYERED_HOME/feed-timeline-state.json`
-2. 写一个**导出工具**放 `$LAYERED_HOME/tools/`（不要放 `collectors/`，那会被当成数据源）
+1. 登录态存成 JSON state 文件放统一目录，如 `$REFLEX_HOME/feed-timeline-state.json`
+2. 写一个**导出工具**放 `$REFLEX_HOME/tools/`（不要放 `collectors/`，那会被当成数据源）
    参考 `tools/feed-export-state.sh`：从本机 Chrome 复制 profile 副本 → 起带调试端口的 Chrome
    → CDP 导出明文 cookie → 只保留目标站点 → 落盘 600 权限
 3. collector 用 `浏览器自动化工具 --session <私有会话名> --state <state 文件>` 采集，**用完 `close`**
@@ -186,7 +186,7 @@ exit 0
   把实测数字写进脚本注释 —— 后面的人调间隔时要靠它判断
 - **单会话失败不能中断整轮**：每个会话 try/except 包住，否则一个 403 会让整个源当轮无数据
 - **首次运行只建水位、不产历史**，否则第一次就把几千条历史倒进 L0。
-  要回填历史用专门的环境变量（如 `LAYERED_IM_BACKFILL_MIN`），不要靠改代码
+  要回填历史用专门的环境变量（如 `REFLEX_IM_BACKFILL_MIN`），不要靠改代码
 - **逐会话拉取要限量**（如每会话只取最近 3 个线程），否则线程多的会话会拖垮整轮
 
 ## 5.4 服务端不告诉你「具体是哪一条」
@@ -195,7 +195,7 @@ IM 的「谁 @ 过我」接口（如 `msg_mention_me_fetch`） 只返回"这个�
 同一线程的后续普通讨论也会一起返回。若不处理，采集会被同线程闲聊灌满。
 
 做法：先看真实数据找规律，再用可配置的别名收紧。实测真正的提及消息都含 `@`，
-而同线程的普通讨论不含 —— 先用"含 @"近似，再用 `LAYERED_IM_MENTION_ALIASES`
+而同线程的普通讨论不含 —— 先用"含 @"近似，再用 `REFLEX_IM_MENTION_ALIASES`
 （本人名字 + 所在的提及组）精确匹配。效果：2 天样本从 122 条降到 39 条，且 39 条全部相关。
 
 > 教训：服务端语义模糊时，**别猜，先拉一批真实数据统计**（数一数 @ 后面到底跟的是谁），
@@ -248,11 +248,11 @@ IM 的「谁 @ 过我」接口（如 `msg_mention_me_fetch`） 只返回"这个�
   （自由文本没法跨轮去重）。要结构化合并就得用 `items`。
 - 脚本不必自己判重、不必输出标题栏/编号/L0 入口 —— 那些是插件的事
 
-插件注入的环境：`LAYERED_HOME`、`LAYERED_PROFILE`（用户画像）、`LAYERED_SEMIF_RUN`（SemIf 打分脚本路径，
-**别写死路径**）、`LAYERED_TARGET`、自定义 CA、完整 PATH。
+插件注入的环境：`REFLEX_HOME`、`REFLEX_PROFILE`（用户画像）、`REFLEX_SEMIF_RUN`（SemIf 打分脚本路径，
+**别写死路径**）、`REFLEX_TARGET`、自定义 CA、完整 PATH。
 
 `<name>.env.json`（可选，与 collector 同规则）：`{ "displayName": "X 关注流", "timeoutMs": 180000,
-"minIntervalMs": "auto", "env": { "LAYERED_X_THRESHOLD": "0.9" } }`
+"minIntervalMs": "auto", "env": { "REFLEX_X_THRESHOLD": "0.9" } }`
 
 - `minIntervalMs: "auto"` = 跟随同名采集源的采集间隔（每轮采集最多叫醒一次）；缺省即 auto（若存在同名源）
 - **建议声明 `sources: ["<源名>"]`**：本轮新事实里没有该源的数据时，插件**连脚本都不起**。
@@ -424,7 +424,7 @@ l1:
      所以画像里的措辞直接决定灵敏度，别写得太窄（写成"只关心雇主相关"就永不触发了）
 4. **逐条筛选要用批量 SemIf**：一次进程只加载一次模型给 N 条打分，比 N 次单调用快得多。
    - 内置 target：用框架的 `semifScoreBatch(rows)`
-   - 脚本 target：直接把 N 行写进 `$LAYERED_SEMIF_RUN --input` 的输入文件（见 `targets/feed-timeline.sh`）
+   - 脚本 target：直接把 N 行写进 `$REFLEX_SEMIF_RUN --input` 的输入文件（见 `targets/feed-timeline.sh`）
    跑完不要**再**让框架跑第二次 SemIf（内置 target 用 `interim` + `interimReason` 直接进唤醒）。
 5. **通知要自包含**：L2 无状态，通知必须带判定依据、条目原文、链接、触发原因
    和 L0 入口（`manifest.json`）。信封部分插件会自动补，条目内容归脚本。
@@ -449,7 +449,7 @@ l1:
 - [ ] `collectors/<name>.sh` 可执行（`chmod +x`），单独跑输出合法 JSON line
       ⚠️ **单独跑会烧掉去重窗口**：collector 一跑就把新 id 写进 `seen-*.json`，但那些事实
       没经过插件、没进 L0 —— 等于永久丢一批。**手工测试务必换一个 seen 文件**
-      （如 `LAYERED_X_SEEN=/tmp/test-seen.json`），或者事后把多出来的 id 从 seen 里回滚掉。
+      （如 `REFLEX_X_SEEN=/tmp/test-seen.json`），或者事后把多出来的 id 从 seen 里回滚掉。
 - [ ] 加到 `l0.sources` 后，重启插件日志出现 `auto-discovered script sources: [... <name>]`
 - [ ] 数据写入 `~/.dsh/dsh-reflex/facts/<name>/`
 - [ ] manifest `sources` 列出 `<name>`，schema 可见（若登记了）
@@ -499,7 +499,7 @@ L1 的 target 都要做同一件事：给 state + 判据问题 + 选项，拿回
 工具：`tools/semif-adapt.py`（三个后端归一成一个输出）、
 `tools/decide-calibrate.py`（比对新旧后端 + 扫阈值）。
 
-切换方式：target 里设 `LAYERED_DECIDE_BACKEND` 即可。
+切换方式：target 里设 `REFLEX_DECIDE_BACKEND` 即可。
 **不设 = 走原来的直连 SemIf 路径，行为与迁移前完全一致** —— 切换是显式动作，
 不会因为升级代码就悄悄改判定。
 
@@ -722,8 +722,8 @@ SemIf 是一次加载模型评 N 条，N 大会把内存压到 swap 进而吃光
 任一命中才取该 thread。修好后复核覆盖率 1/4 → 4/4。
 
 参数（`targets/im-reply.env.json` 的 env 或环境变量）：
-`LAYERED_ACK_FRESHNESS`（0 关）、`LAYERED_ACK_FRESH_DEPTH`（拉多少条找 thread，默认 30）、
-`LAYERED_ACK_FRESH_LIMIT`（每轮最多复核几条，默认 10）、`LAYERED_ACK_FRESH_TIMEOUT`。
+`REFLEX_ACK_FRESHNESS`（0 关）、`REFLEX_ACK_FRESH_DEPTH`（拉多少条找 thread，默认 30）、
+`REFLEX_ACK_FRESH_LIMIT`（每轮最多复核几条，默认 10）、`REFLEX_ACK_FRESH_TIMEOUT`。
 
 ## 7.5 给用户发 IM 通知（输出通道）
 
@@ -747,7 +747,7 @@ echo "正文" | ~/.dsh/dsh-reflex/tools/im-notify.sh
 ~/.dsh/dsh-reflex/tools/im-notify.sh --tag "磁盘告警" "正文"
 ```
 
-收件人取 `$LAYERED_IM_NOTIFY_TO` 或 `tools/im-notify.to`。退出码非 0 会说明原因，
+收件人取 `$REFLEX_IM_NOTIFY_TO` 或 `tools/im-notify.to`。退出码非 0 会说明原因，
 调用方据此决定是否降级到别处投递（比如只留 L0 记录）。
 
 两个必须知道的约束：
@@ -771,7 +771,7 @@ echo "正文" | ~/.dsh/dsh-reflex/tools/im-notify.sh
 **17 个会话** —— 包括对方三个月前发的 `👍`、`好的`、`哦`、`:done:`，以及 2 月、7 月的老消息。
 照那个实现，等于替用户给 17 个同事群发回执。
 
-**必须加时间上限**（`LAYERED_IM_ACK_LOOKBACK_MIN`，默认 120 分钟）：
+**必须加时间上限**（`REFLEX_IM_ACK_LOOKBACK_MIN`，默认 120 分钟）：
 只认"最近这段时间内到达、且仍没人回"的消息。加上之后同一批数据从 17 条降到 0 条。
 
 即便如此，"是否需要回复"仍需判断 —— 实测候选里既真有提问（"这个进度条是走完了对吧"），

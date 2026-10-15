@@ -2,5 +2,5 @@
 # It runs its own watchdog (L0 fact collection + L1 SemIf decision) inside the same
 # GUI process, and wakes L2 Bots through DSH's schedule service (no ds-bot changes).
 - insert:
-    - id: layered-agent
+    - id: dsh-reflex
       name: dsh-reflex
