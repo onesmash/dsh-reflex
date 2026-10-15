@@ -1,7 +1,7 @@
 ---
 name: layered-agent-datasource
 description: "为分层智能体(ds-bot-layered-agent)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（LAYERED_HOME / $HOME）推导，不写死绝对路径。"
-version: 1.8.0
+version: 1.9.0
 ---
 
 # 添加分层智能体数据源
@@ -176,6 +176,17 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
   落在 IM 的"自己/备注"会话里 —— 能当通知渠道，但不显示成机器人
 - 脚本强制 `text` 模式：默认的 markdown 模式**禁止裸 URL**，我们的通知里全是链接
 - 超 3200 字符自动分段；退出码非 0 时按需降级
+
+## 代用户回复消息（高风险，先读）
+
+如果要做"替用户回复"，记住实测结论：**"会话最后一条不是我发的" ≠ "有人在等我回"**。
+按它实现会一次标出 17 个会话（含三个月前的 `👍`、`好的`）。必须加时间上限
+（只看最近 N 分钟到达且无人回的），再叠加判断 —— 判断归 L2，不放进 L1。
+
+链路：采集器产 `dm-awaiting` 事实 → target 只叫醒 L2 → L2 判断 → `notify.sh --to "<会话id>"`。
+
+**先跑影子模式**：给同事发消息不可撤回，且以用户本人身份发出。样本不足时别给
+"是否需要回复"定阈值。
 
 ## 验证清单
 
