@@ -1,0 +1,13 @@
+{
+  "policy": "seed-only",
+  "skill": "typesafe-ai",
+  "source": "TypeSafe 官方 agent skill（github.com/typesafe-ai/skills 的 skills/typesafe-ai/SKILL.md）",
+  "upstreamUrl": "https://raw.githubusercontent.com/typesafe-ai/skills/main/skills/typesafe-ai/SKILL.md",
+  "license": "MIT",
+  "vendoredAt": "2026-10-15",
+  "sha256": "71ea90d7906c6554c4f4c460ef7361b2d26f59116ccdae986dc6d997b9389f52",
+  "sizeBytes": 10040,
+  "why": "L1 的判定质量取决于「问题怎么问」。这份 skill 教怎么选问题类型（Choice/Noul/Score）和设计 criteria，是判定层的规范依据 —— 以前这类决定全靠临场发挥。随插件部署，换机器时不必手工去找。",
+  "policyNote": "seed-only：只在 ~/.agents/skills/typesafe-ai 整个缺失时才安装，已存在则整体跳过 —— 用户可能装了更新的上游版本，插件不能把本仓库这份快照悄悄降级覆盖。要升级到本仓库这份，先删掉目标目录再重启插件。",
+  "maintenance": "vendored 快照，不随上游自动更新。上游有重要变更时手工重新拉取、更新本文件的 sha256/sizeBytes/vendoredAt。"
+}

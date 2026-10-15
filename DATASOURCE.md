@@ -511,8 +511,9 @@ TypeSafe 会送人工的。**概率在实现对之间可比；`confidence` 不�
   **接一个新端点时先用它验，别靠试错。**
 - **[wellposed](https://github.com/suraj-phanindra/wellposed)** / **[jevkit](https://github.com/ariel-frischer/jevkit)**
   —— 离线 lint 你的问题，在花钱调用之前就发现措辞问题。
-- **官方 [typesafe-ai skill](https://github.com/typesafe-ai/skills)** —— 已装到
-  `~/.agents/skills/typesafe-ai/`，教怎么选问题类型和设计问题。
+- **官方 [typesafe-ai skill](https://github.com/typesafe-ai/skills)** —— 教怎么选问题类型
+  （Choice/Noul/Score）和设计 criteria。**随插件部署**（`skill/typesafe-ai/`，seed-only），
+  与 semif-decide 同一套机制：只在目标缺失时装，已存在则跳过，不覆盖可能更新的上游版本。
 
 ### 分块纪律同样适用
 
