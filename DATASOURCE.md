@@ -434,6 +434,64 @@ https://im.example/launch/chat/v2/<base64url({"sid":..,"sid2":..,"mid":..,"time"
 
 链接很长（200+ 字符），`notify.sh` 用 `text` 模式发裸 URL 没问题（见 7.5）。
 
+## 7.4.1 决策后端适配层（SemIf / Jev 可切换）
+
+L1 的 target 都要做同一件事：给 state + 判据问题 + 选项，拿回"选哪个 + 有多大把握"。
+原来这件事直接绑死在 SemIf 上。现在可以切后端：
+
+| 后端 | 说明 | 是否离开本机 |
+|---|---|---|
+| `semif`（默认） | 本地 MLX 读答案槽 logits | ❌ |
+| `jev` | TypeSafe 托管 `POST https://api.typesafe.ai/v1/systemone` | ✅ **内容会出本机** |
+| `jevlocal` | 本地实现的同款线格式，端点可配 | ❌ |
+
+工具：`tools/semif-adapt.py`（三个后端归一成一个输出）、
+`tools/decide-calibrate.py`（比对新旧后端 + 扫阈值）。
+
+切换方式：target 里设 `LAYERED_DECIDE_BACKEND` 即可。
+**不设 = 走原来的直连 SemIf 路径，行为与迁移前完全一致** —— 切换是显式动作，
+不会因为升级代码就悄悄改判定。
+
+### ⚠️ 换后端 = 换尺子，旧阈值不能搬
+
+适配层在原始概率之外多算一个 `confidence`，公式取自 TypeSafe 文档（本地可复算，
+也正因如此它才能用来比较不同后端）：
+
+```
+choice (n 个无序选项):  (p_max - 1/n) / (1 - 1/n)
+noul   (二元)         :  |2p - 1|
+score  (n 个有序层)    :  1 - 加权平均层距 / 均匀层距
+```
+
+**同一个概率分布，在任何后端下算出同一个 confidence —— 但 confidence 和原始 p 不是一回事。**
+实测（im 三条真实消息，3 选项）：
+
+| | p(yes) | confidence |
+|---|---|---|
+| REDACTED「725 可能提前」 | 0.861 | 0.791 |
+| REDACTED「要 merge 到 7x」 | 0.911 | 0.867 |
+| 同事B「task created」 | 0.772 | 0.658 |
+
+这批样本里，`p>=0.78` 和 `confidence>=0.78` **恰好选中同一组** —— 但逐条数值都不同，
+所以**不能因为"结果看起来一样"就把阈值搬过去**，换一批样本就会分叉。
+
+**迁移流程（别跳步）**：
+
+1. 用你的真实历史样本，人工标注一批 `{state, question, options, label}`
+2. `decide-calibrate.py --backend semif --out a.jsonl`，再 `--backend jev --out b.jsonl`
+3. `decide-calibrate.py --compare a.jsonl b.jsonl` 看分歧在哪几条
+4. 按输出的阈值扫描表挑新阈值，再改 target 的 `minIntervalMs`/阈值配置
+
+**为什么必须走这步**：SemIf 的输出里自己标着
+`"probability_status": "conditional option score; uncalibrated as decision confidence"`
+—— 它有意不提供校准。confidence 补的是这个，但补上的是**新的尺**，不是旧尺的新名字。
+
+### 分块纪律同样适用
+
+`decide-calibrate.py` 内部硬性按 **40 行**分块喂 SemIf —— 这条不要放宽。
+SemIf 是一次加载模型评 N 条，N 大会把内存压到 swap 进而吃光磁盘
+（实测 326 行 → swap 43GB → 磁盘可用量 3 分钟内掉到 0.19GB，见第 5 节的警告）。
+
 ## 7.5 给用户发 IM 通知（输出通道）
 
 插件采集是"输入端"，这里是"输出端"：把需要用户注意的事推到他的 IM。
