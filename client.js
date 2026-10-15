@@ -24,7 +24,6 @@ window.__ModuleLoader__.load({
 			apiKeyHint: "存进 DSH 的凭据存储(只有上行写入, 没有读回路径)。插件从凭据文件的 refs 段按 JEV_API_KEY 读取。",
 			apiKeySet: "已设置",
 			apiKeyUnset: "未设置",
-			keyNote: "key 只写不读（没有读回路径），存在 DSH 的凭据存储里；插件按白名单从凭据文件的 refs 段读取，不经聊天、也不进本配置文件。三条路线只差 base URL 与模型名：TypeSafe https://api.typesafe.ai + jev-latest；OpenRouter https://openrouter.ai/api + typesafe/jev-1.13（同一 /v1/systemone 线格式）；Vercel AI Gateway https://ai-gateway.vercel.sh/typesafe/v1 + typesafe-ai/jev。",
 			overridden: "已覆盖",
 			reset: "恢复默认",
 			readOnly: "本部署的设置为只读。",
@@ -50,7 +49,6 @@ window.__ModuleLoader__.load({
 			apiKeyHint: "Stored in DSH's credential store (write-only: no read path returns it). The plugin reads it from the credentials file's refs section under JEV_API_KEY.",
 			apiKeySet: "Set",
 			apiKeyUnset: "Not set",
-			keyNote: "The key is write-only (no read path returns it) and lives in DSH's credential store; the plugin reads it by allowlist from the credentials file's refs section, so it never goes through chat or this config file. The three routes differ only in base URL and model name: TypeSafe https://api.typesafe.ai + jev-latest; OpenRouter https://openrouter.ai/api + typesafe/jev-1.13 (same /v1/systemone wire format); Vercel AI Gateway https://ai-gateway.vercel.sh/typesafe/v1 + typesafe-ai/jev.",
 			overridden: "Overridden",
 			reset: "Reset to default",
 			readOnly: "This deployment stores settings read-only.",
@@ -247,7 +245,6 @@ window.__ModuleLoader__.load({
 						? (0, react_jsx_runtime.jsx)("p", { style: { color: "#c0392b", whiteSpace: "pre-wrap" },
 							children: t("saveError") + "\n" + saveError })
 						: null,
-					(0, react_jsx_runtime.jsx)("p", { children: t("keyNote") }),
 					diagLine
 				]
 			});
