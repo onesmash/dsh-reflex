@@ -4,6 +4,8 @@
 
 一个 DSH（DeepSeek Harness）的兄弟插件，与 ds-bot 并存，**不改动 ds-bot 任何代码**。
 
+[中文](README.md) | [English](README.en.md)
+
 ---
 
 ## 它解决什么
