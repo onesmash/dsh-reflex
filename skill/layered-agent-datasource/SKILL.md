@@ -1,7 +1,7 @@
 ---
 name: layered-agent-datasource
 description: "为分层智能体(ds-bot-layered-agent)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（LAYERED_HOME / $HOME）推导，不写死绝对路径。"
-version: 1.9.0
+version: 2.0.0
 ---
 
 # 添加分层智能体数据源
@@ -118,6 +118,36 @@ exit 0
    永不触发；加用户画像（`l1.profile`）会显著改变灵敏度。
    逐条筛选用批量打分（框架的 `semifScoreBatch`），**不要再跑第二次 SemIf**。
 
+### 跨源关联的 target（源 A 要判断"跟我有关吗"）
+
+场景：频道消息里出现一个票号，但"这个票号是不是我的"只有另一个源知道。
+（实例：`tickets-progress` —— release 排期 × 我的 工单系统 任务。）
+
+**关键约束：target 脚本只拿到本轮新事实，没有历史。** 判"这条提到我名下的票"
+需要"我名下有哪些票"这份**存量**，它不在本轮事实里。存量从**采集器的状态文件**读 ——
+同一个脚本源自己的状态，不是新机制：
+
+```
+collectors/工单-my-tasks.sh  →  工单-my-tasks-state.json  (票号 → {status, fixVersion})
+                                 ↓ target 直接读它当上下文
+targets/tickets-progress.sh  →  判断"频道消息里的票号 ∈ 这个集合"
+```
+
+- **不重新调 API**：省一次鉴权/错误处理/往返；且**状态文件是单一事实来源**，
+  两次调用之间的时间差不会造成不一致
+- **代价（必知）**：状态文件格式成了采集器与 target 的**契约**。改结构必须同步改读它的 target，
+  否则 target 静默读到空 → **判定永不命中**（"看起来在跑"的失败，不会报错）
+
+**打标放采集层，别丢给 L1**：能从文本直接算的结构化事实（**票号正则、版本号、是否 @我、有无附件**）
+应在 collector 里算好存成字段，而不是让本地小模型数正则 —— 正则确定、算一次所有消费方都能用、
+target 里只剩集合判断（连 SemIf 都省了）。对应地 **collector 不为"取舍"负责**：
+忠实采集 + 打标，判断留给 L1；采集层做取舍会漏数据。
+
+**target 测试必须有反例**：只验正例只能证明通路，不能证明它**不会乱叫**。
+`tickets-progress` 用 3 正例 + 4 反例（别人名下的票号、有排期词但没 @我、我的票没变化、
+我的票变 Done）。**反例不过的 target 不要上线** —— 噪音是这套系统最常见的死法。
+
+
 ## ⚠️ 校准批量必须分块（会撑爆内存，进而撑爆磁盘）
 
 **一次 `run_score.sh` 喂进去的行数要有硬上限：≤40 行。** 这不是性能建议，是事故防线。
@@ -203,6 +233,8 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 - [ ] 重启日志出现 `auto-discovered script targets: [... <name>]`，且 `l1.targets` 已启用
 - [ ] manifest `l1Targets` 列出该 target，`type=script`
 - [ ] 决策里 `items[].id` 非空（合并去重唯一依据）
+- [ ] **反例测试**：构造不该唤醒的输入（别人名下的票号 / 没 @我 / 无变化），确认输出为空
+- [ ] 跨源 target：读的采集器状态文件存在且字段对得上（读空会静默永不命中）
 - [ ] 命中后通知由插件排版（有标题栏/编号/L0 入口），脚本没自己拼这些
 - [ ] 同一批内容重放 → 被抑制（0 投递）
 - [ ] 冷却期内命中 → 进 `pending-wakes.json`；把上次唤醒时间推到冷却期之前且**不给新数据**再跑一次 → 必须被合并补发
