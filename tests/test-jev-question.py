@@ -23,7 +23,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 # 找不到 = 本机不是装配环境, 跳过而不是假装失败。
 _la_home = pathlib.Path(os.environ.get("LAYERED_HOME") or (
     pathlib.Path(os.environ.get("HOME", "~")).expanduser()
-    / ".dsh" / "bot" / "layered-agent"
+    / ".dsh" / "dsh-reflex"
 ))
 TOOL = _la_home / "tools" / "semif-adapt.py"
 

@@ -12,17 +12,17 @@ version: 2.1.0
 
 | 用途 | 路径（约定） | 说明 |
 |---|---|---|
-| 统一目录 | `$HOME/.dsh/bot/layered-agent/`（环境变量 `LAYERED_HOME`） | 数据源的家：`collectors/` 脚本、`facts/` 数据、manifest、状态文件 |
+| 统一目录 | `$HOME/.dsh/dsh-reflex/`（环境变量 `LAYERED_HOME`） | 数据源的家：`collectors/` 脚本、`facts/` 数据、manifest、状态文件 |
 | 配置启用 | `$DSH_HOME`（默认 `$HOME/.dsh`）`/profiles/<当前 profile>/cordis.patch.yml` | 在 `layered-agent.l0.sources` 声明启用 |
 | 代码/详细规则 | 插件安装目录（见下方"定位插件安装目录"） | `DATASOURCE.md` 随代码版本走，是详细版 |
 | 本 skill | `~/.agents/skills/layered-agent-datasource/` | 由插件 install() 自动部署，随代码更新 |
 | SemIf skill | `~/.agents/skills/semif-decide/` | 同样是插件 install() 部署的（vendored 快照，只在缺失时装）；调 SemIf 用插件注入的 `$LAYERED_SEMIF_RUN`，别写死路径 |
 
-> 定位插件安装目录：Bot 收到本 skill 时若需读详细规则 `DATASOURCE.md`，用 `npm ls dsh-reflex`（在 profile 目录）或从运行报错中的文件路径反推，或直接读取 `$HOME/.dsh/bot/layered-agent/manifest.json`（L0 自描述，给出了数据源布局）。不要假设某个固定的源码 checkout 路径。
+> 定位插件安装目录：Bot 收到本 skill 时若需读详细规则 `DATASOURCE.md`，用 `npm ls dsh-reflex`（在 profile 目录）或从运行报错中的文件路径反推，或直接读取 `$HOME/.dsh/dsh-reflex/manifest.json`（L0 自描述，给出了数据源布局）。不要假设某个固定的源码 checkout 路径。
 
 ## 核心流程（4 步，不改插件核心代码）
 
-1. **写 collector 脚本** → 丢进 `$HOME/.dsh/bot/layered-agent/collectors/<name>.sh`
+1. **写 collector 脚本** → 丢进 `$HOME/.dsh/dsh-reflex/collectors/<name>.sh`
    - stdout 每行一个 JSON fact：`{"metric","raw","meta"?}`
    - source/ts 由插件补；脚本可读注入环境（`LAYERED_HOME`/CA 证书/PATH）
    - 脚本要幂等（多次调用不重复，如 mail 用 seen 去重）
@@ -204,7 +204,7 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 需要让用户注意的事，可以推到他的 IM：
 
 ```bash
-~/.dsh/bot/layered-agent/tools/im-notify.sh "正文"       # 或 echo 正文 | 脚本
+~/.dsh/dsh-reflex/tools/im-notify.sh "正文"       # 或 echo 正文 | 脚本
 ```
 
 - 收件人取 `$LAYERED_IM_NOTIFY_TO` 或 `tools/im-notify.to`
@@ -228,7 +228,7 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 
 - [ ] `collectors/<name>.sh` 可执行（`chmod +x`），单独跑输出合法 JSON line
 - [ ] 加到 `l0.sources` 后，重启日志出现 `auto-discovered script sources: [... <name>]`
-- [ ] 数据写入 `$HOME/.dsh/bot/layered-agent/facts/<name>/`
+- [ ] 数据写入 `$HOME/.dsh/dsh-reflex/facts/<name>/`
 - [ ] manifest `sources` 列出 `<name>`，schema 可见（若写了 `<name>.schema.json`）
 - [ ] 多次采集不重复（幂等）——连跑三次，第二次只出真正新增，第三次为 0
 - [ ] 需要外部进程/浏览器的源，已在 `<name>.env.json` 放宽 `timeoutMs`

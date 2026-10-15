@@ -2,7 +2,7 @@
 
 > 本文档是 `dsh-reflex` 插件的官方规则，随代码版本走（Git 管理）。
 > Bot（L2/Chief）在「添加数据源」任务触发时，通过同名 skill 自动加载。
-> 本机路径不在文档中写死：统一目录用环境变量 `LAYERED_HOME`（默认 `$HOME/.dsh/bot/layered-agent/`）；插件安装目录可由 `npm ls dsh-reflex` 或运行报错路径定位。
+> 本机路径不在文档中写死：统一目录用环境变量 `LAYERED_HOME`（默认 `$HOME/.dsh/dsh-reflex/`）；插件安装目录可由 `npm ls dsh-reflex` 或运行报错路径定位。
 >
 > **示例名是泛化的，不是本机真名。** 文档为了不暴露具体平台与个人身份，把示例统一写成
 > `im-*` / `tickets-*`：脚本名（`im-notify.sh`、`im-dm.sh`…）、环境变量（`LAYERED_IM_*`）、
@@ -13,7 +13,7 @@
 
 **插件仓库里没有 `collectors/` `targets/` `tools/` —— 这三样只在统一目录里。**
 
-| | 插件仓库(`index.js` 等) | 统一目录(`~/.dsh/bot/layered-agent/`) |
+| | 插件仓库(`index.js` 等) | 统一目录(`~/.dsh/dsh-reflex/`) |
 |---|---|---|
 | 身份 | **框架**：L0 调度、L1 判定引擎、唤醒、面板 | **你自己的**采集器 / 判定目标 / 工具 |
 | 谁写 | 跟上游走 | 你写、你维护、你拥有 |
@@ -60,7 +60,7 @@ __pycache__/ *.pyc
 | 步骤 | 做什么 | 是否需要改代码 |
 |---|---|---|
 | 1 | 写一个 collector 脚本（`.sh` 或内置） | 否 |
-| 2 | 把脚本放到 **统一目录** `~/.dsh/bot/layered-agent/collectors/` | 否 |
+| 2 | 把脚本放到 **统一目录** `~/.dsh/dsh-reflex/collectors/` | 否 |
 | 3 | 在 `cordis.patch.yml` 的 `l0.sources` 里启用它 | 否（只改配置） |
 | 4 | （可选）写 `<name>.schema.json` 让该源在 manifest 里自描述 | 否 |
 | 5 | （可选）写 L1 target 脚本放 `targets/`，在 `l1.targets` 启用 | 否 |
@@ -84,7 +84,7 @@ L0 采集和 L1 判定**都是脚本驱动的**，两者同一套契约（自动
 - `meta` 可选，放非数据信息（来源、类型等）
 
 ### 环境契约（插件注入到脚本进程）
-- `LAYERED_HOME`：统一目录 `~/.dsh/bot/layered-agent/`——脚本用它定位自己的状态文件
+- `LAYERED_HOME`：统一目录 `~/.dsh/dsh-reflex/`——脚本用它定位自己的状态文件
 - `SSL_CERT_FILE` / `CURL_CA_BUNDLE` / `REQUESTS_CA_BUNDLE`：自定义 CA（访问受控服务需要时由宿主提供）
 - `PATH`：已含 `/usr/local/bin`、`/opt/homebrew/bin`、`~/.local/bin`
 
@@ -451,7 +451,7 @@ l1:
       没经过插件、没进 L0 —— 等于永久丢一批。**手工测试务必换一个 seen 文件**
       （如 `LAYERED_X_SEEN=/tmp/test-seen.json`），或者事后把多出来的 id 从 seen 里回滚掉。
 - [ ] 加到 `l0.sources` 后，重启插件日志出现 `auto-discovered script sources: [... <name>]`
-- [ ] 数据写入 `~/.dsh/bot/layered-agent/facts/<name>/`
+- [ ] 数据写入 `~/.dsh/dsh-reflex/facts/<name>/`
 - [ ] manifest `sources` 列出 `<name>`，schema 可见（若登记了）
 - [ ] 多次采集不重复（幂等）
 
@@ -742,9 +742,9 @@ SemIf 是一次加载模型评 N 条，N 大会把内存压到 swap 进而吃光
 > 因为 L2 是无状态的，没人替它暂存。
 
 ```bash
-~/.dsh/bot/layered-agent/tools/im-notify.sh "正文"
-echo "正文" | ~/.dsh/bot/layered-agent/tools/im-notify.sh
-~/.dsh/bot/layered-agent/tools/im-notify.sh --tag "磁盘告警" "正文"
+~/.dsh/dsh-reflex/tools/im-notify.sh "正文"
+echo "正文" | ~/.dsh/dsh-reflex/tools/im-notify.sh
+~/.dsh/dsh-reflex/tools/im-notify.sh --tag "磁盘告警" "正文"
 ```
 
 收件人取 `$LAYERED_IM_NOTIFY_TO` 或 `tools/im-notify.to`。退出码非 0 会说明原因，

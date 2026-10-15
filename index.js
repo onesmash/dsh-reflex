@@ -32,7 +32,7 @@ const DEFAULTS = {
     // 采集源在配置层决定(profile patch l0.sources), 插件默认最小; 可用: disk/cpu/uptime/mail/自写脚本源
     sources: ['disk'],
     // 统一目录: 数据源工作区根 — collectors/ 脚本、facts/ 数据、manifest/状态全在此之下
-    homeDir: process.env.LAYERED_HOME || join(DSH_HOME, 'bot', 'layered-agent'),
+    homeDir: process.env.LAYERED_HOME || join(DSH_HOME, 'dsh-reflex'),
     // storeDir / collectorsDir 由 homeDir 派生 (若显式传则优先)
   },
   l1: {
@@ -139,7 +139,7 @@ function normalize(c) {
     decide: { ...DEFAULTS.decide, ...(c?.decide ?? {}) },
   }
   // 统一目录派生: 默认 homeDir/facts, homeDir/collectors; 显式传 storeDir/collectorsDir 优先
-  cfg.l0.homeDir ||= join(DSH_HOME, 'bot', 'layered-agent')
+  cfg.l0.homeDir ||= join(DSH_HOME, 'dsh-reflex')
   cfg.l0.storeDir ||= process.env.LAYERED_FACT_DIR || join(cfg.l0.homeDir, 'facts')
   cfg.l0.collectorsDir ||= process.env.LAYERED_COLLECTORS_DIR || join(cfg.l0.homeDir, 'collectors')
   cfg.l0.logFile = join(cfg.l0.homeDir, 'layered-agent.log')

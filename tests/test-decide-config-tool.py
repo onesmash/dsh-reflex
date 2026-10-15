@@ -23,11 +23,11 @@ HERE = pathlib.Path(__file__).resolve().parent
 # decide-config.py 是运行时工具, 不在仓库里 —— 它在统一运行目录。
 # 上一版测试写 HERE.parent / 'tools'(仓库 tools/), 但 collectors/targets/tools
 # 已移出仓库不再跟踪, 那样定位必然失败。现在从 LAYERED_HOME
-# (默认 ~/.dsh/bot/layered-agent/)/tools/ 找; 找不到 = 本机没配运行目录,
+# (默认 ~/.dsh/dsh-reflex/)/tools/ 找; 找不到 = 本机没配运行目录,
 # 直接跳过而不是假装失败。
 _la_home = pathlib.Path(os.environ.get("LAYERED_HOME") or (
     pathlib.Path(os.environ.get("HOME", "~")).expanduser()
-    / ".dsh" / "bot" / "layered-agent"
+    / ".dsh" / "dsh-reflex"
 ))
 TOOL = _la_home / "tools" / "decide-config.py"
 
