@@ -3,4 +3,4 @@
 # GUI process, and wakes L2 Bots through DSH's schedule service (no ds-bot changes).
 - insert:
     - id: layered-agent
-      name: ds-bot-layered-agent
+      name: dsh-reflex

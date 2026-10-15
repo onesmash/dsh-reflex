@@ -23,7 +23,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 TOOL = HERE.parent / 'tools' / 'decide-config.py'
 
 FIXTURE = """- id: layered-agent
-  name: ds-bot-layered-agent
+  name: dsh-reflex
   config:
     l0:
       sources:

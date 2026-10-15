@@ -1,8 +1,8 @@
 # 添加数据源规则（DATASOURCE 契约）
 
-> 本文档是 `ds-bot-layered-agent` 插件的官方规则，随代码版本走（Git 管理）。
+> 本文档是 `dsh-reflex` 插件的官方规则，随代码版本走（Git 管理）。
 > Bot（L2/Chief）在「添加数据源」任务触发时，通过同名 skill 自动加载。
-> 本机路径不在文档中写死：统一目录用环境变量 `LAYERED_HOME`（默认 `$HOME/.dsh/bot/layered-agent/`）；插件安装目录可由 `npm ls ds-bot-layered-agent` 或运行报错路径定位。
+> 本机路径不在文档中写死：统一目录用环境变量 `LAYERED_HOME`（默认 `$HOME/.dsh/bot/layered-agent/`）；插件安装目录可由 `npm ls dsh-reflex` 或运行报错路径定位。
 >
 > **示例名是泛化的，不是本机真名。** 文档为了不暴露具体平台与个人身份，把示例统一写成
 > `im-*` / `tickets-*`：脚本名（`im-notify.sh`、`im-dm.sh`…）、环境变量（`LAYERED_IM_*`）、

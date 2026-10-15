@@ -109,7 +109,7 @@ export const Config = Schema.object({
 }).description('分层智能体: 数据源 / 判定目标 / 决策后端')
 // 注: key 不在这里 —— 它走凭据域(只写不读), 见 client.js
 
-export const name = 'ds-bot-layered-agent'
+export const name = 'dsh-reflex'
 
 // 探明 (本地 cordis 决定性实验): module-level inject 会让 apply 延迟到服务可见才执行;
 // 真实 DSH 里 schedule 服务可能不在插件可见的隔离作用域, 导致 apply 永不执行。

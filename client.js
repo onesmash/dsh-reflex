@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-	id: "ds-bot-layered-agent",
+	id: "dsh-reflex",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -263,7 +263,7 @@ window.__ModuleLoader__.load({
 				if (!served.has(ROW_NS)) return;
 				return ctx.slots.inject("plugins.row.config", () => ctx.slots.register({
 					name: "plugins.row.config",
-					key: "ds-bot-layered-agent#" + ROW_NS,
+					key: "dsh-reflex#" + ROW_NS,
 					locale: NS,
 					inject: () => card.inject()
 				}, Card));
