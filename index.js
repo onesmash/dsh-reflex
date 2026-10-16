@@ -772,12 +772,19 @@ function install(rt, ctx, cfg) {
   try { if (existsSync(cursorPath)) cursor = JSON.parse(readFileSync(cursorPath, 'utf8')) ?? {} } catch (e) { log(`cursor read fail: ${e.message}`) }
   function saveCursor() { try { writeFileSync(cursorPath, JSON.stringify(cursor)) } catch (e) { log(`cursor write fail: ${e.message}`) } }
 
-  // 返回 (facts, 新游标位置)。只读游标之后的新事实; 不修改游标 (由调用方在决策后 advanceCursor)
-  // 存储: <storeDir>/<source>/<date>.jsonl — 按源子目录遍历
+  // 返回 (facts, next: {src → {file, line}}) —— 每个源各自读到哪里; 不修改游标
+  // (由调用方在决策后 advanceCursor)。存储: <storeDir>/<source>/<date>.jsonl。
+  //
+  // ⚠️ 游标必须【一个源一个】。曾经这里只记"最后一个有新行的源"的位置, 后果:
+  //   disk/swap 这种每分钟产出的源永远轮不到推进, 每轮把历史全量重投一遍; 数组末尾
+  //   .slice(-100) 一截, 排在字母表前面的源(cpu-top / jira-my-tasks)永远进不了批次 ——
+  //   它们的 target 一次都没跑过, 是最难发现的那种死代码(2026-10-16 实测: cpu-load 与
+  //   release-progress 从未被调用过)。见 tests/test-facts-cursor.mjs。
+  const MAX_FACTS_PER_ROUND = 1000   // 安全网, 不是节流阀: 正常一轮只有几条, 见上面注释
   function readNewFacts() {
     const out = []
     const dir = cfg.l0.storeDir
-    let nextSrc = null, nextFile = null, nextLine = 0
+    const next = {}
     try {
       const srcDirs = (existsSync(dir) ? readdirSync(dir) : []).filter(d => {
         try { if (d === 'manifest.json') return false; return statSync(join(dir, d)).isDirectory() } catch { return false }
@@ -792,18 +799,24 @@ function install(rt, ctx, cfg) {
           for (let i = startIdx; i < lines.length; i++) {
             let o; try { o = JSON.parse(lines[i]) } catch { continue }
             out.push(o)
-            nextSrc = src; nextFile = f; nextLine = i + 1
+            next[src] = { file: f, line: i + 1 }   // 每个源各记各的
           }
         }
       }
     } catch (e) { log(`L1 read fail: ${e.message}`) }
-    return { facts: out.slice(-100), nextSrc, nextFile, nextLine }
+    return { facts: out.slice(-MAX_FACTS_PER_ROUND), next }
   }
-  function advanceCursor(nextSrc, nextFile, nextLine) {
-    if (!nextSrc || !nextFile) return
-    const prev = cursor[nextSrc] ?? { file: null, line: 0 }
-    cursor[nextSrc] = { file: nextFile, line: Math.max(prev.file === nextFile ? prev.line : 0, nextLine) }
-    saveCursor()
+  function advanceCursor(next) {
+    let changed = false
+    for (const [src, pos] of Object.entries(next ?? {})) {
+      if (!pos?.file) continue
+      const prev = cursor[src] ?? { file: null, line: 0 }
+      const line = Math.max(prev.file === pos.file ? prev.line : 0, pos.line)
+      if (prev.file === pos.file && prev.line === line) continue
+      cursor[src] = { file: pos.file, line }
+      changed = true
+    }
+    if (changed) saveCursor()
   }
 
   // ---------- L1: SemIf 调用 (通用; question/options 由 target 提供) ----------
@@ -1047,9 +1060,9 @@ function install(rt, ctx, cfg) {
         return
       }
     } catch (e) { log(`TEST-WAKE error: ${e.message}`) }
-    const { facts, nextSrc, nextFile, nextLine } = readNewFacts()
+    const { facts, next } = readNewFacts()
     // 没有新事实时不能直接 return: 冷却期内攒下的 pending 需要在这里【到点补发】
-    if (facts.length) advanceCursor(nextSrc, nextFile, nextLine)
+    if (facts.length) advanceCursor(next)
     if (!facts.length && !Object.keys(pendingWakes).length) return
     for (const targetKey of activeTargets) {
       const target = ALL_TARGETS[targetKey]
