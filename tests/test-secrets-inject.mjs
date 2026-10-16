@@ -30,7 +30,15 @@ function fakeCtx() {
 
 function check(label, config, expect) {
   let api
-  try { api = apply(fakeCtx(), config) } catch (e) { console.log(`  [${label}] apply 抛错: ${e.message}`); return false }
+  // 每个用例一个隔离 homeDir —— 必须。
+  // 漏了它, homeDir 退到真实的 ~/.dsh/dsh-reflex: 插件的日志、facts 目录全落进生产目录。
+  // 2026-10-16 11:31 / 11:34 就是这么把 22 行 "dsh-reflex installed" 写进生产日志的, 而
+  // reflex-health 的「插件反复重载」正是数这些行 → 凭空叫醒 L2 一次(误报)。
+  // 认出来的特征: 那些行带 sources=[disk](测试配置), 真实实例是 9 个源。
+  const home = mkdtempSync(join(tmpdir(), 'reflex-secrets-home-'))
+  try {
+    api = apply(fakeCtx(), { ...config, l0: { ...(config.l0 ?? {}), homeDir: home } })
+  } catch (e) { console.log(`  [${label}] apply 抛错: ${e.message}`); return false }
   const env = api?.scriptEnv?.() ?? {}
   const got = {
     backend: env.REFLEX_DECIDE_BACKEND,
@@ -137,7 +145,8 @@ console.log('\n=== J. volatile 字段必须被解包(否则切后端静默失效
   let api
   try {
     api = apply(fakeCtx(), {
-      l0: { sources: ['disk'] },
+      // 这条 apply 绕过了 check() 的 homeDir 隔离 —— 必须自己带, 否则写进生产日志
+      l0: { sources: ['disk'], homeDir: mkdtempSync(join(tmpdir(), 'reflex-volatile-home-')) },
       backend: 'jev', jevBaseUrl: 'https://openrouter.ai/api/v1', jevModel: 'typesafe/jev-1.13',
     })
   } catch (e) { console.log('  apply 抛错:', e.message) }
