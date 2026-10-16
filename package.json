@@ -5,6 +5,20 @@
   "type": "module",
   "main": "index.js",
   "license": "MIT",
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "DATASOURCE.md",
+    "LICENSE",
+    "skill/",
+    "docs/layers.en.png",
+    "docs/layers.zh.png",
+    "docs/wake.en.png",
+    "docs/wake.zh.png"
+  ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
