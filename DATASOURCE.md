@@ -61,9 +61,9 @@ __pycache__/ *.pyc
 |---|---|---|
 | 1 | 写一个 collector 脚本（`.sh` 或内置） | 否 |
 | 2 | 把脚本放到 **统一目录** `~/.dsh/dsh-reflex/collectors/` | 否 |
-| 3 | 在 `cordis.patch.yml` 的 `l0.sources` 里启用它 | 否（只改配置） |
+| 3 | （脚本源）丢进 `collectors/` 即自动启用 —— 热发现, 无需重启。内置源仍在 `cordis.patch.yml` 的 `l0.sources` 里启用 | 否 |
 | 4 | （可选）写 `<name>.schema.json` 让该源在 manifest 里自描述 | 否 |
-| 5 | （可选）写 L1 target 脚本放 `targets/`，在 `l1.targets` 启用 | 否 |
+| 5 | （可选）写 L1 target 脚本放 `targets/` —— 丢进去即自动启用（热发现） | 否 |
 | 6 | （极少）target 需要趋势计算/跨源关联时才写进插件 `TARGETS` | 是 |
 
 **核心原则**：加数据源 = 写脚本 + 配置启用，**不改插件核心代码**。
@@ -450,7 +450,7 @@ l1:
       ⚠️ **单独跑会烧掉去重窗口**：collector 一跑就把新 id 写进 `seen-*.json`，但那些事实
       没经过插件、没进 L0 —— 等于永久丢一批。**手工测试务必换一个 seen 文件**
       （如 `REFLEX_X_SEEN=/tmp/test-seen.json`），或者事后把多出来的 id 从 seen 里回滚掉。
-- [ ] 加到 `l0.sources` 后，重启插件日志出现 `auto-discovered script sources: [... <name>]`
+- [ ] 新脚本源落盘后，下一轮日志出现 `discovery refreshed: sources=[... <name> ...]`（无需重启）
 - [ ] 数据写入 `~/.dsh/dsh-reflex/facts/<name>/`
 - [ ] manifest `sources` 列出 `<name>`，schema 可见（若登记了）
 - [ ] 多次采集不重复（幂等）

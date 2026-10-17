@@ -342,25 +342,35 @@ function install(rt, ctx, cfg) {
   //   可选 <name>.schema.json → 自描述字段, 进 manifest 供 L2 发现 (加源无需改插件代码)
   const SCRIPT_SOURCES = {}
   const SCRIPT_SCHEMAS = {}
-  try {
-    if (existsSync(collectorsDir)) {
-      for (const f of readdirSync(collectorsDir)) {
-        if (!f.endsWith('.sh')) continue
-        const name = f.slice(0, -3)
-        const def = { cmd: join(collectorsDir, f), intervalMs: cfg.l0.scriptIntervalMs ?? 60_000 }
-        const envFile = join(collectorsDir, `${name}.env.json`)
-        if (existsSync(envFile)) {
-          try { Object.assign(def, JSON.parse(readFileSync(envFile, 'utf8'))) } catch (e) { log(`collector env ${envFile} parse fail: ${e.message}`) }
+  const SOURCES = { ...BUILTIN_SOURCES }   // 脚本源由 scanScriptSources() 动态并入 (可热重扫)
+
+  function scanScriptSources() {
+    // 可重入: 先清旧脚本条目再按目录现状重建 (内置源 BUILTIN_SOURCES 不受影响)。
+    // 供 refreshDiscovery() 在目录变化时调用 —— 新脚本源落盘即生效, 无需重启。
+    for (const k of Object.keys(SCRIPT_SOURCES)) delete SOURCES[k]
+    for (const k of Object.keys(SCRIPT_SOURCES)) delete SCRIPT_SOURCES[k]
+    for (const k of Object.keys(SCRIPT_SCHEMAS)) delete SCRIPT_SCHEMAS[k]
+    try {
+      if (existsSync(collectorsDir)) {
+        for (const f of readdirSync(collectorsDir)) {
+          if (!f.endsWith('.sh')) continue
+          const name = f.slice(0, -3)
+          const def = { cmd: join(collectorsDir, f), intervalMs: cfg.l0.scriptIntervalMs ?? 60_000 }
+          const envFile = join(collectorsDir, `${name}.env.json`)
+          if (existsSync(envFile)) {
+            try { Object.assign(def, JSON.parse(readFileSync(envFile, 'utf8'))) } catch (e) { log(`collector env ${envFile} parse fail: ${e.message}`) }
+          }
+          const schemaFile = join(collectorsDir, `${name}.schema.json`)
+          if (existsSync(schemaFile)) {
+            try { SCRIPT_SCHEMAS[name] = JSON.parse(readFileSync(schemaFile, 'utf8')) } catch (e) { log(`collector schema ${schemaFile} parse fail: ${e.message}`) }
+          }
+          SCRIPT_SOURCES[name] = def
         }
-        const schemaFile = join(collectorsDir, `${name}.schema.json`)
-        if (existsSync(schemaFile)) {
-          try { SCRIPT_SCHEMAS[name] = JSON.parse(readFileSync(schemaFile, 'utf8')) } catch (e) { log(`collector schema ${schemaFile} parse fail: ${e.message}`) }
-        }
-        SCRIPT_SOURCES[name] = def
       }
-    }
-  } catch (e) { log(`scan collectors fail: ${e.message}`) }
-  const SOURCES = { ...BUILTIN_SOURCES, ...SCRIPT_SOURCES }
+    } catch (e) { log(`scan collectors fail: ${e.message}`) }
+    Object.assign(SOURCES, SCRIPT_SOURCES)
+  }
+  scanScriptSources()
   if (Object.keys(SCRIPT_SOURCES).length) log(`L0: auto-discovered script sources: [${Object.keys(SCRIPT_SOURCES).join(',')}]`)
 
   // ---------- 脚本驱动的 L1 target ----------
@@ -377,22 +387,27 @@ function install(rt, ctx, cfg) {
   // 判定脚本、回执脚本这些是使用者自己的口径与渠道, 不属于插件。
 
   const SCRIPT_TARGETS = {}
-  try {
-    if (existsSync(targetsDir)) {
-      for (const f of readdirSync(targetsDir)) {
-        if (!f.endsWith('.sh')) continue
-        const name = f.slice(0, -3)
-        const def = { target: name, type: 'script', cmd: join(targetsDir, f), displayName: name, timeoutMs: 120_000 }
-        const envFile = join(targetsDir, `${name}.env.json`)
-        if (existsSync(envFile)) {
-          try { Object.assign(def, JSON.parse(readFileSync(envFile, 'utf8'))) } catch (e) { log(`target env ${envFile} parse fail: ${e.message}`) }
+  function scanScriptTargets() {
+    // 可重入: 先清旧条目再按目录现状重建 (供 refreshDiscovery 热加载)
+    for (const k of Object.keys(SCRIPT_TARGETS)) delete SCRIPT_TARGETS[k]
+    try {
+      if (existsSync(targetsDir)) {
+        for (const f of readdirSync(targetsDir)) {
+          if (!f.endsWith('.sh')) continue
+          const name = f.slice(0, -3)
+          const def = { target: name, type: 'script', cmd: join(targetsDir, f), displayName: name, timeoutMs: 120_000 }
+          const envFile = join(targetsDir, `${name}.env.json`)
+          if (existsSync(envFile)) {
+            try { Object.assign(def, JSON.parse(readFileSync(envFile, 'utf8'))) } catch (e) { log(`target env ${envFile} parse fail: ${e.message}`) }
+          }
+          // 缺省唤醒闸门: 存在同名采集源 → 'auto'(跟随其采集间隔, 即每轮采集最多叫醒一次); 否则 0(不限制)
+          if (def.minIntervalMs === undefined) def.minIntervalMs = SCRIPT_SOURCES[name] ? 'auto' : 0
+          SCRIPT_TARGETS[name] = def
         }
-        // 缺省唤醒闸门: 存在同名采集源 → 'auto'(跟随其采集间隔, 即每轮采集最多叫醒一次); 否则 0(不限制)
-        if (def.minIntervalMs === undefined) def.minIntervalMs = SCRIPT_SOURCES[name] ? 'auto' : 0
-        SCRIPT_TARGETS[name] = def
       }
-    }
-  } catch (e) { log(`scan targets fail: ${e.message}`) }
+    } catch (e) { log(`scan targets fail: ${e.message}`) }
+  }
+  scanScriptTargets()
   if (Object.keys(SCRIPT_TARGETS).length) log(`L1: auto-discovered script targets: [${Object.keys(SCRIPT_TARGETS).join(',')}]`)
 
 
@@ -477,9 +492,13 @@ function install(rt, ctx, cfg) {
   // 每分钟启停一次 Chrome, 既费资源又容易被目标站限流。这里补上。
   const lastCollectAt = {}
   async function collectOnce() {
+    refreshDiscovery()                 // 新脚本源落盘即生效 (目录签名门控, 空载近零成本)
     const ts = Date.now()
     let count = 0
-    for (const src of cfg.l0.sources) {
+    // 启用集 = 配置声明(内置/显式脚本) ∪ 已发现的脚本源 (drop-in: 落盘即采集)
+    const enabled = new Set(cfg.l0.sources)
+    for (const name of Object.keys(SCRIPT_SOURCES)) enabled.add(name)
+    for (const src of enabled) {
       const c = SOURCES[src]
       if (!c) continue
       // 声明了【比节拍更长】的独立间隔的源才额外节流 ——
@@ -938,26 +957,32 @@ function install(rt, ctx, cfg) {
 
   // 脚本 target 适配器: 把 targets/<name>.sh 包装成与内置 target 同形的对象,
   // 于是 decideOnce 的主循环一行都不用改 —— 去重/冷却/节流/累积/投递纪律全部复用。
-  const scriptTargetAdapters = Object.fromEntries(
-    Object.entries(SCRIPT_TARGETS).map(([key, t]) => [key, {
-      name: t.displayName ?? key,
-      isScript: true,
-      minIntervalMs: t.minIntervalMs === 'auto' ? sourceIntervalMs(key) : (t.minIntervalMs ?? 0),
-      interruptAlways: !!t.interruptAlways,      // 由 <name>.env.json 配置, 默认遵守安静时段
-      collect: async (facts) => {
-        // env.json 里声明了 sources 的 target: 本轮没有它关心的源的数据时, 连脚本都不用起。
-        // 不加这道闸, target 脚本会被每分钟空跑一次 —— 因为 disk 每分钟产出一条事实,
-        // 就触发一轮决策, 而脚本对那批事实根本不关心。
-        if (Array.isArray(t.sources) && t.sources.length &&
-            !facts.some(f => t.sources.includes(f.source))) return null
-        return runScriptTarget(t, facts)
-      },
-      interim: (ctx) => !!ctx,
-      interimReason: (ctx) => ctx?.reason ?? '脚本判定命中',
-      mergeCtx: mergeScriptDecisions,
-      render: (ctx, extra) => renderScriptTarget(t.displayName ?? key, ctx, extra),
-    }]))
-  const ALL_TARGETS = { ...TARGETS, ...scriptTargetAdapters }
+  let scriptTargetAdapters = {}
+  let ALL_TARGETS = { ...TARGETS }
+  function rebuildScriptLayer() {
+    // 可重入: 由 refreshDiscovery 在目录变化时调用 (脚本 target 落盘即生效, 无需重启)
+    scriptTargetAdapters = Object.fromEntries(
+      Object.entries(SCRIPT_TARGETS).map(([key, t]) => [key, {
+        name: t.displayName ?? key,
+        isScript: true,
+        minIntervalMs: t.minIntervalMs === 'auto' ? sourceIntervalMs(key) : (t.minIntervalMs ?? 0),
+        interruptAlways: !!t.interruptAlways,      // 由 <name>.env.json 配置, 默认遵守安静时段
+        collect: async (facts) => {
+          // env.json 里声明了 sources 的 target: 本轮没有它关心的源的数据时, 连脚本都不用起。
+          // 不加这道闸, target 脚本会被每分钟空跑一次 —— 因为 disk 每分钟产出一条事实,
+          // 就触发一轮决策, 而脚本对那批事实根本不关心。
+          if (Array.isArray(t.sources) && t.sources.length &&
+              !facts.some(f => t.sources.includes(f.source))) return null
+          return runScriptTarget(t, facts)
+        },
+        interim: (ctx) => !!ctx,
+        interimReason: (ctx) => ctx?.reason ?? '脚本判定命中',
+        mergeCtx: mergeScriptDecisions,
+        render: (ctx, extra) => renderScriptTarget(t.displayName ?? key, ctx, extra),
+      }]))
+    ALL_TARGETS = { ...TARGETS, ...scriptTargetAdapters }
+  }
+  rebuildScriptLayer()
   if (Object.keys(scriptTargetAdapters).length) log(`L1: script targets registered: [${Object.keys(scriptTargetAdapters).join(',')}]`)
   // manifest 要列出 L1 监控目标, 所以延到这里再写 (ALL_TARGETS 此时才建好)
   writeManifest()
@@ -1033,7 +1058,43 @@ function install(rt, ctx, cfg) {
     return from <= to ? (cur >= from && cur < to) : (cur >= from || cur < to)
   }
 
-  const activeTargets = Object.keys(ALL_TARGETS).filter(k => (cfg.l1.targets ?? ['disk']).includes(k))
+  // 启用集 = 配置声明(内置/显式脚本) ∪ 已发现的脚本 target (drop-in: 文件存在即生效)。
+  // 由 rebuildActiveTargets()/refreshDiscovery() 维护 —— 加脚本 target 不再需要重启。
+  let activeTargets = []
+  function rebuildActiveTargets() {
+    const cfgSet = new Set(cfg.l1.targets ?? ['disk'])
+    activeTargets = Object.keys(ALL_TARGETS).filter(k => cfgSet.has(k) || SCRIPT_TARGETS[k])
+  }
+  rebuildActiveTargets()
+
+  // ---------- 热发现: 新脚本源/target 落盘即生效, 无需重启 ----------
+  // 门控: collectors/ 与 targets/ 的目录 mtime + .env.json mtime 签名变了才重扫
+  // (空载成本 ≈ 两次 stat)。语义: 脚本源/target 以【文件存在】为准自动启用;
+  // 移除文件或 <name>.paused 即退出。内置源 (disk/mail/swap) 仍由 l0.sources 配置门控。
+  let lastDiscSig = null
+  function discoverySig() {
+    const mt = (p) => { try { return statSync(p).mtimeMs } catch { return 0 } }
+    let sig = `${mt(collectorsDir)}|${mt(targetsDir)}`
+    for (const dir of [collectorsDir, targetsDir]) {
+      try { for (const f of readdirSync(dir)) if (f.endsWith('.env.json')) sig += `|${mt(join(dir, f))}` } catch {}
+    }
+    return sig
+  }
+  function refreshDiscovery() {
+    const sig = discoverySig()
+    if (sig === lastDiscSig) return
+    const before = `${Object.keys(SCRIPT_SOURCES).join(',')}|${Object.keys(SCRIPT_TARGETS).join(',')}`
+    scanScriptSources()
+    scanScriptTargets()
+    rebuildScriptLayer()
+    rebuildActiveTargets()
+    lastDiscSig = discoverySig()
+    const after = `${Object.keys(SCRIPT_SOURCES).join(',')}|${Object.keys(SCRIPT_TARGETS).join(',')}`
+    if (before !== after) {
+      writeManifest()
+      log(`discovery refreshed: sources=[${Object.keys(SCRIPT_SOURCES).join(',')}] script-targets=[${Object.keys(SCRIPT_TARGETS).join(',')}]`)
+    }
+  }
 
   // 防重入: 脚本 target 可能要跑十几秒(要启浏览器、要调 SemIf), 一旦超过 l1.intervalMs,
   // setInterval 会让两轮决策并发 —— 它们会读到同一批事实各判一次, 造成重复唤醒。
@@ -1045,6 +1106,7 @@ function install(rt, ctx, cfg) {
   }
 
   async function decideOnceInner() {
+    refreshDiscovery()                 // 新脚本 target 落盘即生效 (与 L0 同一门控)
     // 测试钩子: wake-test 标记 → 强制唤醒 (端到端验证; 走真实 disk target.render 产出结构化通知)
     try {
       const marker = join(dirname(cfg.l0.storeDir), 'wake-test')

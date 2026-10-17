@@ -13,7 +13,7 @@ version: 2.1.0
 | 用途 | 路径（约定） | 说明 |
 |---|---|---|
 | 统一目录 | `$HOME/.dsh/dsh-reflex/`（环境变量 `REFLEX_HOME`） | 数据源的家：`collectors/` 脚本、`facts/` 数据、manifest、状态文件 |
-| 配置启用 | `$DSH_HOME`（默认 `$HOME/.dsh`）`/profiles/<当前 profile>/cordis.patch.yml` | 在 `layered-agent.l0.sources` 声明启用 |
+| 启用 | 脚本源/target：**丢进目录即生效**（热发现）。内置源（disk/mail/swap）仍在 `$DSH_HOME/profiles/<profile>/cordis.patch.yml` 的 `layered-agent.l0.sources` 声明 |
 | 代码/详细规则 | 插件安装目录（见下方"定位插件安装目录"） | `DATASOURCE.md` 随代码版本走，是详细版 |
 | 本 skill | `~/.agents/skills/reflex-datasource/` | 由插件 install() 自动部署，随代码更新 |
 | SemIf skill | `~/.agents/skills/semif-decide/` | 同样是插件 install() 部署的（vendored 快照，只在缺失时装）；调 SemIf 用插件注入的 `$REFLEX_SEMIF_RUN`，别写死路径 |
@@ -26,7 +26,7 @@ version: 2.1.0
    - stdout 每行一个 JSON fact：`{"metric","raw","meta"?}`
    - source/ts 由插件补；脚本可读注入环境（`REFLEX_HOME`/CA 证书/PATH）
    - 脚本要幂等（多次调用不重复，如 mail 用 seen 去重）
-2. **配置启用** → 当前 profile 的 `cordis.patch.yml` 里 `layered-agent.l0.sources` 加 `<name>`
+2. **启用** → 脚本源/脚本 target：**丢进目录即生效**（热发现，无需改配置、无需重启；移除文件即退出）。内置源仍在 profile 的 `l0.sources` 声明
 3. **验证** → 重启后日志出现 `auto-discovered script sources: [... <name>]`；数据进 `facts/<name>/`
 4. **（可选）增强**：
    - manifest `sourceSchema` 登记字段（让 L2 自主推理看懂）
@@ -227,7 +227,7 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 ## 验证清单
 
 - [ ] `collectors/<name>.sh` 可执行（`chmod +x`），单独跑输出合法 JSON line
-- [ ] 加到 `l0.sources` 后，重启日志出现 `auto-discovered script sources: [... <name>]`
+- [ ] 新脚本源落盘后，下一轮日志出现 `discovery refreshed: sources=[... <name> ...]`（无需重启）
 - [ ] 数据写入 `$HOME/.dsh/dsh-reflex/facts/<name>/`
 - [ ] manifest `sources` 列出 `<name>`，schema 可见（若写了 `<name>.schema.json`）
 - [ ] 多次采集不重复（幂等）——连跑三次，第二次只出真正新增，第三次为 0
