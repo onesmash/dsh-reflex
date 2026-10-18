@@ -174,6 +174,10 @@ exit 0
    （不要常驻 headless 浏览器，占内存）
 4. **会话过期必须是非 0 退出**——让它记 `L0 <name> failed`，绝不能把空数据伪装成"没有新事件"
 5. 该源至少要 `intervalMs`（登录态类通常 10-15 分钟）+ `timeoutMs`（启浏览器需要 60-120s）
+6. **浏览器首次导航偶发超时，要自带一次重试**。实测（2026-10-18）：`agent-browser` 导航超时默认 25s，
+   x.com 偶发第一次 `open` 27s 超时（退出码 1），`close` 后重试一次 14s 就成功；同一命令手工跑也常成功。
+   这类偶发失败不该直接报成"数据源故障"：首次失败 → `close` → `sleep 2` → 重试一次，仍失败才非 0 退出。
+   ⚠️ `AGENT_BROWSER_DEFAULT_TIMEOUT` 对 `open` 的导航超时**不生效**（实测），重试才是有效手段。
 
 ## 5.3 没有「批量入口」的源（逐会话扫描）
 
@@ -363,6 +367,25 @@ targets/tickets-progress.sh   →  判断"频道消息里的票号 ∈ 这个集
 我的票没变化、我的票变成 Done（好消息不该占注意力）。
 
 **反例不过的 target 不要上线** —— 噪音是这套系统最常见的死法（参见 5.3 / 5.4 的教训）。
+
+### 6.6 阈值不是拍出来的：shadow 数据 + 标注拟合
+
+target 的阈值决定误报/漏报怎么换。别再用"看分布找断崖"这种一次性手调：
+
+这套工具已做成随插件分发的 skill：**`skill/reflex-tuning/`**（插件 `install()` 自动部署到
+`~/.agents/skills/reflex-tuning/`，target 通过插件注入的 `REFLEX_TUNING_DIR` 引用，运行目录不再放副本）。
+契约与命令见该 skill 的 `SKILL.md`，完整实验记录见 [docs/threshold-fitting.md](docs/threshold-fitting.md)。
+
+1. 透明包装打分（`$REFLEX_TUNING_DIR/shadow-semif.sh`，target 里两行挂上）把**全部** `p(yes)` 落
+   `$REFLEX_HOME/shadow/`，不改变判定；回放历史 facts 用 `shadow_replay.py`，不用等线上攒数据
+2. 分层抽样标注（`threshold_fit.py --export-sample`），按期望效用拟合：
+   `ΔU(τ) = Σ_{s≥τ}(y·R − 1)`，`R = (真阳价值+漏报代价)/误报代价`（只有比值重要）；
+   判据 A/B 用 `shadow_ab.py`，风险证书用 `risk_certificate.py`，校准用 `calibration.py`
+3. 看**工作点**：全量通过条数 + 加权 Precision/Recall + 固定基线（always-wake / 同量随机），
+   再决定改不改阈值；单条唤醒策略用 `wake_policy.py`（target 侧通用库）
+
+⚠️ 实测：分数单调但**不校准**（ECE 41%），高分尾部仍有"预告/传闻/推广"类误报——
+阈值切不掉它们，该改判据或交给 L2；换判据必须重拟合阈值。
 
 ### 安静时段（quietHours）
 

@@ -56,6 +56,11 @@ const DEFAULTS = {
   semif: {
     skillDir: join(process.env.HOME || '', '.agents', 'skills', 'semif-decide'),
   },
+  // 判定调优工具 (shadow/回放/拟合/策略): 随插件 skill 分发, 由 install() 自动部署。
+  // target 通过注入的 REFLEX_TUNING_DIR 引用, 不在运行目录放副本 (DATASOURCE.md §0)。
+  tuning: {
+    skillDir: join(process.env.HOME || '', '.agents', 'skills', 'reflex-tuning', 'scripts'),
+  },
   // 决策后端: L1 的判定由谁打分。三种后端同构(见 tools/semif-adapt.py):
   //   semif    本地 MLX 读答案槽 logits (默认, 不联网)
   //   jev      TypeSafe 托管 POST /v1/systemone (联网, 内容会离开本机)
@@ -136,6 +141,7 @@ function normalize(c) {
     l0: { ...DEFAULTS.l0, ...(c?.l0 ?? {}) },
     l1: { ...DEFAULTS.l1, ...(c?.l1 ?? {}) },
     semif: { ...DEFAULTS.semif, ...(c?.semif ?? {}) },
+    tuning: { ...DEFAULTS.tuning, ...(c?.tuning ?? {}) },
     decide: { ...DEFAULTS.decide, ...(c?.decide ?? {}) },
   }
   // 统一目录派生: 默认 homeDir/facts, homeDir/collectors; 显式传 storeDir/collectorsDir 优先
@@ -620,6 +626,8 @@ function install(rt, ctx, cfg) {
       REQUESTS_CA_BUNDLE: process.env.REQUESTS_CA_BUNDLE || process.env.CURL_CA_BUNDLE || process.env.SSL_CERT_FILE || '',
       // target 脚本要调 SemIf 时用它, 不必写死路径
       REFLEX_SEMIF_RUN: join(cfg.semif.skillDir, 'scripts', 'run_score.sh'),
+      // 调优工具目录 (shadow 包装 / 唤醒策略库), 随插件 skill 部署
+      REFLEX_TUNING_DIR: cfg.tuning.skillDir,
       ...(extra ?? {}),
     }
     // 决策后端: 只在显式配了才注入 —— 不配就别动, 让 target 自己的默认(semif)生效。

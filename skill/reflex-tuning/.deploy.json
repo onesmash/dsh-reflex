@@ -1,0 +1,8 @@
+{
+  "policy": "sync",
+  "skill": "reflex-tuning",
+  "source": "dsh-reflex 自有 skill：L1 判定调优机制（shadow/回放/拟合/A-B/证书/校准/唤醒策略）",
+  "why": "这套机制是插件判定层的一部分，随插件分发才能让新机器/新数据源直接复用；脚本放在 skill 里由插件自动部署，target 通过 REFLEX_TUNING_DIR 引用，避免运行目录出现第二份副本。",
+  "policyNote": "sync：自有 skill，内容随插件代码版本更新，内容不同即覆盖 ~/.agents/skills/reflex-tuning。",
+  "maintenance": "脚本改动只在仓库 skill/reflex-tuning/scripts/ 下进行；运行目录不再保留副本。新增脚本时同步更新 SKILL.md 的命令速查与 references/tuning-loop.md。"
+}

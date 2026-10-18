@@ -162,3 +162,13 @@ Both use a **seed-only** policy: they are installed only when *absent* locally, 
 ## License
 
 [MIT](LICENSE)
+
+
+## Tuning the decision layer (reflex-tuning)
+
+Thresholds and rubric wording should not be guessed. The plugin ships a `reflex-tuning` skill
+(auto-deployed to `~/.agents/skills/reflex-tuning/`) that provides a replayable loop:
+shadow scoring → facts replay → stratified labeling → threshold fitting / rubric A-B /
+risk certificate / calibration → wake policy (single-item hold & merge) and policy simulation.
+Targets reference the scripts via `REFLEX_TUNING_DIR`; the runtime directory keeps no copy.
+Contract: `skill/reflex-tuning/SKILL.md`; experiment log: `docs/threshold-fitting.md`.

@@ -1,6 +1,6 @@
 {
   "name": "dsh-reflex",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Layered agent for DeepSeek Harness: L0 fact layer + L1 local decision layer (SemIf/Jev) + L2 event-driven wake, as a sibling cordis plugin to ds-bot (zero modification to the original).",
   "type": "module",
   "main": "index.js",
@@ -17,7 +17,9 @@
     "docs/layers.en.png",
     "docs/layers.zh.png",
     "docs/wake.en.png",
-    "docs/wake.zh.png"
+    "docs/wake.zh.png",
+    "docs/threshold-fitting.md",
+    "!**/__pycache__/**"
   ],
   "dsh": {
     "bundle": {

@@ -165,3 +165,11 @@ tests/                回归测试
 ## License
 
 [MIT](LICENSE)
+
+
+## 判定调优（reflex-tuning）
+
+L1 的阈值和判据不该拍脑袋。插件随包分发 `reflex-tuning` skill（自动部署到 `~/.agents/skills/reflex-tuning/`），
+提供一条可回放的调优闭环：shadow 影子记录 → 历史 facts 回放 → 分层标注 → 阈值拟合 / 判据 A/B /
+风险证书 / 校准 → 唤醒策略（单条目暂存合并）与策略仿真。target 通过 `REFLEX_TUNING_DIR` 引用脚本，
+运行目录不再放副本。契约见 `skill/reflex-tuning/SKILL.md`，实验记录见 `docs/threshold-fitting.md`。
