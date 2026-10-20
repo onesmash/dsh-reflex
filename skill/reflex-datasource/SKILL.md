@@ -252,6 +252,10 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 
 ## 注意
 
+- **改已有采集器时不要就地写文件**：采集器由 L0 循环按各自节拍执行，`write` 截断重写的瞬间
+  若正有一轮在跑，bash 会读到半截脚本 —— 表现为莫名其妙的语法错误（2026-10-19 zoom-im 实测：
+  `line 337: 非: command not found`），并产生一条假的「采集失败」。正确做法：写临时文件 →
+  `bash -n` 校验 → `mv` 原子替换（同一文件系统上是 rename，运行中的进程继续用旧 inode）。
 - 先看现有脚本参照：`collectors/` 下 `uptime.sh`（最简单）、`net.sh`（系统命令+meta）、
   `im-mail.sh`（有状态去重+凭据调用）、`feed-timeline.sh`（登录态+虚拟列表两段式快照）；
   `targets/feed-timeline.sh`（L1 判定 + 批量 SemIf + items 决策）

@@ -73,6 +73,34 @@ def main():
         d = wp.decide([], state, now + 2 * 3600_000)
         check('策略: 超时暂存被丢弃', d['wake'] is False and json.load(open(state)) == [], str(d))
 
+    # 3.1 late_min: 超时补发, 以及更短的等待窗口
+    with tempfile.TemporaryDirectory() as td:
+        state = os.path.join(td, 'deferred.json')
+        now = 2_000_000
+        # 0.9785 单条: immediate=0.97 -> 立即发 (对应 2026-10-18 那条被 60 分钟拖延的案例)
+        d = wp.decide([{'id': 'a', 'score': 0.9785}], state, now,
+                      wait_min=20, immediate=0.97, late_min=0.95)
+        check('策略: 0.9785 单条立即发', d['wake'] is True and d['reason'].startswith('单条即发'), str(d))
+        # 0.96 单条: 暂存 -> 20 分钟后无第二条 -> 补发
+        d = wp.decide([{'id': 'b', 'score': 0.96}], state, now,
+                      wait_min=20, immediate=0.97, late_min=0.95)
+        check('策略: 0.96 单条暂存', d['wake'] is False and d['deferred'] == 1, str(d))
+        d = wp.decide([], state, now + 21 * 60_000, wait_min=20, immediate=0.97, late_min=0.95)
+        check('策略: 超时补发 (>=late_min)', d['wake'] is True and len(d['items']) == 1
+              and '超时补发' in d['reason'], str(d))
+        # 0.94 单条: 暂存 -> 超时丢弃
+        d = wp.decide([{'id': 'c', 'score': 0.94}], state, now + 40 * 60_000,
+                      wait_min=20, immediate=0.97, late_min=0.95)
+        d = wp.decide([], state, now + 62 * 60_000, wait_min=20, immediate=0.97, late_min=0.95)
+        check('策略: 低于 late_min 超时丢弃', d['wake'] is False and d['deferred'] == 0, str(d))
+        # 已有超时高分条目时, 新来一条低分不应吞掉高分条目
+        wp.decide([{'id': 'd', 'score': 0.96}], state, now + 100 * 60_000,
+                  wait_min=20, immediate=0.97, late_min=0.95)
+        d = wp.decide([{'id': 'e', 'score': 0.94}], state, now + 130 * 60_000,
+                      wait_min=20, immediate=0.97, late_min=0.95)
+        check('策略: 低分新条目触发高分超时补发', d['wake'] is True
+              and [i['id'] for i in d['items']] == ['d'], str(d))
+
     # 4. 策略仿真
     sim = load('wake_policy_sim.py')
     items = [{'ms': 0, 'score': 0.99, 'label': 1}, {'ms': 10 * 60_000, 'score': 0.94, 'label': 0},

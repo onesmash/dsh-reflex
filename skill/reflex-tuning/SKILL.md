@@ -37,7 +37,11 @@ version: 1.0.0
    - 风险证书：Clopper-Pearson 精确单侧界（精度下界/误报率上界/召回下界）
    - 校准：Platt/Isotonic + ECE 交叉验证；唤醒概率阈值 = `1/R`
 4. **策略与验证**（`wake_policy.py`、`wake_ledger.py`、`replay_wake_eval.py`、`wake_policy_sim.py`）
-   - `wake_policy.py`：通用的"单条目暂存/第二条合并/高置信立即发"策略，任何 target 可调用
+   - `wake_policy.py`：通用的"单条目暂存/第二条合并/高置信立即发/超时补发"策略，任何 target 可调用
+     - 默认：等待窗口 `wait_min=10` 分钟、`immediate=0.97`、`late_min=0.95`
+     - 语义：单条 ≥immediate 立即发；<immediate 先暂存等第二条；等满 wait_min 仍无第二条时，
+       分数 ≥late_min 单独补发，否则丢弃（`late_min=None` 退回旧的"超时即丢弃"）
+     - 2026-10-18 调整原因：0.9785 的高价值单条被 0.98 阈值按 60 分钟规则暂存了 46 分钟才随第二条发出
    - `wake_ledger.py`：从 reflex 日志 + DSH 会话正文还原每次唤醒的投递/用户回应/L2 动作，支持批量标注
    - `replay_wake_eval.py`：把回放通过条目按发布时间聚成"假设唤醒"，做唤醒级（OR 语义）评估
    - `wake_policy_sim.py`：策略仿真（baseline / wait / thresh / combo），输出精度、正例覆盖、每天唤醒量

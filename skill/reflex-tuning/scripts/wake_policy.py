@@ -7,7 +7,7 @@
     - 本轮命中 >=2 条          -> 立即唤醒
     - 单条且分数 >= immediate  -> 立即唤醒(高置信不延迟)
     - 单条且分数 <  immediate  -> 暂存, 等 wait 分钟内凑到第二条再发
-    - 暂存超时                 -> 丢弃
+    - 暂存超时                 -> 分数 >= late_min 则补发, 否则丢弃 (late_min=None 退回旧行为: 全部丢弃)
   这套逻辑不该写死在某个 target 里, 所以做成库 + CLI, 任何 target 都能调用。
 
 目标侧用法 (target 的 decide.py 内, 假定已算出通过阈值的 items):
@@ -79,45 +79,60 @@ def _dedupe(items):
     return out
 
 
-def decide(items, state_file, now_ms, wait_min=60.0, immediate=0.98, defer=True):
-    """应用唤醒策略。返回 {wake, items, reason, deferred}。"""
+def decide(items, state_file, now_ms, wait_min=60.0, immediate=0.98, defer=True, late_min=None):
+    """应用唤醒策略。返回 {wake, items, reason, deferred}。
+
+    late_min: 暂存超时后仍值得单独发的分数下限; None = 超时即丢弃 (旧行为)。
+    """
     cur = _dedupe(list(items or []))
     wait_ms = float(wait_min) * 60_000
-    deferred = [d for d in _load_state(state_file)
-                if now_ms - int(d.get("at") or 0) <= wait_ms]
+    stored = _load_state(state_file)
+    fresh, late = [], []
+    for d in stored:
+        age = now_ms - int(d.get("at") or 0)
+        (fresh if age <= wait_ms else late).append(d)
+    late_items = []
+    if late_min is not None:
+        for d in late:
+            sc = d.get("score")
+            if sc is None:
+                sc = (d.get("item") or {}).get("score", 0)
+            if float(sc or 0) >= float(late_min):
+                late_items.append(d["item"])
+    late_suffix = f" + 超时补发 {len(late_items)} 条" if late_items else ""
+
+    def out(items_out, reason, deferred, wake=True):
+        merged = _dedupe(items_out)
+        _save_state(state_file, deferred)
+        return {"wake": wake, "items": merged if wake else [],
+                "reason": reason, "deferred": len(deferred)}
 
     if len(cur) >= 2:
-        merged = _dedupe(cur + [d["item"] for d in deferred])
-        _save_state(state_file, [])
-        suffix = f" + 暂存合并 {len(deferred)} 条" if deferred else ""
-        return {"wake": True, "items": merged, "reason": "多条目命中" + suffix, "deferred": 0}
+        suffix = f" + 暂存合并 {len(fresh)} 条" if fresh else ""
+        return out(cur + [d["item"] for d in fresh] + late_items,
+                   "多条目命中" + suffix + late_suffix, [])
 
     if len(cur) == 1:
         single = cur[0]
         score = float(single.get("score", 1.0))
         if not defer:
-            merged = _dedupe(cur + [d["item"] for d in deferred])
-            _save_state(state_file, [])
-            return {"wake": True, "items": merged, "reason": "单条即发(策略关闭)", "deferred": 0}
-        if deferred:
-            # 已有暂存: 这一条就是"第二条"
-            merged = _dedupe(cur + [d["item"] for d in deferred])
-            _save_state(state_file, [])
-            return {"wake": True, "items": merged,
-                    "reason": f"第二条到达, 合并暂存 {len(deferred)} 条", "deferred": 0}
+            return out(cur + [d["item"] for d in fresh] + late_items, "单条即发(策略关闭)", [])
+        if fresh:
+            return out(cur + [d["item"] for d in fresh] + late_items,
+                       f"第二条到达, 合并暂存 {len(fresh)} 条" + late_suffix, [])
         if score >= float(immediate):
-            return {"wake": True, "items": cur, "reason": "单条即发(高置信)", "deferred": 0}
-        deferred.append({"item": single, "score": score, "at": now_ms})
-        _save_state(state_file, deferred)
-        return {"wake": False, "items": [],
-                "reason": f"单条目暂存待第二条 (分数 {score:.2f}, 暂存 {len(deferred)} 条)",
-                "deferred": len(deferred)}
+            return out(cur + late_items, "单条即发(高置信)" + late_suffix, [])
+        # 本条进暂存; 若手里正好有超时高分条目, 先把它们发出去 (不吞)
+        if late_items:
+            return out(late_items, f"暂存超时补发 {len(late_items)} 条",
+                       fresh + [{"item": single, "score": score, "at": now_ms}])
+        fresh.append({"item": single, "score": score, "at": now_ms})
+        return out([], f"单条目暂存待第二条 (分数 {score:.2f}, 暂存 {len(fresh)} 条)", fresh, wake=False)
 
-    # 本轮没有新命中: 保留未过期暂存 (顺带清过期)
-    _save_state(state_file, deferred)
-    return {"wake": False, "items": [],
-            "reason": "本轮无命中" + (f" (暂存 {len(deferred)} 条)" if deferred else ""),
-            "deferred": len(deferred)}
+    # 本轮没有新命中: 过期暂存按 late_min 补发或丢弃
+    if late_items:
+        return out(late_items, f"暂存超时补发 {len(late_items)} 条", fresh)
+    return out([], "本轮无命中" + (f" (暂存 {len(fresh)} 条)" if fresh else ""), fresh, wake=False)
 
 
 def main():
@@ -127,13 +142,14 @@ def main():
     ap.add_argument("--now-ms", type=int, default=None)
     ap.add_argument("--wait-min", type=float, default=60.0)
     ap.add_argument("--immediate", type=float, default=0.98)
+    ap.add_argument("--late-min", type=float, default=None, help="暂存超时后仍可单独发的分数下限 (不设=丢弃)")
     ap.add_argument("--no-defer", action="store_true")
     a = ap.parse_args()
     payload = json.load(sys.stdin)
     items = payload.get("items") or []
     now_ms = a.now_ms if a.now_ms is not None else int(__import__("time").time() * 1000)
     out = decide(items, a.state_file, now_ms, wait_min=a.wait_min,
-                 immediate=a.immediate, defer=not a.no_defer)
+                 immediate=a.immediate, defer=not a.no_defer, late_min=a.late_min)
     print(json.dumps(out, ensure_ascii=False))
     return 0
 
