@@ -34,3 +34,4 @@ collectors/
 targets/
 tools/
 # 注意: index.js 里的内置采集器(disk/swap)是插件代码, 不在这三个目录里。
+research-nex/

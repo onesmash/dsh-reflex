@@ -81,7 +81,7 @@ exit 0
 
 ### 脚本 target（首选，不用改代码）
 
-写 `$REFLEX_HOME/targets/<name>.sh` + 在 `l1.targets` 启用。与 collector 同一套契约。
+写 `$REFLEX_HOME/targets/<name>.sh` 即自动启用（drop-in，热发现；无需改 `l1.targets`、无需重启）。与 collector 同一套契约。
 
 **职责分界**（关键，别混）：**脚本**负责判定与条目内容；**插件**负责指纹去重、冷却、
 `minIntervalMs` 节流、pending 累积合并、**排版信封**（标题/编号/「其中 N 条为冷却期累积」/L0 入口）。
@@ -236,7 +236,7 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 若还做了 target：
 
 - [ ] `echo '<facts>' | bash targets/<name>.sh` 能独立跑出合法决策 JSON（这是最好的调试方式）
-- [ ] 重启日志出现 `auto-discovered script targets: [... <name>]`，且 `l1.targets` 已启用
+- [ ] 脚本 target 落盘后，下一轮日志出现 `discovery refreshed: ... script-targets=[... <name> ...]`（无需重启）
 - [ ] manifest `l1Targets` 列出该 target，`type=script`
 - [ ] 决策里 `items[].id` 非空（合并去重唯一依据）
 - [ ] **反例测试**：构造不该唤醒的输入（别人名下的票号 / 没 @我 / 无变化），确认输出为空

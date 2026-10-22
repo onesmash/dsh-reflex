@@ -80,10 +80,10 @@ dsh --profile <你的 profile> --dump-config    # 应出现 "# == dsh-reflex"
       quietHours: { from: '18:00', to: '09:00' }
 ```
 
-重启 DSH 生效。日志里会看到：
+重启 DSH 生效（脚本源/脚本 target 无需此配置：`collectors/`、`targets/` 里的脚本落盘即自动启用，热发现，<name>.paused 或删文件即退出）。日志里会看到：
 
 ```
-dsh-reflex installed: L0=60000ms L1=60000ms target="Chief" sources=[disk,swap]
+dsh-reflex installed: L0=60000ms L1=60000ms target="Chief" sources=[disk,swap] targets=[disk,x-timeline]
 ```
 
 ### 本地开发：指向你的 checkout
@@ -113,7 +113,7 @@ cd /绝对路径/dsh-reflex && pnpm install
 | `l0.sources` | `[disk]` | 启用的源；内置 `disk`/`swap`，其他靠 `collectors/*.sh` |
 | `l0.homeDir` | `~/.dsh/dsh-reflex` | 工作目录（可用环境变量 `REFLEX_HOME` 覆盖） |
 | `l1.intervalMs` | 60000 | 判定周期 |
-| `l1.targets` | `[disk]` | 启用的判定目标 |
+| `l1.targets` | `[disk]` | 启用的**内置**判定目标；脚本 target 无需在此声明（落盘即 drop-in 启用） |
 | `l1.threshold` | 0.8 | 本地模型打分阈值 |
 | `l1.hardRule` | `{lowAvailableGB:20, highUsedPct:90}` | 硬规则（如磁盘告警），可穿透安静时段 |
 | `l1.targetBot` | `Chief` | L1 命中后唤醒谁 |

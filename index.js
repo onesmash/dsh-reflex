@@ -1223,7 +1223,7 @@ function install(rt, ctx, cfg) {
   // cordis effect(setup): 立即调用 setup, 其返回值才是 dispose 回调 (照 ds-bot 惯例双箭头)
   try { ctx.effect(() => () => { clearInterval(t0); clearInterval(t1) }, 'dsh-reflex: L0/L1 timers') } catch {}
 
-  log(`dsh-reflex installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}" sources=[${cfg.l0.sources.join(',')}]`)
+  log(`dsh-reflex installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}" sources=[${cfg.l0.sources.join(',')}] targets=[${activeTargets.join(',')}]`)
   // scriptEnv 一并返回: 密钥注入是"必须可验证"的逻辑(读代码相信不算证据),
   // 测试直接调它比对环境变量, 不必真跑一轮采集。
   return { collectOnce, decideOnce, wakeL2, scriptEnv }

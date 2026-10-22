@@ -223,7 +223,7 @@ IM 的「谁 @ 过我」接口（如 `msg_mention_me_fetch`） 只返回"这个�
 
 ### 6.1 脚本 target（推荐，与 collector 同构）
 
-把 `<targetsDir>/<name>.sh` 放好 + 配置 `l1.targets` 启用，**不用改插件代码**。
+把 `<targetsDir>/<name>.sh` 放好**即自动启用**（drop-in，热发现）：无需改 `l1.targets`、无需改插件代码、无需重启。移除文件或加 `<name>.paused` 即退出。`l1.targets` 只用于启用**内置** target（如 disk）或显式点名（脚本 target 点名与否都不影响启用）。
 
 职责分界 —— 这是本设计的关键，别混：
 

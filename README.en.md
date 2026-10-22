@@ -78,10 +78,10 @@ Then give the plugin a config block in the same profile's `cordis.patch.yml`:
       quietHours: { from: '18:00', to: '09:00' }
 ```
 
-Restart DSH to take effect. The log will show:
+Restart DSH to take effect (script sources/targets need none of this: any `.sh` dropped into `collectors/` or `targets/` is auto-enabled via hot discovery — add the file and it works within the next round, `<name>.paused` or deleting the file removes it). The log will show:
 
 ```
-dsh-reflex installed: L0=60000ms L1=60000ms target="Chief" sources=[disk,swap]
+dsh-reflex installed: L0=60000ms L1=60000ms target="Chief" sources=[disk,swap] targets=[disk,x-timeline]
 ```
 
 ### Local development: point at your checkout
@@ -110,7 +110,7 @@ Every option can be overridden under `dsh-reflex.config` in the profile patch. T
 | `l0.sources` | `[disk]` | Enabled sources; `disk`/`swap` are built in, others come from `collectors/*.sh` |
 | `l0.homeDir` | `~/.dsh/dsh-reflex` | Working directory (override with the `REFLEX_HOME` env var) |
 | `l1.intervalMs` | 60000 | Decision interval |
-| `l1.targets` | `[disk]` | Enabled decision targets |
+| `l1.targets` | `[disk]` | Enabled **built-in** decision targets; script targets need no entry here (drop-in via file presence) |
 | `l1.threshold` | 0.8 | Local-model score threshold |
 | `l1.hardRule` | `{lowAvailableGB:20, highUsedPct:90}` | Hard rules (e.g. disk alarms); these pierce quiet hours |
 | `l1.targetBot` | `Chief` | Which Bot gets woken on an L1 hit |
