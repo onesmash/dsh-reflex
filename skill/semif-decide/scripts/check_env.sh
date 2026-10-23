@@ -61,6 +61,11 @@ find_score_bin() {
   if [ "$REPO_DIR" != "${HOME}/SourceCode/SemIf" ]; then
     candidates+=("${HOME}/SourceCode/SemIf/.venv")
   fi
+  # setup_env.sh 在无现成 venv 时默认建到 $state_root/venv (L104/L133), 预检必须认得
+  # 这个位置, 否则 "只有 state_root venv 的干净机器" 上 preflight 会误报 MISSING。
+  # 与 setup_env.sh 对齐: state_root = ${SEMIF_STATE_ROOT:-$HOME/.cache/semif-decide}
+  local state_root="${SEMIF_STATE_ROOT:-${HOME}/.cache/semif-decide}"
+  candidates+=("$state_root/venv")
   local candidate
   for candidate in "${candidates[@]}"; do
     if [ -x "$candidate/bin/semif-score" ]; then
