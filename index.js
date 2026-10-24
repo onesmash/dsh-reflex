@@ -253,7 +253,10 @@ function install(rt, ctx, cfg) {
           : (cfg.l1.targetsDir ?? join(cfg.l0.homeDir, 'targets'))
         mkdirSync(dstDir, { recursive: true })
         for (const e of readdirSync(srcDir)) {
-          const sf = join(srcDir, e.name), df = join(dstDir, e.name)
+          // ⚠️ readdirSync 不带 withFileTypes 返回【字符串数组】, e 就是文件名本身;
+          //    首版误写 e.name(Dirent 用法) → join(src, undefined) → TypeError 被 catch
+          //    吞成一行日志, 部署永远失败(2026-10-24 两次重启实测, 栈回溯定位)。
+          const sf = join(srcDir, e), df = join(dstDir, e)
           try {
             if (existsSync(df) && readFileSync(df).equals(readFileSync(sf))) continue
             if (existsSync(df)) { try { cpSync(df, df + '.bak-user', { force: true }) } catch {} }
