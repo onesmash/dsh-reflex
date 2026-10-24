@@ -12,7 +12,10 @@ node_modules/
 # 插件会把它们 cpSync 给任何安装本插件的人, 所以绝不能作为种子分发。
 # 它们只活在统一目录 (~/.dsh/dsh-reflex/) 里, 由使用者自己填。
 # 需要样例时看同目录的 *.env.example.json。
+# 否定例外的仅限 defaults/ 随包分发的配置(已人工核验零密钥, 2026-10-24):
+# 包里没有它们, 新装机 clone 后 pack 出的包会缺文件。
 *.env.json
+!defaults/**/*.env.json
 # 个人身份文件(默认通知收件人 = 你自己的 userId)
 im-notify.to
 # Python 字节码
