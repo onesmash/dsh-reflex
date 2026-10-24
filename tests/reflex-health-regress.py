@@ -8,9 +8,18 @@ import json, os, shutil, subprocess, time, datetime as dt, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REAL = os.path.expanduser('~/.dsh/dsh-reflex')
-# 测的是【随包分发】的 defaults 版本 —— repo 自包含, 不依赖本机运行目录
-COL = os.path.join(HERE, '..', 'defaults/reflex-health/collectors/reflex-health.sh')
-TGT = os.path.join(HERE, '..', 'defaults/reflex-health/targets/reflex-health.sh')
+# 测试对象优先级: repo defaults(随包分发版) → 运行目录副本。
+# 同一份测试文件放 repo tests/ 与运行目录 tests/ 都能跑, 不再漂移。
+_COL_CAND = [
+    os.path.join(HERE, '..', 'defaults/reflex-health/collectors/reflex-health.sh'),
+    os.path.join(REAL, 'collectors/reflex-health.sh'),
+]
+_TGT_CAND = [
+    os.path.join(HERE, '..', 'defaults/reflex-health/targets/reflex-health.sh'),
+    os.path.join(REAL, 'targets/reflex-health.sh'),
+]
+COL = next((p for p in _COL_CAND if os.path.exists(p)), _COL_CAND[-1])
+TGT = next((p for p in _TGT_CAND if os.path.exists(p)), _TGT_CAND[-1])
 BASE = '/tmp/rh-regress'
 NOW = time.time()
 
@@ -485,6 +494,30 @@ rc, out, _ = run_tgt(h, [F_EG])
 items = out.get('items') or []
 check('分类: EAGAIN 采集失败按 infra 台阶(4h → #3h, 非 source 的 #1h)',
       bool(items) and any('#3h' in i['id'] for i in items), json.dumps(items)[:160])
+
+# ================= 台账跨事故残留 bug (2026-10-24) =================
+# 场景: 上次同类故障报过(step-0 台账) → 恢复(recovered) → 再次发生 →
+#       第一次报告【不该】被旧台账吞掉。
+h = fresh('ledger1')
+json.dump({'collector-failure:x-timeline': 0},           # 上次事故残留的 step-0 台账
+          open(os.path.join(h, 'reflex-health-target-state.json'), 'w'))
+FX = {'metric': 'collector-failure',
+      'raw': {'source': 'x-timeline', 'count': 1, 'windowMinutes': 60, 'lastError': 'boom'},
+      'meta': {'key': 'collector-failure:x-timeline'}}
+rc, o1, _ = run_tgt(h, [FX])                            # 第一次失败(1 次 < 2 不报)
+h = fresh('ledger2')
+json.dump({'collector-failure:x-timeline': 0},
+          open(os.path.join(h, 'reflex-health-target-state.json'), 'w'))
+REC = {'metric': 'recovered', 'raw': {'problem': 'collector-failure:x-timeline',
+                                      'kind': 'collector-failure', 'source': 'x-timeline'},
+       'meta': {'key': 'collector-failure:x-timeline', 'check': 'recovery'}}
+rc, o2, _ = run_tgt(h, [REC])                            # 恢复 → 台账应清零(wake=false)
+led = json.load(open(os.path.join(h, 'reflex-health-target-state.json')))
+check('ledger: recovered 清台账', led == {} or 'collector-failure:x-timeline' not in led, str(led))
+rc, o3, _ = run_tgt(h, [FX, FX])                         # 再次发生 → 台账已清 → 该报
+check('ledger: 清零后新事故正常报',
+      bool(o3 and o3['wake']) and bool(o3.get('items')),
+      str(o3)[:120])
 
 print()
 bad = [r for r in results if not r[1]]
