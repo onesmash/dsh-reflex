@@ -25,8 +25,10 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 import time
+import datetime as dt
 
 DEFAULT_HOME = os.environ.get("REFLEX_HOME") or os.path.expanduser("~/.dsh/dsh-reflex")
 
@@ -93,6 +95,7 @@ def main():
 
     ts = int(time.time() * 1000)
     date = time.strftime("%Y-%m-%d", time.localtime(ts / 1000))
+    dt_date = dt.datetime.now()
     outdir = os.path.join(a.home, "shadow")
     os.makedirs(outdir, exist_ok=True)
     path = os.path.join(outdir, f"{a.tag}-{date}.jsonl")
@@ -138,6 +141,25 @@ def main():
         os.write(fd, data)
     finally:
         os.close(fd)
+    # 保留策略: 清理超过 REFLEX_SHADOW_RETENTION_DAYS(默认 30)的【按日期命名】jsonl。
+    # 只动 <tag>-<YYYY-MM-DD>.jsonl 形态的文件 —— labels/报告等无日期名的手工产物不动。
+    # 低频触发: 用「文件名里的日期是否是今天」判断, 只有写到今天文件时才扫一遍目录。
+    try:
+        keep_days = float(os.environ.get('REFLEX_SHADOW_RETENTION_DAYS') or 30)
+        if keep_days > 0 and os.path.basename(path).endswith(dt_date.strftime('%Y-%m-%d') + '.jsonl'):
+            cutoff = time.time() - keep_days * 86400
+            dated = re.compile(r'-\d{4}-\d\d-\d\d\.jsonl$')
+            for name in os.listdir(outdir):
+                fp = os.path.join(outdir, name)
+                if not dated.search(name):
+                    continue
+                try:
+                    if os.path.getmtime(fp) < cutoff:
+                        os.remove(fp)
+                except Exception:
+                    continue
+    except Exception:
+        pass                                   # 清理失败不影响记录主流程
     if missing:
         print(f"shadow_record: {missing}/{len(rows)} 条无打分结果", file=sys.stderr)
     return 0

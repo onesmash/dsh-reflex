@@ -20,9 +20,11 @@
 set -uo pipefail
 
 LHOME="${REFLEX_HOME:-$HOME/.dsh/dsh-reflex}"
-REAL="${REFLEX_SEMIF_RUN:-$HOME/.agents/skills/semif-decide/scripts/run_score.sh}"
+# 真实打分脚本: REFLEX_SHADOW_REAL(插件注入, 支持自定义 semif 安装位置)优先;
+# 兼容旧的 REFLEX_SEMIF_RUN; 都没有时用 skill 默认。
+REAL="${REFLEX_SHADOW_REAL:-${REFLEX_SEMIF_RUN:-$HOME/.agents/skills/semif-decide/scripts/run_score.sh}}"
 
-# 防递归: 万一 REFLEX_SEMIF_RUN 指回自己, 退回 skill 默认路径
+# 防递归: 万一真实路径指回自己(插件默认注入 shadow wrapper 时会发生), 退回 skill 默认路径
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 case "$REAL" in
   "$SELF") REAL="$HOME/.agents/skills/semif-decide/scripts/run_score.sh" ;;
