@@ -251,6 +251,26 @@ IM 的「谁 @ 过我」接口（如 `msg_mention_me_fetch`） 只返回"这个�
 - 想全权排版可以改输出 `{"notice": "整段文本"}`：插件原样投递，但**冷却期累积时只能把多段粗暴拼起来**
   （自由文本没法跨轮去重）。要结构化合并就得用 `items`。
 - 脚本不必自己判重、不必输出标题栏/编号/L0 入口 —— 那些是插件的事
+- **⚠️ heredoc 会吃掉 stdin**：target 的 stdin 就是事实流。脚本里把 python 写成 `python3 - <<'PY'`
+  会让 heredoc 顶掉 stdin（python 读到的是脚本文本，不是事实），表现为 target 永远看不到数据、
+  静默空转（2026-10-25 E2E 探针实测踩坑）。必须写临时文件再执行：
+  `cat > "$WORK/decide.py" <<'PY' … PY`，然后 `python3 "$WORK/decide.py"`。
+- **⚠️ 首次注册的时序竞态**：新 target 落盘的那一轮，首批事实可能先被 L1 读走（cursor 推进），
+  而 target 尚未进入活跃集 → 之后若没有新事实，target 永不触发（表现为"源在跑、target 静默"）。
+  联调时让探针源**持续**发新事实直到看到判定，别只发一两条（`reflex_e2e_probe.sh` 即此设计）。
+
+### 6.1.1 联调：改完 target 怎么验
+
+随 skill 分发的一键端到端探针（在本机运行中的 reflex 上验证 采集→事实→L1判定→L2唤醒，结束自动清理）：
+
+```bash
+bash "$REFLEX_TUNING_DIR/reflex_e2e_probe.sh"            # 默认 240s 超时
+bash "$REFLEX_TUNING_DIR/reflex_e2e_probe.sh" --timeout 300
+```
+
+它临时创建 `e2e-probe` 采集器 + target，走真实热发现链路（不重启、不改配置），PASS 时打印判定与唤醒的
+日志行；失败时给出排查提示。另有插件内置的**投递测试钩子**（只测唤醒→投递，不测 L1 判定）：
+`touch "$REFLEX_HOME/wake-test"` → 下一轮 L1 强制 `wakeL2`（日志出现 `TEST-WAKE marker`）。
 
 插件注入的环境：`REFLEX_HOME`、`REFLEX_PROFILE`（用户画像）、`REFLEX_SEMIF_RUN`（SemIf 打分脚本路径，
 **别写死路径**）、`REFLEX_TARGET`、自定义 CA、完整 PATH。

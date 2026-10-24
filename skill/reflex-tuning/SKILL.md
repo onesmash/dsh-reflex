@@ -90,6 +90,11 @@ python3 "$S/wake_policy_sim.py" --items /tmp/passed-items-labeled.json --days 5
 python3 "$S/pc_inject.py" --tag <tag> --days all --sample 100
 #    可复现: 首次加 --snapshot-out DIR, 之后 --from-snapshot DIR/pc-snapshot-*.jsonl 复跑
 #    纯标题源自动走 blob 模板; 强制: --template auto|fielded|blob; 报告在 $REFLEX_HOME/shadow/pc/
+
+# 9) 端到端探针（改完 target/采集源后验证全链: 采集→判定→唤醒，自动清理）
+bash "$S/reflex_e2e_probe.sh" --timeout 300
+#    需要运行中的 DSH; 临时建 e2e-probe 源+target 走真实热发现, PASS 打印判定/唤醒日志行
+#    只测投递(不测判定)可用插件钩子: touch "$REFLEX_HOME/wake-test" → 下一轮强制 wakeL2
 ```
 
 ## target 侧约定
@@ -129,6 +134,7 @@ python3 "$S/pc_inject.py" --tag <tag> --days all --sample 100
 - [ ] 拟合报告里 `通过量` 与 `P/R` 同时给出，且带固定基线（always-wake / always-suppress / 同量随机）
 - [ ] 证书带样本量规划；小样本不下结论
 - [ ] target 改动后：`python3 <repo>/tests/shadow-regress.py`（运行时）或 `python3 tests/test-tuning-tools.py`（仓库）
+- [ ] target/采集源改动后：`bash "$S/reflex_e2e_probe.sh"` PASS（采集→判定→唤醒全链实测）
 - [ ] 策略变更可回滚：单条目策略用 `REFLEX_X_DEFER=0`；判据/阈值改回脚本默认值即热生效
 
 ## 限制
