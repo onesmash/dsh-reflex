@@ -45,6 +45,15 @@ version: 1.0.0
    - `wake_ledger.py`：从 reflex 日志 + DSH 会话正文还原每次唤醒的投递/用户回应/L2 动作，支持批量标注
    - `replay_wake_eval.py`：把回放通过条目按发布时间聚成"假设唤醒"，做唤醒级（OR 语义）评估
    - `wake_policy_sim.py`：策略仿真（baseline / wait / thresh / combo），输出精度、正例覆盖、每天唤醒量
+5. **因果敏感度审计**（`pc_inject.py`，Predictable Change，源自 CausalCoT arXiv:2610.31639）
+   回答"分数是因为**对的原因**在动，还是因为无关上下文"——阈值拟合证明"分得开"，本层证明"分得对"。
+   对 shadow 采样做四种有明确逻辑预期的算子，原始/扰动各打一次分（本地 SemIf，零 API）：
+   - 方向类：`strip_signal` 删内容提分、`swap_irrelevant` 换等长无关文本 → 期望降分（信号敏感度）
+   - 不变类：`noise_append` 追加无关噪声、`shuffle_fields` 字段重排 → 期望分数不动（反泄漏）
+   产出**判据指纹**：方向类 near≥90%/high≥95%、不变类 near≥85%/high≥95% 为过（mid/low 地板带仅诊断，
+   翻转率只作诊断——记录越贴近阈值越易翻）。总判定三态：通过/不通过/无法判定（样本不含决策区间记录）。
+   模板自适应：state 含 `正文: ` 走 fielded 四算子；纯标题源（如 ai-policy）走 blob 三算子（shuffle 标 n/a）。
+   可复现：`--snapshot-out` 存采样记录，之后 `--from-snapshot` 复跑，报告 `sample_hash` 一致才可逐项对比。
 
 ## 命令速查
 
@@ -76,6 +85,11 @@ python3 "$S/wake_ledger.py" --report "$REFLEX_HOME/shadow/wake-report.md"
 # 7) 回放构造唤醒 + 策略仿真
 python3 "$S/replay_wake_eval.py" --tag <tag> --export /tmp/wakes.jsonl
 python3 "$S/wake_policy_sim.py" --items /tmp/passed-items-labeled.json --days 5
+
+# 8) 因果敏感度审计（判据指纹）
+python3 "$S/pc_inject.py" --tag <tag> --days all --sample 100
+#    可复现: 首次加 --snapshot-out DIR, 之后 --from-snapshot DIR/pc-snapshot-*.jsonl 复跑
+#    纯标题源自动走 blob 模板; 强制: --template auto|fielded|blob; 报告在 $REFLEX_HOME/shadow/pc/
 ```
 
 ## target 侧约定
@@ -102,6 +116,11 @@ python3 "$S/wake_policy_sim.py" --items /tmp/passed-items-labeled.json --days 5
 5. **prompt 判据有边际**：v2.2/guard 模式实测劣于 v2.1（负结果），残余噪音应交给 L2 过滤，不是继续堆措辞。
 6. **单条 vs 多条**：单条目唤醒价值显著低于多条（37% vs 100%），故有 `wake_policy`；但窗口/阈值要用
    自己的数据重新拟合，别照抄 60 分钟/0.98。
+7. **shadow 记录的 `id` 不是唯一键**（x-timeline 是位置索引，同一推文多轮重复记录）：任何"重打分再对比"
+   的工具必须用**采样序号或 state_hash** 做载体键，直接用 id 会让分数互相覆盖（实测 MAE 假象 0.24）。
+   自校验：原 state 重打分的 MAE 必须 ≈0 才能拿来比；同时 SemIf 打分器是 create-only，重跑前清旧输出。
+8. **state 模板是判据的一部分**：字段顺序变化能翻转近线带 31% 的判定（x-timeline 实测 shuffle 65.4%）。
+   改模板 = 改判据，必须重跑 `pc_inject.py` 看指纹不退化。
 
 ## 验证清单
 
