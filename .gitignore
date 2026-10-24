@@ -30,8 +30,11 @@ __pycache__/
 #
 # 早期版本把这三份也在包内留了一副本并 seed 过去, 结果是同一个脚本两份:
 # 改了一份另一份不动, 插件跑的是旧的那份。现在插件只从统一目录读。
-collectors/
-targets/
-tools/
+# ⚠️ 根锚定: 无斜杠前缀的宽匹配会连 defaults/reflex-health/{collectors,targets}/
+# 一起吞掉 —— 0.3.3~0.3.7 的"收编"因此只存在于 npm 包, git 里是空的
+# (2026-10-24 发现, 修复 streak 时 git add 被拒才暴露)。
+/collectors/
+/targets/
+/tools/
 # 注意: index.js 里的内置采集器(disk/swap)是插件代码, 不在这三个目录里。
 research-nex/

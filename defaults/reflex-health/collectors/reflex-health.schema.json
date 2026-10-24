@@ -1,0 +1,23 @@
+{
+  "metric": "collector-failure | environment-failure | decision-failure | wake-failed | crash-loop | source-silent | recovered",
+  "fields": {
+    "key": "问题标识(meta.key), 形如 <kind>:<source>, target 的 fingerprint 用它",
+    "source": "出问题的数据源名(wake-failed / crash-loop 无此项)",
+    "count": "聚合窗口内出现次数",
+    "windowMinutes": "聚合窗口分钟数",
+    "firstAt": "首次出现时间(ISO8601 带时区)",
+    "lastAt": "最后出现时间",
+    "lastError": "最后一条错误原文(截断 300 字符)",
+    "reloads": "窗口内插件重载次数(crash-loop)",
+    "silentActiveMinutes": "该源在工作时段内已静默的分钟数(夜里不算)",
+    "thresholdMinutes": "该源的静默阈值",
+    "silentWallMinutes": "墙上时钟静默分钟数(含夜间, 供对照)",
+    "lastFactAt": "该源最近一条事实的时间",
+    "problem": "recovered 专用: 恢复掉的问题标识",
+    "kind": "recovered 专用: 原问题类型",
+    "lastedMinutes": "recovered 专用: 问题持续分钟数",
+    "since": "recovered 专用: 问题首次被报出的时间",
+    "sources": "environment-failure 专用: 同一窗口内以同一种系统级错误(EAGAIN/进程表满)失败的源列表(逗号分隔)"
+  },
+  "notes": "reflex 对自己的体检。正常时零输出; 只在异常时产出事实, 每类问题只报一次(key 去重), 恢复时补一条 recovered。工作时段由 l1.quietHours 推出: 静默检查只在工作时段评价, 夜里不算 —— 否则每天早上一片误报。事件型源(zoom-channel / jira-my-tasks)不查静默, 它们本来就长时间没消息。阈值与判据见脚本头部注释; 可用 REFLEX_HEALTH_STALE_MIN / FAIL_MIN / WAKE_FAIL_MIN / WINDOW_MIN / RELOAD_LIMIT 覆盖(默认: 采集失败 2 次/小时; >=3 个源同时 EAGAIN 合并为一条 environment-failure(可用 REFLEX_HEALTH_EXHAUST_MIN 调整), 投递失败 1 次/小时, 重载 20 次/小时, 静默 disk/swap 60 / mail 240 分钟; 其他源用 REFLEX_HEALTH_STALE_MIN='src=分钟' 覆盖)。注意本脚本查不出'插件整体死掉' —— 那时它自己也不会被调用, 那需要插件之外的看门狗。"
+}
