@@ -246,8 +246,10 @@ function install(rt, ctx, cfg) {
       for (const sub of ['collectors', 'targets']) {
         const srcDir = join(healthDefaults, sub)
         if (!existsSync(srcDir)) continue
+        // cfg.l0.collectorsDir 可能未配置(:312 插件自己的读取也带同样兜底) —— 不兜底会
+        // mkdirSync(undefined) 抛 TypeError 且被整个部署块的外层 catch 吞掉(2026-10-24 实测)。
         const dstDir = sub === 'collectors'
-          ? cfg.l0.collectorsDir
+          ? (cfg.l0.collectorsDir ?? join(cfg.l0.homeDir, 'collectors'))
           : (cfg.l1.targetsDir ?? join(cfg.l0.homeDir, 'targets'))
         mkdirSync(dstDir, { recursive: true })
         for (const e of readdirSync(srcDir)) {
