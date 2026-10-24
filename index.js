@@ -234,6 +234,36 @@ function install(rt, ctx, cfg) {
     }
   } catch (e) { log(`deploy skills fail: ${e.message}`) }
 
+  // ---------- 捆绑自检组件: defaults/reflex-health → 统一目录 (sync) ----------
+  // 为什么收编: reflex-health 扫描的是本插件自己的日志格式("L0 x failed"/"L1[x] error"),
+  // 与插件同源演进 —— 留在运行目录会随版本升级静默失配(日志改版=自检盲区, 无报错)。
+  // sync 策略: 与包内不同即覆盖(旧版双副本分歧的教训由"覆盖+备份"化解)。
+  // 用户本地改过时先留 .bak-user 再覆盖, 不静默丢定制。
+  try {
+    const healthDefaults = join(__dirname, 'defaults', 'reflex-health')
+    if (existsSync(healthDefaults)) {
+      let hn = 0
+      for (const sub of ['collectors', 'targets']) {
+        const srcDir = join(healthDefaults, sub)
+        if (!existsSync(srcDir)) continue
+        const dstDir = sub === 'collectors'
+          ? cfg.l0.collectorsDir
+          : (cfg.l1.targetsDir ?? join(cfg.l0.homeDir, 'targets'))
+        mkdirSync(dstDir, { recursive: true })
+        for (const e of readdirSync(srcDir)) {
+          const sf = join(srcDir, e.name), df = join(dstDir, e.name)
+          try {
+            if (existsSync(df) && readFileSync(df).equals(readFileSync(sf))) continue
+            if (existsSync(df)) { try { cpSync(df, df + '.bak-user', { force: true }) } catch {} }
+            cpSync(sf, df)
+            hn++
+          } catch (err) { log(`health file copy fail ${e.name}: ${err.message}`) }
+        }
+      }
+      if (hn) log(`health deployed: reflex-health (${hn} 个文件) → ${cfg.l0.homeDir}`)
+    }
+  } catch (e) { log(`health deploy fail: ${e.message}`) }
+
   // 投递服务: 用 ds-bot 同款机制 = ctx.sessionController.resolveAgent(sessionId) → agent.followup(message)
   // (schedule 服务在插件上下文不可见, 已探明; sessionController 是 ds-bot 必需服务, 对插件可见)
   let sessionCtrl = null
