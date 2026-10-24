@@ -519,6 +519,44 @@ check('ledger: 清零后新事故正常报',
       bool(o3 and o3['wake']) and bool(o3.get('items')),
       str(o3)[:120])
 
+print('== 采集器: 判定失败连续窗口升级 (2026-10-24 ai-policy 每小时1次x10h 隐身事故) ==')
+# 事故形态: 同源每小时 1 次 decision-failure, 60 分钟窗口内永远只有 1 次,
+# FAIL_MIN=2 的速率判据数学上永不触发 → 需要"连续 N 窗口"状态升级机制。
+DFL = lambda off=-120, src='ai-policy': (
+    f'[{iso(off)}] L1[{src}] error: exit 1: '
+    f'{src}: SemIf 打分脚本不存在: /x/scripts/scripts/shadow-semif.sh')
+ST3 = {'REFLEX_HEALTH_DECIDE_STREAK': '3'}
+
+h = fresh('d1')
+os.makedirs(os.path.join(h, 'collectors'), exist_ok=True)   # 源存在才报(防已删源刷屏守卫)
+open(os.path.join(h, 'collectors', 'ai-policy.sh'), 'w').write('#!/bin/bash\n')
+write_log(h, [DFL()])
+rc, facts, _ = run_col(h, ST3)
+check('streak: 连续第 1 窗 → 不报', not facts, str([f['meta']['key'] for f in facts]))
+write_log(h, [DFL()])
+rc, facts, _ = run_col(h, ST3)
+check('streak: 连续第 2 窗 → 不报', not facts, str([f['meta']['key'] for f in facts]))
+write_log(h, [DFL()])
+rc, facts, _ = run_col(h, ST3)
+keys = sorted(f['meta']['key'] for f in facts)
+check('streak: 连续第 3 窗 → 升级报 decision-failure',
+      keys == ['decision-failure:ai-policy'], str(keys))
+write_log(h, [CLEAN])
+rc, facts, _ = run_col(h, ST3)
+check('streak: 恢复 → recovered 事实',
+      any(f['metric'] == 'recovered' and f['raw'].get('problem') == 'decision-failure:ai-policy'
+          for f in facts), str([(f['metric'], f['raw'].get('problem')) for f in facts]))
+write_log(h, [DFL()])
+rc, facts, _ = run_col(h, ST3)
+write_log(h, [DFL()])
+rc, facts, _ = run_col(h, ST3)
+check('streak: 恢复后重新累计, 连续 2 窗仍不报', not facts,
+      str([f['meta']['key'] for f in facts]))
+write_log(h, [DFL()])
+rc, facts, _ = run_col(h, ST3)
+keys = sorted(f['meta']['key'] for f in facts)
+check('streak: 重置后再满 3 窗 → 再报', keys == ['decision-failure:ai-policy'], str(keys))
+
 print()
 bad = [r for r in results if not r[1]]
 print(f"总计 {len(results)} 项, 通过 {len(results) - len(bad)}, 失败 {len(bad)}")

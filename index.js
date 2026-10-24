@@ -662,7 +662,9 @@ function install(rt, ctx, cfg) {
       // target 脚本要调 SemIf 时用它, 不必写死路径
       // 默认走影子包装: 真实打分不变(REFLEX_SHADOW_REAL=run_score.sh), 但全量分数(含阈值以下)
       // 落盘 shadow/ 供阈值拟合/回放/A-B。防递归由 wrapper 自带; 保留策略见 shadow_record.py。
-      REFLEX_SEMIF_RUN: join(cfg.tuning.skillDir, 'scripts', 'shadow-semif.sh'),
+      // ⚠️ tuning.skillDir 默认已含 /scripts(defaults 处), 再拼一层会得到 scripts/scripts
+      // (2026-10-24 事故: ai-policy/edu-policy 判定层因此瘫痪 10h; 回归 tests/reflex-semif-degrade-regress.py)
+      REFLEX_SEMIF_RUN: join(cfg.tuning.skillDir, 'shadow-semif.sh'),
       REFLEX_SHADOW_REAL: join(cfg.semif.skillDir, 'scripts', 'run_score.sh'),
       // 调优工具目录 (shadow 包装 / 唤醒策略库), 随插件 skill 部署
       REFLEX_TUNING_DIR: cfg.tuning.skillDir,
