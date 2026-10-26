@@ -27,11 +27,8 @@ import sys
 import time
 
 DEFAULT_HOME = os.environ.get("REFLEX_HOME") or os.path.expanduser("~/.dsh/dsh-reflex")
-DEFAULT_PROFILE = (
-    "用户: 许辉, Zoom 的 iOS 客户端工程师。"
-    "技术栈 Swift/Objective-C/UIKit/SwiftUI; "
-    "专业兴趣: AI/LLM 技术、AI 编码工具、Apple 开发者生态、软件工程效率。"
-)
+# 用户画像由环境变量 REFLEX_PROFILE 提供(插件运行时注入); 不内置任何个人信息。
+DEFAULT_PROFILE = os.environ.get("REFLEX_PROFILE", "")
 
 
 def load_facts(home, source, days):
