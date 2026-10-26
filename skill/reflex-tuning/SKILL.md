@@ -1,7 +1,7 @@
 ---
 name: reflex-tuning
 description: "调优分层智能体(dsh-reflex)的 L1 判定：shadow 影子记录、历史回放、阈值拟合、判据 A/B、风险证书、校准、唤醒台账与单条目策略。Use when the user asks to tune thresholds, calibrate the local decision model, evaluate rubric changes, 拟合阈值, 校准, 判据 A/B, 影子模式, shadow, 唤醒策略, 或者想知道某个 target 该不该叫醒 L2. 本 skill 自包含：脚本、契约、坑与验证清单都在这里；路径由 REFLEX_HOME / $HOME 推导，不写死绝对路径。"
-version: 1.0.0
+version: 1.0.2
 ---
 
 # dsh-reflex 判定调优（shadow → 回放 → 拟合 → 策略）
@@ -126,6 +126,13 @@ bash "$S/reflex_e2e_probe.sh" --timeout 300
    自校验：原 state 重打分的 MAE 必须 ≈0 才能拿来比；同时 SemIf 打分器是 create-only，重跑前清旧输出。
 8. **state 模板是判据的一部分**：字段顺序变化能翻转近线带 31% 的判定（x-timeline 实测 shuffle 65.4%）。
    改模板 = 改判据，必须重跑 `pc_inject.py` 看指纹不退化。
+9. **state 的「上下文范围」也是判据**：喂多少上下文，比措辞更能左右判定。
+   - **会话型 target 只看「当前 thread」往往不够**：当对方新开一个 thread 回你（根消息可能是图片/附件、
+     文本为空）时，state 里看不到提问内容，模型会把「作答」误判成「请求」。应改取**会话级最近 N 条
+     （跨 thread）**，空消息补 `[附件: 文件名]` 之类占位，并用发送者标记区分「用户 / 对方」。
+   - **多分类判据要把「已知事实的用法」写进对应选项的 description**：例如某类事实命中时该选项就选它；
+     只把事实摆进 state、不告诉模型怎么用，模型会在语义相近的两个类别之间来回摆（平票 → 阈值边缘）。
+   所以调这类判据先问两句：**上下文够不够（跨条目/跨 thread）**、**已知事实有没有告诉模型怎么用**。
 
 ## 验证清单
 

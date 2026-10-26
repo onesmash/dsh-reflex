@@ -898,7 +898,18 @@ function install(rt, ctx, cfg) {
     const out = join(work, `res-${tag}.jsonl`)
     for (const f of [out, out.replace(/\.jsonl$/, '.summary.md')]) { try { if (existsSync(f)) unlinkSync(f) } catch {} }
     writeFileSync(inp, rows.map(r => JSON.stringify(r)).join('\n') + '\n')
-    await execFileP('bash', [runScore, '--input', inp, '--output', out, '--offline'], { timeout: timeoutMs })
+    const semifArgs = ['bash', [runScore, '--input', inp, '--output', out, '--offline'], { timeout: timeoutMs }]
+    try {
+      await execFileP(...semifArgs)
+    } catch (e1) {
+      // 2026-10-26: 瞬时失败（spawn EAGAIN / 资源抖动 / 网络中断窗口）会让整轮 L1 丢分，
+      // 重试一次即可恢复；第一次失败留下的半成品先清掉（run_score 是 create-only，
+      // 输出文件已存在会直接报错）。
+      log(`SemIf 打分失败，2s 后重试一次: ${e1.message}`)
+      await new Promise(r => setTimeout(r, 2000))
+      for (const f of [out, out.replace(/\.jsonl$/, '.summary.md')]) { try { if (existsSync(f)) unlinkSync(f) } catch {} }
+      await execFileP(...semifArgs)
+    }
     const res = new Map()
     for (const line of readFileSync(out, 'utf8').split('\n')) {
       const t = line.trim(); if (!t) continue

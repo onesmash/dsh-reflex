@@ -1,7 +1,7 @@
 ---
 name: reflex-datasource
 description: "为分层智能体(dsh-reflex)添加新的数据源/监控指标。Use when the user asks to add a new data source, new collector, new metric to monitor, 添加数据源, 新数据源, 采集 xxx 数据, 监控 xxx, 写一个收集脚本. Provides the DATASOURCE contract: collector script format, auto-discovery, config enablement. 完整契约/模板/验证清单在此 skill 内自包含；本机路径均由环境约定（REFLEX_HOME / $HOME）推导，不写死绝对路径。"
-version: 2.1.0
+version: 2.1.2
 ---
 
 # 添加分层智能体数据源
@@ -27,7 +27,7 @@ version: 2.1.0
    - source/ts 由插件补；脚本可读注入环境（`REFLEX_HOME`/CA 证书/PATH）
    - 脚本要幂等（多次调用不重复，如 mail 用 seen 去重）
 2. **启用** → 脚本源/脚本 target：**丢进目录即生效**（热发现，无需改配置、无需重启；移除文件即退出）。内置源仍在 profile 的 `l0.sources` 声明
-3. **验证** → 重启后日志出现 `auto-discovered script sources: [... <name>]`；数据进 `facts/<name>/`
+3. **验证** → 下一轮日志出现 `discovery refreshed: sources=[... <name> ...]`（**不需要重启**；落盘后下一轮扫描即生效）；数据进 `facts/<name>/`
 4. **（可选）增强**：
    - manifest `sourceSchema` 登记字段（让 L2 自主推理看懂）
    - `TARGETS` 加 target（异常时唤醒 L2）——只有这层需要 JS 代码
@@ -249,6 +249,25 @@ cat /tmp/cal/out/*.jsonl > all_results.jsonl
 
 - [ ] 每块 ≤40 行（**先看上一节**，这条是事故防线不是性能建议）
 - [ ] 校准前后各看一次 `df -h /System/Volumes/Data` 与 `du -sh /System/Volumes/VM`，异常增长立刻停
+
+## 生效边界：哪些改动不用重启，哪些必须重启
+
+**先分清，别默认「要重启」**——这是最容易搞错的一条，按下表判断：
+
+| 改动 | 生效方式 |
+|---|---|
+| `collectors/<name>.sh`、`collectors/<name>.env.json` | **热生效**，不用重启（目录/环境文件 mtime 签名变了就重扫） |
+| `targets/<name>.sh`、`targets/<name>.env.json` | **热生效**，不用重启 |
+| 脚本 target 是否启用 | **落盘即自动激活**，不用写进 profile 的 `l1.targets`（代码：`activeTargets = keys(ALL_TARGETS).filter(k => cfgSet.has(k) \|\| SCRIPT_TARGETS[k])`）；停用 = 删文件或加 `<name>.paused` |
+| profile 的 `l0.sources` / `l1.targets` / `quietHours` 等**配置** | 需要重启（进程启动时读） |
+| 插件本体 `index.js`（判定逻辑、重试、发现机制） | 需要重启（link: 安装也要重启进程才加载新代码） |
+| profile 里的 npm 包（`ds-bot`、各类 `dsh-*` 插件） | 需要重启（`dsh plugin --profile <p> add <pkg>@<ver>` 装完后重开 App） |
+
+**验证办法**（不要靠猜）：
+```bash
+grep "discovery refreshed" $REFLEX_HOME/dsh-reflex.log | tail -1
+# 看 sources=[...] 里有没有新 collector、script-targets=[...] 里有没有新 target
+```
 
 ## 注意
 
