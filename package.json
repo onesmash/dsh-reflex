@@ -5,6 +5,10 @@
   "type": "module",
   "main": "index.js",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/onesmash/dsh-reflex.git"
+  },
   "files": [
     "index.js",
     "client.js",
