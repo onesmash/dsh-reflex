@@ -9,7 +9,7 @@
 //   不修改原版 ds-bot 任何代码; 通过 ctx.get('schedule') + 读 bot state.json 定位目标会话。
 
 import { join, dirname } from 'node:path'
-import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync, statSync, cpSync, chmodSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync, statSync, cpSync, chmodSync, renameSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { execFile, spawn } from 'node:child_process'
 import Schema from '@deepseek-ai/schemastery'
@@ -165,6 +165,10 @@ function install(rt, ctx, cfg) {
   try { mkdirSync(cfg.l0.storeDir, { recursive: true }) } catch {}
   try { mkdirSync(cfg.l0.collectorsDir, { recursive: true }) } catch {}
   const logFile = cfg.l0.logFile
+  // 日志按大小轮转: 超过 8MB 就留一份 .1 再重开, 避免无限增长 (2026-10-27 清理时已 8.3MB)
+  try {
+    if (existsSync(logFile) && statSync(logFile).size > 8 * 1024 * 1024) renameSync(logFile, logFile + '.1')
+  } catch {}
   const log = (m, ...args) => {
     // 支持 printf 风格: 调用方写过 log('...%s...', x, y), 但旧实现只收一个参数,
     // 多余实参被静默丢掉 —— 日志里留下字面量 %s, 恰好把"哪个后端 / 去哪找 key"
@@ -901,16 +905,24 @@ function install(rt, ctx, cfg) {
       await execFileP(...semifArgs)
     }
     const res = new Map()
-    for (const line of readFileSync(out, 'utf8').split('\n')) {
-      const t = line.trim(); if (!t) continue
-      let o; try { o = JSON.parse(t) } catch { continue }
-      const probs = {}; (o.option_ids ?? []).forEach((id, i) => { probs[id] = (o.probabilities ?? [])[i] })
-      const vals = Object.keys(probs).map(k => probs[k])
-      res.set(String(o.id), {
-        winning: Object.keys(probs)[vals.indexOf(Math.max(...vals))],
-        pYes: probs.yes ?? 0,
-        probs,
-      })
+    try {
+      for (const line of readFileSync(out, 'utf8').split('\n')) {
+        const t = line.trim(); if (!t) continue
+        let o; try { o = JSON.parse(t) } catch { continue }
+        const probs = {}; (o.option_ids ?? []).forEach((id, i) => { probs[id] = (o.probabilities ?? [])[i] })
+        const vals = Object.keys(probs).map(k => probs[k])
+        res.set(String(o.id), {
+          winning: Object.keys(probs)[vals.indexOf(Math.max(...vals))],
+          pYes: probs.yes ?? 0,
+          probs,
+        })
+      }
+    } finally {
+      // 用完即删: 以前每轮决策都在 work/ 留下 dec-*/res-* 三个文件且永不清理,
+      // 半个月攒了 4.2 万个文件 / 165MB (2026-10-27 清理时发现)。
+      for (const f of [inp, out, out.replace(/\.jsonl$/, '.summary.md')]) {
+        try { if (existsSync(f)) unlinkSync(f) } catch {}
+      }
     }
     return res
   }
