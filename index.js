@@ -1059,8 +1059,23 @@ function install(rt, ctx, cfg) {
   // 注意: 必须持久化, 且 decideOnce 在没有新事实时也要跑 (否则"攒了但之后没新数据"就永远发不出去)。
   const pendingPath = join(dirname(cfg.l0.storeDir), 'pending-wakes.json')
   let pendingWakes = {}
-  try { if (existsSync(pendingPath)) pendingWakes = JSON.parse(readFileSync(pendingPath, 'utf8')) ?? {} } catch (e) { log(`pending read fail: ${e.message}`) }
+  // 从磁盘重读 pending (磁盘为准)。两个理由:
+  //   1) 插件热重载时新旧实例并存: 旧实例投递失败后写进 pending 的条目, 不能因为新实例
+  //      install 时读到的是旧快照、之后 savePending 整份覆盖写回而消失 (2026-10-27 10:39 实测:
+  //      arxiv-watch 的 8 条 pending 被新实例下一轮 savePending 整份覆盖, 补投丢了)。
+  //   2) 每轮决策前重读, 旧实例留下的 pending 才能被活着的那个实例补投出去。
+  function reloadPending() {
+    try {
+      if (!existsSync(pendingPath)) return pendingWakes
+      const disk = JSON.parse(readFileSync(pendingPath, 'utf8'))
+      if (disk && typeof disk === 'object') pendingWakes = disk
+    } catch (e) { log(`pending reload fail: ${e.message}`) }
+    return pendingWakes
+  }
+  reloadPending()
   function savePending(targetKey, ctx) {
+    // read-modify-write: 只改自己这个 key, 不把磁盘上别的实例写的条目整份盖掉
+    reloadPending()
     if (ctx) pendingWakes = { ...pendingWakes, [targetKey]: ctx }
     else { const rest = { ...pendingWakes }; delete rest[targetKey]; pendingWakes = rest }
     try { writeFileSync(pendingPath, JSON.stringify(pendingWakes)) } catch (e) { log(`pending write fail: ${e.message}`) }
@@ -1166,6 +1181,7 @@ function install(rt, ctx, cfg) {
 
   async function decideOnceInner() {
     refreshDiscovery()                 // 新脚本 target 落盘即生效 (与 L0 同一门控)
+    reloadPending()                    // 磁盘为准: 别的实例(热重载残留)写进 pending 的条目也要补投
     // 测试钩子: wake-test 标记 → 强制唤醒 (端到端验证; 走真实 disk target.render 产出结构化通知)
     try {
       const marker = join(dirname(cfg.l0.storeDir), 'wake-test')
