@@ -29,7 +29,8 @@ const DEFAULTS = {
   statePath: join(DSH_HOME, 'bot', 'state.json'),
   l0: {
     intervalMs: 60_000,
-    // 采集源在配置层决定(profile patch l0.sources), 插件默认最小; 可用: disk/cpu/uptime/mail/自写脚本源
+    // l0.sources 只门控【内置源】(disk/cpu); 脚本源 (collectors/*.sh) 按文件存在自动启用,
+    // drop-in 即采集 —— 新增数据源不需要改配置、不需要重启 (见 refreshDiscovery / test-hot-add-source)。
     sources: ['disk'],
     // 统一目录: 数据源工作区根 — collectors/ 脚本、facts/ 数据、manifest/状态全在此之下
     homeDir: process.env.REFLEX_HOME || join(DSH_HOME, 'dsh-reflex'),
@@ -41,8 +42,6 @@ const DEFAULTS = {
     targets: ['disk'],        // 启用的监控目标 (对应 TARGETS 注册表)
     hardRule: { lowAvailableGB: 20, highUsedPct: 90 },
     targetBot: 'Chief',       // L1 触发时唤醒 Chief 决策 (Chief 再派发执行 Bot)
-    escalateToChief: false,   // 目标就是 Chief, 无需再升级
-    chiefBot: 'Chief',
     cooldownMs: 30 * 60 * 1000,  // 同状态异常冷却: 30 分钟内不重复唤醒
     // 安静时段: 此区间内【内容类】target 的命中不打扰, 攒进 pending, 到点合并成一条摘要。
     // 硬规则 target(磁盘) 通过 interruptAlways 穿透。null = 不启用。
@@ -174,16 +173,6 @@ function install(rt, ctx, cfg) {
     try { appendFileSync(logFile, line + '\n') } catch {}
     try { ctx.logger?.info?.(line) } catch {}
   }
-  // 迁移: 旧版 layed-facts/ (旧默认 storeDir) → 新统一目录 homeDir/facts
-  try {
-    const legacyStore = join(DSH_HOME, 'bot', 'layered-facts')
-    if (legacyStore !== cfg.l0.storeDir && existsSync(legacyStore) && !existsSync(join(cfg.l0.storeDir, 'disk'))) {
-      for (const item of readdirSync(legacyStore)) {
-        try { cpSync(join(legacyStore, item), join(cfg.l0.storeDir, item), { recursive: true, force: true }) } catch {}
-      }
-      log(`L0: migrated legacy ${legacyStore} → ${cfg.l0.storeDir}`)
-    }
-  } catch (e) { log(`migrate legacy store fail: ${e.message}`) }
   // collectors/ 由使用者自己放在统一目录 —— 插件包【不内置】任何采集器。
   // 早期版本在包内也留一份并 seed 过来, 结果是同一脚本存在两份副本: 改了包内
   // 那份, 统一目录那份因为"已存在不覆盖"永远不更新, 插件实际跑的是旧版。
@@ -342,7 +331,8 @@ function install(rt, ctx, cfg) {
   // fact 形如 { source?, metric, raw, meta? }; source 缺省用源名; ts 缺省由 collectOnce 补
   //
   // 脚本源自动发现: 插件启动时扫描 <collectorsDir> (默认 REFLEX_HOME/collectors/), 每个 *.sh 自动注册为源,
-  // 源名 = 脚本文件名(去 .sh)。加一个脚本源 = 丢脚本到此目录 + 配置 l0.sources 启用, 无需改插件代码。
+  // 源名 = 脚本文件名(去 .sh)。加一个脚本源 = 丢脚本到此目录即可 (文件存在即启用),
+  // 【不需要】写进 profile 的 l0.sources、不需要重启; 去掉脚本或加 <name>.paused 即停。
   // 可选命名 companion 文件 <script>.env.json 提供该脚本源的 {intervalMs, env} 覆盖。
   const collectorsDir = cfg.l0.collectorsDir ?? join(cfg.l0.homeDir, 'collectors')
   const BUILTIN_SOURCES = {
@@ -1141,10 +1131,25 @@ function install(rt, ctx, cfg) {
   }
   rebuildActiveTargets()
 
+  // 实际生效的源 = 配置声明的内置源 ∪ 已发现的脚本源
+  const effectiveSources = () => {
+    const s = new Set(cfg.l0.sources ?? [])
+    for (const k of Object.keys(SCRIPT_SOURCES)) s.add(k)
+    return [...s].filter(k => SOURCES[k])
+  }
+  // 配置卫生: 把脚本源/脚本 target 写进 l0.sources / l1.targets 是冗余的 ——
+  // 它们按文件存在自动启用。点名提示, 免得以后又有人为了"启用"去改 profile 再重启。
+  function warnRedundantConfig() {
+    const redSrc = (cfg.l0.sources ?? []).filter(n => SCRIPT_SOURCES[n])
+    const redTgt = (cfg.l1.targets ?? []).filter(n => SCRIPT_TARGETS[n])
+    if (redSrc.length) log(`L0: l0.sources 里的 [${redSrc.join(',')}] 是脚本源, 已按文件存在自动启用; 可以删掉 (删了照样采集, 也不用重启)`)
+    if (redTgt.length) log(`L1: l1.targets 里的 [${redTgt.join(',')}] 是脚本 target, 已自动启用; 可以删掉 (删了照样跑)`)
+  }
+
   // ---------- 热发现: 新脚本源/target 落盘即生效, 无需重启 ----------
   // 门控: collectors/ 与 targets/ 的目录 mtime + .env.json mtime 签名变了才重扫
   // (空载成本 ≈ 两次 stat)。语义: 脚本源/target 以【文件存在】为准自动启用;
-  // 移除文件或 <name>.paused 即退出。内置源 (disk/mail/swap) 仍由 l0.sources 配置门控。
+  // 移除文件或 <name>.paused 即退出。只有【内置源/内置 target】(disk/cpu) 由 l0.sources / l1.targets 门控。
   let lastDiscSig = null
   function discoverySig() {
     const mt = (p) => { try { return statSync(p).mtimeMs } catch { return 0 } }
@@ -1162,6 +1167,7 @@ function install(rt, ctx, cfg) {
     scanScriptTargets()
     rebuildScriptLayer()
     rebuildActiveTargets()
+    warnRedundantConfig()
     lastDiscSig = discoverySig()
     const after = `${Object.keys(SCRIPT_SOURCES).join(',')}|${Object.keys(SCRIPT_TARGETS).join(',')}`
     if (before !== after) {
@@ -1290,7 +1296,7 @@ function install(rt, ctx, cfg) {
   // cordis effect(setup): 立即调用 setup, 其返回值才是 dispose 回调 (照 ds-bot 惯例双箭头)
   try { ctx.effect(() => () => { clearInterval(t0); clearInterval(t1) }, 'dsh-reflex: L0/L1 timers') } catch {}
 
-  log(`dsh-reflex installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}" sources=[${cfg.l0.sources.join(',')}] targets=[${activeTargets.join(',')}]`)
+  log(`dsh-reflex installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}" sources=[${effectiveSources().join(',')}] targets=[${activeTargets.join(',')}]`)
   // scriptEnv 一并返回: 密钥注入是"必须可验证"的逻辑(读代码相信不算证据),
   // 测试直接调它比对环境变量, 不必真跑一轮采集。
   return { collectOnce, decideOnce, wakeL2, scriptEnv }

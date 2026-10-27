@@ -49,11 +49,13 @@ __pycache__/ *.pyc
 
 | 放哪 | 生效 | 适合 |
 |---|---|---|
-| `targets/<name>.sh` 脚本内 | **立即** | 判据文字、判定逻辑、阈值表达式 |
-| `collectors/<name>.env.json` / `targets/<name>.env.json` | **要重启** | 采集间隔、超时、本机标识、别名 |
-| profile 的 `cordis.patch.yml` | **要重启** | 启用哪些源/目标、安静时段、用户画像 |
+| `targets/<name>.sh` 脚本内 | **立即**（每轮重新 `bash` 执行） | 判据文字、判定逻辑、阈值表达式 |
+| `collectors/<name>.env.json` / `targets/<name>.env.json` | **立即**（目录签名热发现会重扫，含 env 与间隔） | 采集间隔、超时、本机标识、别名 |
+| profile 的 `cordis.patch.yml` | **插件热重载**（几秒；不需要重启 DSH，但会重载插件、有短暂窗口） | 安静时段、用户画像、**内置**源/目标（disk/cpu）的启停 |
 
-（原因：`.env.json` 是插件**启动时读一次**；而脚本 target 每轮都是全新 `bash` 执行。）
+**都不需要重启 DSH。** 脚本源/脚本 target 连配置都不用改 —— 文件存在即启用（drop-in 热发现）。
+profile 只写内置源/内置 target；把脚本源/脚本 target 写进 `l0.sources` / `l1.targets` 是冗余的，
+启动日志会点名提醒（"可以删掉"）。
 
 ## 1. 规则速览
 
@@ -61,12 +63,13 @@ __pycache__/ *.pyc
 |---|---|---|
 | 1 | 写一个 collector 脚本（`.sh` 或内置） | 否 |
 | 2 | 把脚本放到 **统一目录** `~/.dsh/dsh-reflex/collectors/` | 否 |
-| 3 | （脚本源）丢进 `collectors/` 即自动启用 —— 热发现, 无需重启。内置源仍在 `cordis.patch.yml` 的 `l0.sources` 里启用 | 否 |
+| 3 | 丢进 `collectors/` 即自动启用 —— 热发现，**无需改配置、无需重启**。只有内置源(disk/cpu)才写进 `cordis.patch.yml` 的 `l0.sources` | 否 |
 | 4 | （可选）写 `<name>.schema.json` 让该源在 manifest 里自描述 | 否 |
 | 5 | （可选）写 L1 target 脚本放 `targets/` —— 丢进去即自动启用（热发现） | 否 |
 | 6 | （极少）target 需要趋势计算/跨源关联时才写进插件 `TARGETS` | 是 |
 
-**核心原则**：加数据源 = 写脚本 + 配置启用，**不改插件核心代码**。
+**核心原则**：加数据源 = **只写脚本**（放对目录即启用），不改配置、不改插件核心代码、不重启。
+内置源(disk/cpu)才需要写进 `l0.sources`。
 L0 采集和 L1 判定**都是脚本驱动的**，两者同一套契约（自动发现、`.env.json`、env 注入、超时、失败隔离）。
 
 ## 2. Collector 契约（脚本必须遵守）
