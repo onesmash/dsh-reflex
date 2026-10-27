@@ -37,6 +37,34 @@ LHOME = os.environ.get('LHOME') or os.path.expanduser('~/.dsh/dsh-reflex')
 # 提醒台阶(小时) —— 按问题类别分两套, 见下面节流处的说明
 STEP_HOURS = {'infra': (1, 3, 6, 12), 'source': (6, 24, 72, 168)}
 
+# 2026-10-26: 构建饱和期的「采集失败」是环境噪声, 不叫醒用户。
+#   实测: load5 36~64(24 个 clang 在编译用户自己的 iOS 工程) 时, global-risk / x-timeline /
+#   formalpedia / edu-policy / or-drive 成片报 Command failed —— 都是网络/子进程在饱和下超时,
+#   构建一停就自愈。这类失败对 L2 没有可行动信息(用户不会因为"编译时 X 源超时"去做什么)。
+#   判据取 cpu-top 最新事实: load5 ≥ 核数 × 2.5 且 buildProcs ≥ 3 (与 cpu-load 的编译期豁免同源)。
+#   只压 collector-failure/executor-exception —— 「叫不醒 L2」「插件重载风暴」照报。
+#   构建结束后的失败照旧上报; 0 = 关闭这条抑制。覆盖: REFLEX_HEALTH_BUILD_LOAD_X / REFLEX_HEALTH_BUILD_MIN
+BUILD_LOAD_X = float(os.environ.get('REFLEX_HEALTH_BUILD_LOAD_X', '2.5'))
+BUILD_MIN_PROCS = int(os.environ.get('REFLEX_HEALTH_BUILD_MIN', '3'))
+
+
+def build_saturated():
+    if BUILD_LOAD_X <= 0:                  # 0 = 关闭这条抑制
+        return False
+    try:
+        import glob as _g
+        l5 = cores = bp = None
+        for p in sorted(_g.glob(os.path.join(LHOME, 'facts/cpu-top/*.jsonl')))[-2:]:
+            lines = [x for x in open(p, encoding='utf-8') if x.strip()]
+            if lines:
+                raw = (json.loads(lines[-1]) or {}).get('raw') or {}
+                l5, cores, bp = raw.get('load5'), raw.get('cores'), raw.get('buildProcs')
+        if not l5 or not cores:
+            return False
+        return l5 >= cores * BUILD_LOAD_X and (bp or 0) >= BUILD_MIN_PROCS
+    except Exception:
+        return False
+
 KIND_CN = {
     'collector-failure': '采集失败',
     'decision-failure': '判定失败',
@@ -169,6 +197,7 @@ def describe(f):
 
 
 items_by_key, kinds = {}, {}
+build_skipped = 0
 for f in facts:
     d = describe(f)
     if not d:
@@ -182,6 +211,11 @@ for f in facts:
         continue
     k = key_of(f)
     if active is not None and k not in active:     # 已经恢复/不再活跃的旧问题, 不带进唤醒
+        continue
+    if (f.get('metric') == 'collector-failure'
+            and (f.get('raw') or {}).get('failureClass') == 'executor-exception'
+            and build_saturated()):                # 构建饱和期的环境噪声, 见文件头 2026-10-26
+        build_skipped += 1
         continue
     # 提醒节流 —— 必须由本脚本自己管, 不能指望 item id:
     #   插件有条规定是「同一内容 + 过了 cooldownMs(30 分钟) → 当作重新关注」, 所以只要问题还在,
@@ -222,7 +256,9 @@ if not items:
             json.dump(keep, fh)
         os.replace(tmp, TSTATE)
     print(json.dumps({'wake': False, 'scanned': len(facts),
-                      'reason': f'扫描 {len(facts)} 条, 无异常(或全部为恢复记录)'}, ensure_ascii=False))
+                      'reason': f'扫描 {len(facts)} 条, 无异常(或全部为恢复记录)'
+                                + (f'; 构建饱和期跳过 {build_skipped} 条采集失败' if build_skipped else '')},
+                     ensure_ascii=False))
     sys.exit(0)
 
 # 真的要叫了 → 记台账(顺手把已经不在活跃列表里的 key 清掉, 免得无限增长)

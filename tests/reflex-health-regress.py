@@ -57,8 +57,9 @@ def run_col(home, env=None):
     return p.returncode, [json.loads(l) for l in p.stdout.splitlines() if l.strip()], p.stderr
 
 
-def run_tgt(home, facts):
+def run_tgt(home, facts, env=None):
     e = dict(os.environ, REFLEX_HOME=home)
+    e.update(env or {})
     inp = ''.join(json.dumps(f) + '\n' for f in facts)
     p = subprocess.run(['bash', TGT], input=inp, capture_output=True, text=True, env=e)
     out = [json.loads(l) for l in p.stdout.splitlines() if l.strip()]
@@ -556,6 +557,65 @@ write_log(h, [DFL()])
 rc, facts, _ = run_col(h, ST3)
 keys = sorted(f['meta']['key'] for f in facts)
 check('streak: 重置后再满 3 窗 → 再报', keys == ['decision-failure:ai-policy'], str(keys))
+
+print('== 2026-10-26: 构建饱和期的采集失败不叫醒 ==')
+
+
+def sat_home(name, load5=52, cores=12, build=30):
+    h = fresh(name)
+    os.makedirs(os.path.join(h, 'facts', 'cpu-top'), exist_ok=True)
+    with open(os.path.join(h, 'facts', 'cpu-top', '2026-10-26.jsonl'), 'w') as fh:
+        fh.write(json.dumps({'ts': int(NOW * 1000), 'metric': 'load',
+                             'raw': {'load1': 60, 'load5': load5, 'load15': 40,
+                                     'cores': cores, 'buildProcs': build, 'top': []}}) + '\n')
+    return h
+
+
+def cf_fact(src='global-risk', fc='executor-exception'):
+    return {'metric': 'collector-failure',
+            'raw': {'kind': 'collector-failure', 'source': src, 'count': 2, 'windowMinutes': 60,
+                    'firstAt': iso(-1200), 'lastAt': iso(-60), 'lastError': 'Command failed',
+                    'failureClass': fc},
+            'meta': {'key': f'collector-failure:{src}', 'check': 'log-scan', 'window': '60m'}}
+
+
+def wf_fact():
+    return {'metric': 'wake-failed',
+            'raw': {'kind': 'wake-failed', 'count': 2, 'windowMinutes': 5,
+                    'firstAt': iso(-300), 'lastAt': iso(-60), 'lastError': 'L2 wake failed'},
+            'meta': {'key': 'wake-failed:-', 'check': 'log-scan', 'window': '5m'}}
+
+
+h = sat_home('sat-fail')
+rc, out, _ = run_tgt(h, [cf_fact()])
+check('构建饱和(load5 52/12核, 30 个 clang)期采集失败 → 不叫醒',
+      bool(out and out.get('wake') is False), str(out)[:150])
+check('抑制在 reason 里留痕', bool(out and '构建饱和期跳过' in (out.get('reason') or '')), str(out)[:150])
+
+h = sat_home('sat-wakefail')
+rc, out, _ = run_tgt(h, [wf_fact()])
+check('构建饱和期「叫不醒 L2」→ 照报(整条链断了, 不抑制)',
+      bool(out and out.get('wake')), str(out)[:150])
+
+h = sat_home('sat-class')
+rc, out, _ = run_tgt(h, [cf_fact(src='mail', fc='precondition-mismatch')])
+check('构建饱和期但失败类不是执行环境异常 → 照报',
+      bool(out and out.get('wake')), str(out)[:150])
+
+h = sat_home('idle-fail', load5=8, cores=12, build=0)
+rc, out, _ = run_tgt(h, [cf_fact()])
+check('非构建期采集失败 → 照报(抑制不外溢)',
+      bool(out and out.get('wake')), str(out)[:150])
+
+h = sat_home('load-only', load5=52, cores=12, build=0)
+rc, out, _ = run_tgt(h, [cf_fact()])
+check('高负载但没有编译进程 → 照报(只豁免真在编译)',
+      bool(out and out.get('wake')), str(out)[:150])
+
+h = sat_home('sat-off')
+rc, out, _ = run_tgt(h, [cf_fact()], {'REFLEX_HEALTH_BUILD_LOAD_X': '0'})
+check('抑制可关(REFLEX_HEALTH_BUILD_LOAD_X=0) → 照报',
+      bool(out and out.get('wake')), str(out)[:150])
 
 print()
 bad = [r for r in results if not r[1]]
