@@ -120,6 +120,7 @@ cd /绝对路径/dsh-reflex && pnpm install
 | `l1.cooldownMs` | 1800000 | 同状态冷却，避免重复唤醒 |
 | `l1.quietHours` | `null` | 安静时段：内容类命中不打扰，攒到时段结束合并成一条 |
 | `l1.profile` | `''` | 用户画像，组装判定 context 用 |
+| `l1.semifResident` | `true` | 常驻 SemIf 打分器：模型只加载一次（单次 ~11.9s → ~0.7s），不可用自动回退直调；`false` = 每次直调 |
 
 **决策后端**可切换（`backend` 字段）：本地 SemIf（默认，不联网）或托管 Jev。适配层在 `tools/semif-adapt.py`。
 
@@ -134,6 +135,7 @@ cd /绝对路径/dsh-reflex && pnpm install
 ├── collectors/     <name>.sh → 自动注册为采集源（配 <name>.env.json 提供参数）
 ├── targets/        <name>.sh → 自动注册为判定目标
 ├── tools/          判定脚本可以调用的工具
+├── runtime/        插件自带的运行时组件（常驻 SemIf 打分器），随插件版本同步，别手改
 ├── facts/          L0 采集到的原始事实（按源/日期分文件）
 └── dsh-reflex.log
 ```
@@ -147,6 +149,7 @@ index.js              宿主侧: L0 调度 + L1 判定 + 唤醒投递
 client.js             面板侧: 配置表单
 cordis.patch.yml      挂载声明
 DATASOURCE.md         数据源开发契约
+defaults/             随插件分发的运行时组件（reflex-health / semif-resident），启动时同步
 skill/                随插件分发的能力包
 tests/                回归测试
 ```

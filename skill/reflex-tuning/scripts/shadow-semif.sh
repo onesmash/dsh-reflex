@@ -7,14 +7,17 @@
 #   全源生效, 而且 target 的判定逻辑一行都不用动。
 #
 # 契约 (必须与 run_score.sh 完全一致)
-#   - 参数原样透传; 退出码原样返回; stdout/stderr 原样
+#   - 参数原样透传; 退出码原样返回; stdout 为空
 #   - 记录失败绝不影响判定: 记录器 `|| true`, 且不向 stdout 写任何东西
 #   - 真实打分脚本由 REFLEX_SEMIF_RUN 指定 (插件注入), 未设置时用 skill 默认路径
+#   - 打分优先走常驻服务 ($REFLEX_HOME/runtime/semif-resident/call.sh), 不可用则原样
+#     回退直调 bash "$REAL"; 两条路径的产物与退出码一致, 影子记录照旧
 #
 # 环境
 #   REFLEX_TARGET       target 名 (插件注入), 作为 shadow 文件的分类
 #   REFLEX_SHADOW_MODE   live(默认) | replay
 #   REFLEX_HOME         运行目录 (默认 ~/.dsh/dsh-reflex)
+#   REFLEX_SEMIF_RESIDENT 0=关闭常驻, 直调 (插件配置 l1.semifResident=false 时注入)
 #   记录器与本脚本同目录 (skill/reflex-tuning/scripts/), 不依赖运行目录里的副本
 
 set -uo pipefail
@@ -39,8 +42,23 @@ for ((i = 0; i < ${#args[@]}; i++)); do
   esac
 done
 
-bash "$REAL" "$@"
-rc=$?
+# ---------- 常驻优先（2026-11-02） ----------
+# 组件随插件分发到 $REFLEX_HOME/runtime/semif-resident/（defaults/semif-resident/）。
+# 为什么挂在这里: 所有脚本 target 的打分都经过本 wrapper, 一处接入全源生效。
+# 契约不变: 常驻只负责"更便宜地跑出同样的打分文件"; 失败(非 0)一律回退直调。
+# 关闭: REFLEX_SEMIF_RESIDENT=0（插件配置 l1.semifResident=false 时注入）。
+# 注意: 常驻命中时不会出现 run_score.sh 的 [semif-run] 进度行, 但 stdout 仍然为空、
+#       产物与退出码与直调一致 —— target 只依赖产物与退出码。
+RESIDENT_CALL="${REFLEX_HOME:-$HOME/.dsh/dsh-reflex}/runtime/semif-resident/call.sh"
+rc=3
+if [ "${REFLEX_SEMIF_RESIDENT:-1}" != "0" ] && [ -n "$IN" ] && [ -n "$OUT" ] && [ -f "$RESIDENT_CALL" ]; then
+  bash "$RESIDENT_CALL" "$@"
+  rc=$?
+fi
+if [ "$rc" -ne 0 ]; then
+  bash "$REAL" "$@"
+  rc=$?
+fi
 
 if [ "$rc" -eq 0 ] && [ -n "$IN" ] && [ -s "$IN" ] && [ -n "$OUT" ] && [ -s "$OUT" ]; then
   python3 "$(cd "$(dirname "$0")" && pwd)/shadow_record.py" \

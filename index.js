@@ -48,6 +48,10 @@ const DEFAULTS = {
     quietHours: null,            // 例: { from: '18:00', to: '09:00' }
     // 用户画像: 内容类 target(如 feed-timeline)组装 SemIf 决策 context 用 —— 建议在 profile patch 里覆盖
     profile: '',
+    // SemIf 常驻打分器 (defaults/semif-resident → $REFLEX_HOME/runtime/semif-resident/):
+    // 默认开。模型只加载一次, 单次打分从 ~11.9s 降到 ~0.7s; 常驻不可用时自动回退直调。
+    // false = 注入 REFLEX_SEMIF_RESIDENT=0, 回到每次直调 run_score.sh。
+    semifResident: true,
     // 内容类 target 的参数现在归 target 自己的 env.json 管 (targets/<name>.env.json 的 env 段),
     // 例如 feed-timeline 的阈值/候选数走 REFLEX_X_THRESHOLD / REFLEX_X_MAX_CANDIDATES。
     // 唤醒闸门缺省跟随该源采集间隔, 见 ALL_TARGETS 里的 minIntervalMs。
@@ -261,6 +265,33 @@ function install(rt, ctx, cfg) {
       if (hn) log(`health deployed: reflex-health (${hn} 个文件) → ${cfg.l0.homeDir}`)
     }
   } catch (e) { log(`health deploy fail: ${e.message}`) }
+
+  // ---------- 常驻打分器: defaults/semif-resident → $REFLEX_HOME/runtime/semif-resident (sync) ----------
+  // 为什么收编: 常驻进程的 socket 协议、create-only 语义、校验器调用必须与插件版本同源;
+  // 留在运行目录会随版本升级静默失配(协议变了 → 打分一直走回退, 看不出来)。
+  // 与 reflex-health 同策略: 内容不同即覆盖, 用户改过先留 .bak-user 再覆盖。
+  try {
+    const residentDefaults = join(__dirname, 'defaults', 'semif-resident')
+    if (existsSync(residentDefaults)) {
+      const dstDir = join(cfg.l0.homeDir, 'runtime', 'semif-resident')
+      mkdirSync(dstDir, { recursive: true })
+      let rn = 0
+      for (const e of readdirSync(residentDefaults, { withFileTypes: true })) {
+        if (e.isDirectory() || e.name === '.DS_Store') continue
+        const s = join(residentDefaults, e.name), d = join(dstDir, e.name)
+        try {
+          if (existsSync(d) && readFileSync(d).equals(readFileSync(s))) continue
+          if (existsSync(d)) { try { cpSync(d, d + '.bak-user', { force: true }) } catch {} }
+          cpSync(s, d)
+          if (e.name.endsWith('.sh') || e.name.endsWith('.py')) {
+            try { chmodSync(d, 0o755) } catch {}
+          }
+          rn++
+        } catch (err) { log(`semif-resident file copy fail ${e.name}: ${err.message}`) }
+      }
+      if (rn) log(`semif-resident deployed: ${rn} 个文件 → ${dstDir}`)
+    }
+  } catch (e) { log(`semif-resident deploy fail: ${e.message}`) }
 
   // 投递服务: 用 ds-bot 同款机制 = ctx.sessionController.resolveAgent(sessionId) → agent.followup(message)
   // (schedule 服务在插件上下文不可见, 已探明; sessionController 是 ds-bot 必需服务, 对插件可见)
@@ -660,6 +691,8 @@ function install(rt, ctx, cfg) {
       // (2026-10-24 事故: ai-policy/edu-policy 判定层因此瘫痪 10h; 回归 tests/reflex-semif-degrade-regress.py)
       REFLEX_SEMIF_RUN: join(cfg.tuning.skillDir, 'shadow-semif.sh'),
       REFLEX_SHADOW_REAL: join(cfg.semif.skillDir, 'scripts', 'run_score.sh'),
+      // 常驻打分器开关 (shadow wrapper 读): '1' 先试常驻、失败回退直调; '0' 完全直调。
+      REFLEX_SEMIF_RESIDENT: cfg.l1.semifResident === false ? '0' : '1',
       // 调优工具目录 (shadow 包装 / 唤醒策略库), 随插件 skill 部署
       REFLEX_TUNING_DIR: cfg.tuning.skillDir,
       ...(extra ?? {}),
@@ -892,9 +925,26 @@ function install(rt, ctx, cfg) {
     const out = join(work, `res-${tag}.jsonl`)
     for (const f of [out, out.replace(/\.jsonl$/, '.summary.md')]) { try { if (existsSync(f)) unlinkSync(f) } catch {} }
     writeFileSync(inp, rows.map(r => JSON.stringify(r)).join('\n') + '\n')
-    const semifArgs = ['bash', [runScore, '--input', inp, '--output', out, '--offline'], { timeout: timeoutMs }]
+    // 打分优先常驻（defaults/semif-resident 同步到运行目录）:
+    // disk 这个内置 target 不经过 shadow wrapper, 这里单独接一次。
+    // call.sh 的契约: 退出 0 = 已完成打分; 非 0 = 不可用, 回退直调 run_score.sh。
+    const semifCall = join(cfg.l0.homeDir, 'runtime', 'semif-resident', 'call.sh')
+    const residentOn = cfg.l1.semifResident !== false && existsSync(semifCall)
+    const runScoring = async () => {
+      if (residentOn) {
+        try {
+          await execFileP('bash', [semifCall, '--input', inp, '--output', out], { timeout: timeoutMs })
+          return
+        } catch (e) {
+          // create-only: 常驻失败可能留下半成品, 先清再回退
+          for (const f of [out, out.replace(/\.jsonl$/, '.summary.md')]) { try { if (existsSync(f)) unlinkSync(f) } catch {} }
+          log(`常驻打分失败，回退直调: ${e.message}`)
+        }
+      }
+      await execFileP('bash', [runScore, '--input', inp, '--output', out, '--offline'], { timeout: timeoutMs })
+    }
     try {
-      await execFileP(...semifArgs)
+      await runScoring()
     } catch (e1) {
       // 2026-10-26: 瞬时失败（spawn EAGAIN / 资源抖动 / 网络中断窗口）会让整轮 L1 丢分，
       // 重试一次即可恢复；第一次失败留下的半成品先清掉（run_score 是 create-only，
@@ -902,7 +952,7 @@ function install(rt, ctx, cfg) {
       log(`SemIf 打分失败，2s 后重试一次: ${e1.message}`)
       await new Promise(r => setTimeout(r, 2000))
       for (const f of [out, out.replace(/\.jsonl$/, '.summary.md')]) { try { if (existsSync(f)) unlinkSync(f) } catch {} }
-      await execFileP(...semifArgs)
+      await runScoring()
     }
     const res = new Map()
     try {
