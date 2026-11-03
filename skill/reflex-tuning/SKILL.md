@@ -140,7 +140,7 @@ bash "$S/reflex_e2e_probe.sh" --timeout 300
 - [ ] 回放批次与逐条分数一致（抽 3 条手跑对比）
 - [ ] 拟合报告里 `通过量` 与 `P/R` 同时给出，且带固定基线（always-wake / always-suppress / 同量随机）
 - [ ] 证书带样本量规划；小样本不下结论
-- [ ] target 改动后：`python3 <repo>/tests/shadow-regress.py`（运行时）或 `python3 tests/test-tuning-tools.py`（仓库）
+- [ ] target 改动后：`python3 <repo>/tests/reflex-shadow-regress.py`（运行时）或 `python3 tests/test-tuning-tools.py`（仓库；tests/ 仅仓库，不随 npm 包发布）
 - [ ] target/采集源改动后：`bash "$S/reflex_e2e_probe.sh"` PASS（采集→判定→唤醒全链实测）
 - [ ] 策略变更可回滚：单条目策略用 `REFLEX_X_DEFER=0`；判据/阈值改回脚本默认值即热生效
 

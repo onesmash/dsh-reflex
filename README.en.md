@@ -145,7 +145,7 @@ client.js             panel side: the config form
 cordis.patch.yml      mount declaration
 DATASOURCE.md         data-source development contract
 skill/                capability packs distributed with the plugin
-tests/                regression tests
+tests/                regression tests (repo only, not published to npm)
 ```
 
 ## Third party

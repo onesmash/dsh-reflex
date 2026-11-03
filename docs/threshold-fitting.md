@@ -46,7 +46,7 @@
 | `skill/reflex-tuning/scripts/risk_certificate.py` | 风险证书：Clopper-Pearson 精确单侧界（精度下界/误报率上界/召回下界）+ 样本量规划 |
 | `skill/reflex-tuning/scripts/calibration.py` | 校准评估：恒等/Platt/Isotonic、ECE/Brier/LogLoss（5 折 CV）、按代价比反推阈值 |
 | `$REFLEX_HOME/tools/shadow_targets.json` | tag → 当前阈值（运行目录配置，不属于 skill） |
-| `tests/shadow-regress.py` | 37 项回归：包装器、回放、拟合器、A/B、结果台账、风险证书、基线、校准 |
+| `tests/reflex-shadow-regress.py` | 37 项回归：包装器、回放、拟合器、A/B、结果台账、风险证书、基线、校准（仅仓库，不随 npm 包发布） |
 
 ## 第一次实验结果（x-timeline，2026-10-16 ~ 10-18）
 
@@ -295,7 +295,7 @@ live 唤醒一天只有几条，攒 30-40 条要一周。`skill/reflex-tuning/sc
 - 暂存超过 `REFLEX_X_WAIT_MIN`（默认 60 分钟）自动过期丢弃；
 - 开关：`REFLEX_X_DEFER=0` 回到旧行为（单条即发）；阈值/窗口都可热改（改脚本或 env 默认值）。
 
-回归测试（`tests/shadow-regress.py` 第 3 组）覆盖：单条暂存 / 第二条到达合并 / 高置信立即发 /
+回归测试（`tests/reflex-shadow-regress.py` 第 3 组，仓库内）覆盖：单条暂存 / 第二条到达合并 / 高置信立即发 /
 过期清理 / shadow 仍记录全量打分。50/50 通过。
 
 **端到端验证**（模拟时间回放：把 10-17 的 299 条 facts 按 40 条一批喂给新 target，
@@ -363,9 +363,9 @@ python3 "$S/threshold_fit.py" --tag x-timeline --mode replay --export-sample 120
 # 拟合（R 列表可调）
 python3 "$S/threshold_fit.py" --tag x-timeline --mode replay --ratios 1,2,4,8,16
 
-# 回归（仓库侧脚本契约测试 + 运行时 target 回归）
-python3 ~/SourceCode/dsh-reflex/tests/test-tuning-tools.py
-python3 tests/shadow-regress.py
+# 回归（仓库侧脚本契约测试 + 运行时 target 回归；tests/ 只在仓库）
+python3 tests/test-tuning-tools.py
+python3 tests/reflex-shadow-regress.py
 ```
 
 改阈值：改 `targets/<tag>.sh` 里的 `THRESHOLD=` 默认值（热生效）；

@@ -32,7 +32,7 @@
 ### 什么进仓库、什么不进
 
 **进：** `index.js`、`client.js`、`cordis.patch.yml`、`package.json`、`DATASOURCE.md`、
-`tests/`、`skill/`(随插件分发的能力包)
+`tests/`（仅仓库，不随 npm 包发布）、`skill/`(随插件分发的能力包)
 
 **不进**（已在 `.gitignore`）：`collectors/`、`targets/`、`tools/` —— 整个目录都不进。
 
@@ -605,6 +605,7 @@ DSH 的 `settings` 服务只渲染 **`.volatile()` 声明的字段**；不标就
 否则宿主**致命崩溃**（`DesktopHostFatalError`，整个 DSH 起不来）。client 半侧用
 `ctx.slots.inject('plugins.row.config', ...)` 注册，key 是 `<包名>#<行 id>`。
 上线前跑 `node tests/check-client-bundle.mjs`（它会检查成对性/导出/依赖，并复现过崩溃条件）。
+`tests/` 只存在于仓库，不随 npm 包发布，所以下面几条"测试锁死"的记录都要在仓库里跑。
 
 **⚠️ 工具改动 profile patch 时，绝不要做整份 YAML 往返。**
 

@@ -151,7 +151,7 @@ cordis.patch.yml      挂载声明
 DATASOURCE.md         数据源开发契约
 defaults/             随插件分发的运行时组件（reflex-health / semif-resident），启动时同步
 skill/                随插件分发的能力包
-tests/                回归测试
+tests/                回归测试（仅仓库，不随 npm 包发布）
 ```
 
 ## 第三方
