@@ -50,15 +50,42 @@ done
 # 注意: 常驻命中时不会出现 run_score.sh 的 [semif-run] 进度行, 但 stdout 仍然为空、
 #       产物与退出码与直调一致 —— target 只依赖产物与退出码。
 RESIDENT_CALL="${REFLEX_HOME:-$HOME/.dsh/dsh-reflex}/runtime/semif-resident/call.sh"
+# ---------- 决策后端分流（2026-11-11 本机补丁） ----------
+# jev/jevlocal: 改调 SystemOne CLI，既不碰本地 MLX 也不异常驻。
+# 为什么必须在这里分：shadow 记录 / 历史回放 / 判据 A/B / 新判据打分四条链都经过本
+# wrapper，只在这一处分流，四条链一起恢复。CLI 输出仍是 SemIf 格式，
+# 所以下面的 shadow_record.py 与所有下游消费者都不用改。
+DECIDE_BACKEND="${REFLEX_DECIDE_BACKEND:-}"
+JEV_SCORE="${REFLEX_JEV_SCORE:-}"
 rc=3
-if [ "${REFLEX_SEMIF_RESIDENT:-1}" != "0" ] && [ -n "$IN" ] && [ -n "$OUT" ] && [ -f "$RESIDENT_CALL" ]; then
-  bash "$RESIDENT_CALL" "$@"
-  rc=$?
-fi
-if [ "$rc" -ne 0 ]; then
-  bash "$REAL" "$@"
-  rc=$?
-fi
+case "$DECIDE_BACKEND" in
+  jev|jevlocal)
+    if [ -n "$JEV_SCORE" ] && [ -f "$JEV_SCORE" ] && command -v node >/dev/null 2>&1; then
+      # 插件把 SSL_CERT_FILE 等设成【空字符串】(process.env.X || '')。
+      # Homebrew 的 node 23 见到空 SSL_CERT_FILE 会把信任库清空 →
+      # fetch 报 "unable to get local issuer certificate"（nvm 的 node 26 不这样，所以手工跑能通）。
+      # 空值一律 unset，让它回落到内置根证书。
+      for v in SSL_CERT_FILE CURL_CA_BUNDLE REQUESTS_CA_BUNDLE; do
+        [ -z "${!v:-}" ] && unset "$v"
+      done
+      node "$JEV_SCORE" "$@"
+      rc=$?
+    else
+      echo "[shadow-semif] backend=$DECIDE_BACKEND 但 jev 打分器不可用 (REFLEX_JEV_SCORE=$JEV_SCORE)" >&2
+      rc=3
+    fi
+    ;;
+  *)
+    if [ "${REFLEX_SEMIF_RESIDENT:-1}" != "0" ] && [ -n "$IN" ] && [ -n "$OUT" ] && [ -f "$RESIDENT_CALL" ]; then
+      bash "$RESIDENT_CALL" "$@"
+      rc=$?
+    fi
+    if [ "$rc" -ne 0 ]; then
+      bash "$REAL" "$@"
+      rc=$?
+    fi
+    ;;
+esac
 
 if [ "$rc" -eq 0 ] && [ -n "$IN" ] && [ -s "$IN" ] && [ -n "$OUT" ] && [ -s "$OUT" ]; then
   python3 "$(cd "$(dirname "$0")" && pwd)/shadow_record.py" \

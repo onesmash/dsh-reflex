@@ -13,6 +13,11 @@ import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, rea
 import { fileURLToPath } from 'node:url'
 import { execFile, spawn } from 'node:child_process'
 import Schema from '@deepseek-ai/schemastery'
+// 决策后端适配器: jev/jevlocal 走 SystemOne HTTP 端点。
+// v0.3.18 原版把 run_score.sh 写死在 semifScoreBatch 里，内置 target(disk)
+// 因此完全绕过 backend 配置；且 tools/semif-adapt.py 未随包发布。
+// 本文件由本机补丁加入，升级 dsh-reflex 后需重新应用（见 REFLEX-PATCH.md）。
+import { scoreBatch as jevScoreBatch, writeShadow as jevWriteShadow } from './jev-adapter.mjs'
 import { promisify, format } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { loadavg } from 'node:os'
@@ -421,6 +426,8 @@ function install(rt, ctx, cfg) {
         for (const f of readdirSync(collectorsDir)) {
           if (!f.endsWith('.sh')) continue
           const name = f.slice(0, -3)
+          // <name>.paused 即停：此前只有注释承诺、代码没实现（加文件无效）。
+          if (existsSync(join(collectorsDir, `${name}.paused`))) continue
           const def = { cmd: join(collectorsDir, f), intervalMs: cfg.l0.scriptIntervalMs ?? 60_000 }
           const envFile = join(collectorsDir, `${name}.env.json`)
           if (existsSync(envFile)) {
@@ -461,6 +468,8 @@ function install(rt, ctx, cfg) {
         for (const f of readdirSync(targetsDir)) {
           if (!f.endsWith('.sh')) continue
           const name = f.slice(0, -3)
+          // <name>.paused 即停（与采集源同一约定）
+          if (existsSync(join(targetsDir, `${name}.paused`))) continue
           const def = { target: name, type: 'script', cmd: join(targetsDir, f), displayName: name, timeoutMs: 120_000 }
           const envFile = join(targetsDir, `${name}.env.json`)
           if (existsSync(envFile)) {
@@ -663,6 +672,13 @@ function install(rt, ctx, cfg) {
     return v
   }
 
+  // 决策后端的唯一读取点。'' = 未配置(沿用 target 自己的默认 semif)。
+  // 早先用三处各自的 trim 读同一字段: scriptEnv 注入环境变量、semifScoreBatch 分流、
+  // 日志标签 —— 三份实现必然漂移, 所以收敛到这里。
+  function configuredBackend() {
+    return String(unwrap(cfg.backend, '') ?? '').trim()
+  }
+
   // 脚本运行的公共环境: 统一目录 / 自定义 CA(只透传) / 完整 PATH / SemIf 打分脚本位置
   // (GUI 子进程 PATH 可能精简, 不补会导致 helper / 受控服务的 TLS 失败)
   //
@@ -699,7 +715,7 @@ function install(rt, ctx, cfg) {
     }
     // 决策后端: 只在显式配了才注入 —— 不配就别动, 让 target 自己的默认(semif)生效。
     // 注意 'semif' 也要注入: 它是"从默认切回本地"的显式选择。
-    const backend = String(unwrap(cfg.backend, '') ?? '').trim()
+    const backend = configuredBackend()
     if (backend) env.REFLEX_DECIDE_BACKEND = backend
     if (backend === 'jev' || backend === 'jevlocal') {
       env.REFLEX_JEV_BASE_URL = String(unwrap(cfg.jevBaseUrl, '') ?? '')
@@ -707,6 +723,8 @@ function install(rt, ctx, cfg) {
       const key = secretValue('JEV_API_KEY')
         ?? secretValue('REFLEX_JEV_API_KEY')
         ?? secretValue('TYPESAFE_API_KEY')
+      // jev 打分器路径：shadow-semif.sh 按它分流（脚本 target 的 shadow / 回放 / A/B 都靠它）
+      env.REFLEX_JEV_SCORE = join(__dirname, 'jev-score.mjs')
       if (key) {
         env.REFLEX_JEV_API_KEY = key
       } else if (!warnedNoJevKey) {
@@ -916,7 +934,34 @@ function install(rt, ctx, cfg) {
   // ---------- L1: SemIf 调用 (通用; question/options 由 target 提供) ----------
   // 批量打分: 一次进程只加载一次模型, N 条 state 一起评 —— 逐条筛选场景(如推文)比 N 次单调用快得多
   let semifSeq = 0
-  async function semifScoreBatch(rows, timeoutMs = 180_000) {
+  async function semifScoreBatch(rows, timeoutMs = 180_000, shadowTag = 'unknown') {
+    // 决策后端分流: jev/jevlocal 走 SystemOne HTTP 端点, 不碰本地 MLX。
+    // 原版此函数写死 run_score.sh, 内置 target(disk) 因此无视 backend 配置。
+    const backendName = configuredBackend()
+    if (backendName === 'jev' || backendName === 'jevlocal') {
+      const jevKey = secretValue('JEV_API_KEY') ?? secretValue('REFLEX_JEV_API_KEY') ?? secretValue('TYPESAFE_API_KEY')
+      const scored = await jevScoreBatch(rows, {
+        baseUrl: String(unwrap(cfg.jevBaseUrl, '') ?? ''),
+        model: String(unwrap(cfg.jevModel, '') ?? 'jev-latest'),
+        apiKey: jevKey,
+        timeoutMs,
+        // 部分行失败不吞掉: 记日志但保留已成功的结果, 与 SemIf 路径的"整轮失败才抛"对齐。
+        onError: (errs) => log(`jev 部分行失败(${errs.length}): ${errs.slice(0, 3).join('; ')}`),
+      })
+      // 影子记录: 原版只有 shadow-semif.sh 这条 bash 旁路, 而内置 target 从不经过它,
+      // jev 分支更是完全不过 —— 于是"能判定但没有可拟合的样本"。这里直写同格式落盘。
+      // 失败绝不影响判定(内部 try/catch), 关闭方式: REFLEX_SHADOW_DISABLED=1
+      if (process.env.REFLEX_SHADOW_DISABLED !== '1') {
+        jevWriteShadow({
+          homeDir: cfg.l0.homeDir,
+          tag: shadowTag,
+          rows,
+          results: scored,
+          threshold: cfg.l1.threshold,
+        })
+      }
+      return scored
+    }
     const runScore = join(cfg.semif.skillDir, 'scripts', 'run_score.sh')
     const work = join(cfg.l0.storeDir, '..', 'work')
     try { mkdirSync(work, { recursive: true }) } catch {}
@@ -976,8 +1021,8 @@ function install(rt, ctx, cfg) {
     }
     return res
   }
-  async function semifDecide(state, question, options) {
-    const m = await semifScoreBatch([{ id: 'l1', state, question, options }])
+  async function semifDecide(state, question, options, shadowTag = 'unknown') {
+    const m = await semifScoreBatch([{ id: 'l1', state, question, options }], 180_000, shadowTag)
     return m.get('l1') ?? { winning: 'insufficient', pYes: 0 }
   }
 
@@ -1330,8 +1375,10 @@ function install(rt, ctx, cfg) {
           count: facts.length,
           ...ctx,
         }
-        const d = await semifDecide(state, target.semif.question, target.semif.options)
-        log(`L1[${targetKey}]: SemIf winning=${d.winning} pYes=${d.pYes.toFixed(3)}`)
+        const d = await semifDecide(state, target.semif.question, target.semif.options, targetKey)
+        // 日志必须说真话: 后端可切 semif/jev/jevlocal, 写死 "SemIf" 会让排障
+        // 误判成"还在走本地模型"(本机 Intel Mac 上本地模型必然失败, 见 REFLEX-PATCH.md)。
+        log(`L1[${targetKey}]: ${configuredBackend() || 'semif'} winning=${d.winning} pYes=${d.pYes.toFixed(3)}`)
         if (d.pYes >= cfg.l1.threshold) {
           if (contentChanged(targetKey, fp)) {
             const delivered = await wakeL2(target.render(ctx, `(SemIf pYes=${d.pYes.toFixed(2)})`))
