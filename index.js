@@ -351,7 +351,12 @@ function install(rt, ctx, cfg) {
       const text = summary
       const message = createUserMessageLike({
         content: [{ type: 'text', text }],
-        source: { kind: 'bot', form: 'relay', role: 'request', exchangeId: randomUUID(), senderName: '分层智能体', hop: 0 },
+        // senderSessionId 是 ds-bot 渲染的硬前提, 不是可选元数据:
+        //   ds-bot 的 isRelayContext() 要求 typeof senderSessionId === 'string',
+        //   缺失时该消息【既不进 relays 也不进 texts2】—— 正文完全不进渲染树,
+        //   界面上只剩消息提醒气泡。2026-11-11 实测确认。
+        //   roster 里查不到这个 id 时会回退到 senderName, 所以值本身随意, 非空即可。
+        source: { kind: 'bot', form: 'relay', role: 'request', exchangeId: randomUUID(), senderName: '分层智能体', senderSessionId: 'reflex-l1', hop: 0 },
       })
       if (agent?.followup) agent.followup(message)
       else if (agent?.steer) agent.steer(message)
