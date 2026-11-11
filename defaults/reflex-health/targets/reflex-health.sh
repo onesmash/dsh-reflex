@@ -72,6 +72,7 @@ KIND_CN = {
     'crash-loop': '插件反复重载',
     'source-silent': '数据源静默',
     'environment-failure': '系统无法创建进程',
+    'wake-ledger-stale': '唤醒台账滞后',
 }
 
 # ASG 失败分类 (arXiv:2610.31461 §4.6) → 中文 + 一句话处置。
@@ -177,6 +178,17 @@ def describe(f):
                  f"采集器: {LHOME}/collectors/{src}.sh"]
         body.append("常见原因: 凭据/cookie 过期、上游接口改了、或采集器退出码 0 但什么都没采到"
                     " —— 最后一次见到就是这个样子(mail 静默 9 个工作小时, 退出码却是 0)。")
+    elif metric == 'wake-ledger-stale':
+        title = (f"{cn} · 日志 {raw.get('wakesInLog')} 次唤醒, 台账只有 {raw.get('ledgerRows')} 条"
+                 f" (滞后 {raw.get('lagMinutes')} 分钟)")
+        body += [f"日志最新唤醒: {raw.get('lastWakeAt')}",
+                 f"台账最新条目: {raw.get('ledgerLastAt') or '(空)'}",
+                 f"台账: {LHOME}/shadow/wake-ledger.jsonl"]
+        body.append("台账是「叫了 L2 到底有没有用」的唯一数据源, 也是阈值拟合拿结果标签的地方 —— "
+                    "它停了, 后面所有调优都只能靠我自评的代理标签。")
+        body.append("自检每轮都会重建一次(wake_ledger.py 是纯重建, 幂等); 还报说明重建本身失败或 "
+                    "wake_ledger.py 不在预期位置。查: python3 "
+                    "~/.agents/skills/reflex-tuning/scripts/wake_ledger.py --home %s" % LHOME)
     elif metric == 'environment-failure':
         title = f"{cn} · {win} 分钟内 {raw.get('count')} 个源同时失败"
         body += [f"受影响: {raw.get('sources') or '(未记录)'}",

@@ -435,6 +435,74 @@ try:
                     'lastFactAt': iso(last), 'silentWallMinutes': round((now - last) / 60000.0, 1),
                 }
 
+    # ---------- 唤醒台账: 每轮重建 + 滞后检测 (2026-11-11 加) ----------
+    # 为什么放在采集器里而不是插件里:
+    #   ① 改 node_modules 的 index.js 会被 npm 升级覆盖(与补丁 3/4 同一个坑, 见 REFLEX-PATCH.md);
+    #   ② wake_ledger.py 是纯重建(读日志+会话正文, 覆盖写)，天然幂等，跑多少次结果一样;
+    #   ③ 实测 0.74s / 14 条，10 分钟一轮完全负担得起。
+    # 为什么要检测而不是只重建:
+    #   2026-11-11 实测台账停在 16:24，而 17:02(arxiv) 与 17:09(x-timeline) 两次唤醒都没进账 ——
+    #   当时没有任何检查项能发现。重建修好了数据，但"下次会不会又停"还是没人管。
+    # 判据: 日志里 "L2: woken" 的条数 > 台账条数 且 最后一行的日志时间比台账最新条目新 ≥5 分钟
+    #   → 台账滞后。安静时段不报(夜里本来就没唤醒，滞后是必然)。
+    LEDGER_LAG_MIN = int(os.environ.get('REFLEX_HEALTH_LEDGER_LAG_MIN', '5'))
+    LEDGER_REBUILD = os.environ.get('REFLEX_HEALTH_LEDGER_REBUILD', '1') != '0'
+    try:
+        _script = os.environ.get('REFLEX_HEALTH_LEDGER_TOOL') or ''
+        if not _script:
+            for _cand in (
+                os.path.expanduser('~/.agents/skills/reflex-tuning/scripts/wake_ledger.py'),
+                os.path.expanduser('~/SourceCode/dsh/skill/reflex-tuning/scripts/wake_ledger.py'),
+            ):
+                if os.path.isfile(_cand):
+                    _script = _cand
+                    break
+        if _script and LEDGER_REBUILD and os.path.isfile(_script):
+            # 超时 60s 兜底: 重建失败/卡住绝不能拖垮整个自检(自检自己报错会形成放大回环)。
+            subprocess.run(['python3', _script, '--home', HOME_DIR, '--quiet'],
+                           capture_output=True, timeout=60)
+
+        # 滞后检测: 只数"唤醒"行，不含 failed —— 失败有独立的 wake-failed 检查项。
+        n_woken = sum(1 for ln in raw_lines if ' L2: woken ' in ln)
+        ledger_path = os.path.join(HOME_DIR, 'shadow', 'wake-ledger.jsonl')
+        n_ledger, ledger_last_ms = 0, 0
+        try:
+            with open(ledger_path, encoding='utf-8') as fh:
+                for ln in fh:
+                    ln = ln.strip()
+                    if not ln:
+                        continue
+                    n_ledger += 1
+                    try:
+                        ledger_last_ms = max(ledger_last_ms, int(json.loads(ln).get('ts') or 0))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # 日志里最后一次唤醒的时间（比"现在"更可靠: 插件可能刚好停摆）
+        last_log_wake_ms = 0
+        for ln in reversed(raw_lines):
+            if ' L2: woken ' in ln:
+                _m = re.match(r'^\[([^\]]+)\]', ln)
+                if _m:
+                    last_log_wake_ms = parse_ts(_m.group(1)) or 0
+                    break
+
+        lagging = (n_woken > n_ledger
+                   and last_log_wake_ms
+                   and (now - last_log_wake_ms) >= LEDGER_LAG_MIN * 60000)
+        if lagging and not is_quiet(now):
+            problems['wake-ledger-stale:-'] = {
+                'kind': 'wake-ledger-stale',
+                'wakesInLog': n_woken, 'ledgerRows': n_ledger,
+                'lastWakeAt': iso(last_log_wake_ms),
+                'lagMinutes': round((now - last_log_wake_ms) / 60000.0, 1),
+                'ledgerLastAt': iso(ledger_last_ms) if ledger_last_ms else None,
+            }
+    except Exception:
+        pass                        # 台账是辅助工具, 它坏了不能连累自检
+
     # ---------- 判定失败连续窗口升级 (2026-10-24 ai-policy 事故) ----------
     # 事故形态: 同源每小时 1 次 decision-failure, 60 分钟窗口内恒为 1 次,
     # FAIL_MIN 速率判据数学上永不触发 → 连续 STREAK_MIN 个窗口都出现同源
