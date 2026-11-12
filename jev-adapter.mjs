@@ -50,11 +50,41 @@ function buildCriteria(options) {
   return criteria
 }
 
-/** 一行决策 → 请求体。纯函数，不碰网络。 */
+/**
+ * 一行决策 → 请求体。纯函数，不碰网络。
+ *
+ * 支持两种形态（2026-11-12 实测补充）:
+ *   单 question: row.question + row.options          → questions.q
+ *   多 question: row.questions = [{id,type,question,options}, ...] → questions.<id>
+ *
+ * 为什么要多 question: 实测该端点一次请求可带多个 typed question，返回按 id 分组，
+ * 且 state 只读一次 —— 5 个判据的成本等于 1 个（158 tokens / 41ms 实测）。
+ * 原先硬编码 ANSWER_KEY='q' 只发一个，等于把端点的能力浪费掉了。
+ */
 function buildRequestBody(row, model) {
+  const state = typeof row.state === 'string' ? row.state : JSON.stringify(row.state)
+
+  // 多 question 形态
+  if (Array.isArray(row.questions) && row.questions.length > 0) {
+    const questions = {}
+    for (const q of row.questions) {
+      const qid = String(q?.id ?? '').trim()
+      if (!qid) throw new Error('multi-question row has a question without id')
+      const entry = {
+        type: String(q.type ?? DEFAULT_QUESTION_TYPE),
+        question: String(q.question ?? ''),
+      }
+      // noul 型没有 criteria（端点返回 0-1 概率），choice/score 需要
+      if (entry.type !== 'noul') entry.criteria = buildCriteria(q.options)
+      questions[qid] = entry
+    }
+    return { model, state, questions }
+  }
+
+  // 单 question 形态（原有行为，保持不变）
   return {
     model,
-    state: typeof row.state === 'string' ? row.state : JSON.stringify(row.state),
+    state,
     questions: {
       [ANSWER_KEY]: {
         type: DEFAULT_QUESTION_TYPE,
@@ -95,12 +125,39 @@ function scoreOf(probabilities) {
   return best == null ? 0 : probabilities[best]
 }
 
-/** 响应体 → { winning, probs }。缺 answers 时报错并带片段，便于对照端点行为。 */
+/** 响应体 → { winning, probs }（单 question）。缺 answers 时报错并带片段。 */
 function parseAnswer(data) {
   const answer = data?.answers?.[ANSWER_KEY]
   if (!answer) throw new Error(`jev response missing answers.${ANSWER_KEY}: ${JSON.stringify(data).slice(0, 300)}`)
   const probs = answer.probabilities && typeof answer.probabilities === 'object' ? answer.probabilities : {}
   return { winning: pickWinning(probs, answer.choice), probs }
+}
+
+/**
+ * 响应体 → 每个 question 一个结果（多 question）。
+ *
+ * 三种 answer 形状都归一成 { winning, probs, noul }:
+ *   choice/score: {choice, probabilities, confidence}
+ *   noul:         {noul}  ← 没有 confidence 字段，数值本身就是概率
+ */
+function parseAnswers(data, questionIds) {
+  const answers = data?.answers
+  if (!answers || typeof answers !== 'object') {
+    throw new Error(`jev response missing answers: ${JSON.stringify(data).slice(0, 300)}`)
+  }
+  const out = {}
+  for (const qid of questionIds) {
+    const a = answers[qid]
+    if (!a) throw new Error(`jev response missing answers.${qid}: ${JSON.stringify(data).slice(0, 300)}`)
+    if (typeof a.noul === 'number') {
+      // noul: 数值即概率，无选项集合
+      out[qid] = { winning: a.noul >= 0.5 ? 'yes' : 'no', probs: { yes: a.noul, no: 1 - a.noul }, noul: a.noul }
+      continue
+    }
+    const probs = a.probabilities && typeof a.probabilities === 'object' ? a.probabilities : {}
+    out[qid] = { winning: pickWinning(probs, a.choice), probs, noul: null }
+  }
+  return out
 }
 
 // ---------------------------------------------------------------- 网络
@@ -139,7 +196,22 @@ export async function scoreRow(row, opts) {
         if (res.status < 500 && res.status !== 429) throw Object.assign(error, { fatal: true })
         lastError = error
       } else {
-        const { winning, probs } = parseAnswer(await res.json())
+        const data = await res.json()
+        // 多 question：返回 { perQuestion: {qid: {winning,probs,noul}}, winning, pYes, probs }
+        // winning/pYes/probs 取第一个 question 的值，保证老调用方解构不炸；
+        // 新调用方读 perQuestion 拿全部结果。
+        if (Array.isArray(row.questions) && row.questions.length > 0) {
+          const ids = row.questions.map((q) => String(q.id))
+          const perQuestion = parseAnswers(data, ids)
+          const first = perQuestion[ids[0]]
+          return {
+            winning: first.winning,
+            pYes: pYesOf(first.probs),
+            probs: first.probs,
+            perQuestion,
+          }
+        }
+        const { winning, probs } = parseAnswer(data)
         return { winning, pYes: pYesOf(probs), probs }
       }
     } catch (error) {

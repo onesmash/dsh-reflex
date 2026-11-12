@@ -248,3 +248,84 @@ test('shadow：写盘失败时静默返回 0（绝不影响判定）', () => {
   })
   assert.equal(n, 0)
 })
+
+// ---------------------------------------------------------------- 多 question
+
+const multiBody = (answers) => ({
+  model: 'decision-model-preview',
+  answers,
+})
+
+const multiRow = (over = {}) => ({
+  id: 'm1',
+  state: '推文正文',
+  questions: [
+    { id: 'q1', type: 'choice', question: '值得打断吗？',
+      options: [{ id: 'yes', description: '值得' }, { id: 'no', description: '不值得' }] },
+    { id: 'q2', type: 'noul', question: '技术价值(0-1)' },
+  ],
+  ...over,
+})
+
+test('多 question：请求体按 id 展开，choice 带 criteria、noul 不带', async () => {
+  const sink = {}
+  const ff = fakeFetch({ status: 200, json: multiBody({
+    q1: { type: 'choice', choice: 'yes', probabilities: { yes: 0.9, no: 0.1 } },
+    q2: { type: 'noul', noul: 0.42 },
+  }) }, sink)
+  await scoreRow(multiRow(), baseOpts(ff))
+  assert.deepEqual(Object.keys(sink.body.questions).sort(), ['q1', 'q2'])
+  assert.deepEqual(sink.body.questions.q1.criteria, { yes: '值得', no: '不值得' })
+  assert.equal(sink.body.questions.q2.criteria, undefined, 'noul 不应带 criteria')
+  assert.equal(sink.body.questions.q2.type, 'noul')
+})
+
+test('多 question：perQuestion 返回每一个的结果', async () => {
+  const ff = fakeFetch({ status: 200, json: multiBody({
+    q1: { type: 'choice', choice: 'no', probabilities: { yes: 0.2, no: 0.8 } },
+    q2: { type: 'noul', noul: 0.42 },
+  }) })
+  const r = await scoreRow(multiRow(), baseOpts(ff))
+  assert.equal(r.perQuestion.q1.winning, 'no')
+  assert.equal(r.perQuestion.q1.probs.yes, 0.2)
+  assert.equal(r.perQuestion.q2.noul, 0.42)
+  // noul 数值即概率，不应被当作 confidence 丢失
+  assert.equal(r.perQuestion.q2.probs.yes, 0.42)
+})
+
+test('多 question：顶层字段取第一个 question，老调用方解构不炸', async () => {
+  const ff = fakeFetch({ status: 200, json: multiBody({
+    q1: { type: 'choice', choice: 'yes', probabilities: { yes: 0.77, no: 0.23 } },
+    q2: { type: 'noul', noul: 0.5 },
+  }) })
+  const r = await scoreRow(multiRow(), baseOpts(ff))
+  assert.equal(r.winning, 'yes')
+  assert.equal(r.pYes, 0.77)
+  assert.deepEqual(r.probs, { yes: 0.77, no: 0.23 })
+})
+
+test('多 question：缺任一 qid 的 answers 时报错并带片段', async () => {
+  const ff = fakeFetch({ status: 200, json: multiBody({
+    q1: { type: 'choice', choice: 'yes', probabilities: { yes: 1, no: 0 } },
+  }) })
+  await assert.rejects(() => scoreRow(multiRow(), baseOpts(ff)),
+    /missing answers\.q2/)
+})
+
+test('多 question：question 缺 id 时本地就拒绝，不发请求', async () => {
+  let called = false
+  const ff = async () => { called = true; throw new Error('不该发请求') }
+  await assert.rejects(
+    () => scoreRow(multiRow({ questions: [{ type: 'noul', question: 'x' }] }), baseOpts(ff)),
+    /question without id/)
+  assert.equal(called, false)
+})
+
+test('单 question 行为不受多 question 支持影响（回归）', async () => {
+  const sink = {}
+  const ff = fakeFetch({ status: 200, json: okBody({ yes: 0.6, no: 0.4 }, 'yes') }, sink)
+  const r = await scoreRow(row(), baseOpts(ff))
+  assert.deepEqual(Object.keys(sink.body.questions), ['q'], '仍是单个 q')
+  assert.equal(r.pYes, 0.6)
+  assert.equal(r.perQuestion, undefined, '单 question 不带 perQuestion')
+})
