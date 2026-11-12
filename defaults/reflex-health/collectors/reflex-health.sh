@@ -450,9 +450,13 @@ try:
     try:
         _script = os.environ.get('REFLEX_HEALTH_LEDGER_TOOL') or ''
         if not _script:
+            # 查找顺序：先用运行目录里已部署的 skill 副本（插件 sync 出来的），
+            # 再退回源码 repository。注意 REFLEX_TUNING_DIR 只注入给 script target，
+            # 采集器拿不到，所以这里必须自己找。
+            # 历史上第二条写的是 ~/SourceCode/dsh/（少 -reflex），永远命中不了，已修。
             for _cand in (
                 os.path.expanduser('~/.agents/skills/reflex-tuning/scripts/wake_ledger.py'),
-                os.path.expanduser('~/SourceCode/dsh/skill/reflex-tuning/scripts/wake_ledger.py'),
+                os.path.expanduser('~/SourceCode/dsh-reflex/skill/reflex-tuning/scripts/wake_ledger.py'),
             ):
                 if os.path.isfile(_cand):
                     _script = _cand
