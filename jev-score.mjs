@@ -45,6 +45,8 @@ function parseArgs(argv) {
     backend: process.env.REFLEX_DECIDE_BACKEND || 'jev',
     apiKey: process.env.JEV_API_KEY || process.env.REFLEX_JEV_API_KEY || '',
     timeoutMs: 120_000,
+    retries: Number(process.env.JEV_RETRIES ?? 2),
+
     validateWith: process.env.JEV_VALIDATE_PY || '',
   }
   for (let i = 0; i < argv.length; i++) {
@@ -61,6 +63,7 @@ function parseArgs(argv) {
       case '--base-url': out.baseUrl = takeValue(); break
       case '--backend': out.backend = takeValue(); break
       case '--timeout-ms': out.timeoutMs = Number(takeValue()); break
+      case '--retries': out.retries = Number(takeValue()); break
       case '--help': case '-h':
         process.stdout.write('Usage: jev-score --input PATH --output PATH [--summary PATH] [--model M] [--base-url URL]\n')
         process.exit(0)
@@ -168,6 +171,8 @@ async function main() {
         model: args.model,
         apiKey: args.apiKey,
         timeoutMs: args.timeoutMs,
+        // 网络抖动重试（默认 2 次）。测试传 --retries 0 来验证"失败即整体失败"的原子语义。
+        retries: Number.isFinite(args.retries) ? args.retries : 2,
       })
     } catch (error) {
       fail(`row "${row.id}" failed: ${error.message}`)

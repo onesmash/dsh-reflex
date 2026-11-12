@@ -162,8 +162,27 @@ test('任一行失败即整体失败，不提交半成品', async () => {
   const dir = workdir()
   const input = writeInput(dir)
   const output = join(dir, 'out.jsonl')
+  // JEV_RETRIES=0：这条测的是【原子语义】（失败即不落盘），不是重试行为。
+  // 重试默认 2 次会让第 2 次 500 后重试成功，从而测不到原子语义。
+  // 重试本身由 jev-adapter.test.mjs 的「网络抖动」用例覆盖。
+  await assert.rejects(() => run(['--input', input, '--output', output, '--base-url', baseUrl],
+                                 { JEV_RETRIES: '0' }))
+  assert.equal(existsSync(output), false)
+})
+
+test('重试后仍失败才整体失败（默认 retries=2 生效）', async () => {
+  let call = 0
+  handler = (req, res) => {
+    call += 1
+    res.writeHead(500); res.end('always fails')
+  }
+  const dir = workdir()
+  const input = writeInput(dir)
+  const output = join(dir, 'out.jsonl')
   await assert.rejects(() => run(['--input', input, '--output', output, '--base-url', baseUrl]))
   assert.equal(existsSync(output), false)
+  // 每个 input 行 1 次请求 + 2 次重试；writeInput 默认 1 行
+  assert.equal(call, 3, `期望 3 次请求（1 + 2 重试），实际 ${call}`)
 })
 
 test('输入行选项少于两个时拒绝', async () => {

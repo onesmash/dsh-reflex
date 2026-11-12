@@ -110,25 +110,48 @@ function parseAnswer(data) {
  * @returns {Promise<{winning:string, pYes:number, probs:Record<string,number>}>}
  */
 export async function scoreRow(row, opts) {
-  const { url, model, apiKey, timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl = globalThis.fetch } = opts
+  const { url, model, apiKey, timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl = globalThis.fetch,
+          retries = 2, retryBaseMs = 800 } = opts
   if (typeof fetchImpl !== 'function') throw new Error('global fetch unavailable (need Node 18+)')
 
   const headers = { 'Content-Type': 'application/json' }
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+  const body = JSON.stringify(buildRequestBody(row, model))
 
-  const res = await fetchImpl(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(buildRequestBody(row, model)),
-    signal: AbortSignal.timeout(timeoutMs),
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`jev HTTP ${res.status}: ${text.slice(0, 300)}`)
+  // 网络抖动是常态（2026-11-11 日志里出现过 2 次 "fetch failed"）。
+  // 没有重试时的代价很大：批量打分里任何一行失败 → 整个进程 exit 1 →
+  // 该批 12 条全部丢弃，而插件的游标在判定【之前】就已推进，
+  // 所以那批推文是【永久丢失】，不会重来。
+  // 所以在这里做退避重试（只针对可重试的失败：网络错误 / 5xx / 429）。
+  let lastError
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetchImpl(url, {
+        method: 'POST',
+        headers,
+        body,
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        const error = new Error(`jev HTTP ${res.status}: ${text.slice(0, 300)}`)
+        // 4xx（除 429）是请求本身的问题，重试无意义，直接抛
+        if (res.status < 500 && res.status !== 429) throw Object.assign(error, { fatal: true })
+        lastError = error
+      } else {
+        const { winning, probs } = parseAnswer(await res.json())
+        return { winning, pYes: pYesOf(probs), probs }
+      }
+    } catch (error) {
+      if (error?.fatal) throw error
+      lastError = error
+    }
+    if (attempt < retries) {
+      const wait = retryBaseMs * Math.pow(3, attempt)   // 800ms → 2.4s
+      await new Promise((r) => setTimeout(r, wait))
+    }
   }
-
-  const { winning, probs } = parseAnswer(await res.json())
-  return { winning, pYes: pYesOf(probs), probs }
+  throw lastError
 }
 
 // ---------------------------------------------------------------- 批量
