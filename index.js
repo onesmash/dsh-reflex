@@ -19,7 +19,7 @@ import Schema from '@deepseek-ai/schemastery'
 // 本文件由本机补丁加入，升级 dsh-reflex 后需重新应用（见 REFLEX-PATCH.md）。
 import { scoreBatch as jevScoreBatch, writeShadow as jevWriteShadow } from './jev-adapter.mjs'
 import { promisify, format } from 'node:util'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { loadavg } from 'node:os'
 
 const execFileP = promisify(execFile)
@@ -1364,11 +1364,18 @@ function install(rt, ctx, cfg) {
             continue
           }
           if (contentChanged(targetKey, fp)) {
-            // 打标用的 wake_key 必须与 wake_ledger 生成的完全一致（`<target>:<ts_ms>`），
-            // 且 ts 就是日志行的时间。这里的 Date.now() 与紧随的 log() 同毫秒级；
-            // ledger 按秒匹配，够用。
-            const wakeKey = `${targetKey}:${Date.now()}`
-            ctx = { ...ctx, __wakeKey: wakeKey }
+            // 打标用的 wake_key 由【内容】决定，不能用时间戳：
+            //   ① 重放一致性：同一批内容在任何时刻重放必须得到同一个 key，
+            //      否则标签会重复记在不同 key 上，无法复用。
+            //   ② 时间戳跨秒/跨天会撞或漂移，而内容指纹天然稳定。
+            // 口径与 stateFingerprint 一致（item id 排序后取哈希），
+            // 保证「同一批内容 = 同一个 key」。
+            const _fp = stateFingerprint(targetKey, ctx)
+            const _ids = (_fp?.ids ?? []).map(String).sort().join(',')
+            const wakeKey = _ids
+              ? `${targetKey}:${createHash('sha1').update(_ids).digest('hex').slice(0, 12)}`
+              : null
+            if (wakeKey) ctx = { ...ctx, __wakeKey: wakeKey }
             log(`L1[${targetKey}]: ${label}`)
             const delivered = await wakeL2(target.render(ctx, `(${label})`))
             if (delivered) {

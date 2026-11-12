@@ -277,7 +277,21 @@ def join_items(passed, ts, label, replay=None, threshold=None):
              "text": item_brief(str(r.get("state") or ""))} for r in hits]
 
 
-def wake_key(e):
+def wake_key(e, items=None):
+    """唤醒标识。
+
+    口径：**由内容决定，不用时间戳**。
+      ① 重放一致性：同一批内容在任何时刻重放必须得到同一 key，否则标签会
+         重复记在不同 key 上，无法复用。
+      ② 时间戳会跨秒/跨天漂移，内容哈希天然稳定。
+    与插件 stateFingerprint 对齐（item id 排序后取 sha1 前 12 位）。
+
+    兜底：拿不到 items 时退回旧的 target:ts（旧台账格式仍可读）。
+    """
+    ids = sorted(str(it.get("id")) for it in (items or []) if it.get("id"))
+    if ids:
+        h = hashlib.sha1(",".join(ids).encode()).hexdigest()[:12]
+        return f"{e['target']}:{h}"
     return f"{e['target']}:{e['ts']}"
 
 
@@ -327,8 +341,10 @@ def rebuild(home):
         if replay_rows is None:
             replay_rows, thr = load_replay_passed(home, e["target"])
             shadow_cache[("replay", e["target"])] = (replay_rows, thr)
+        _items = join_items(shadow_cache[e["target"]], ts, e.get("label") or "",
+                            replay=replay_rows, threshold=thr)
         rec = {
-            "wake_key": wake_key(e),
+            "wake_key": wake_key(e, _items),
             "ts": ts,
             "target": e["target"],
             "status": e["kind"],
@@ -339,8 +355,7 @@ def rebuild(home):
             "l2_tool_calls_10m": len(tool_calls),
             "user_engaged_60m": bool(user_msgs_60),
             "user_msg_10m": bool(user_msgs_10),
-            "items": join_items(shadow_cache[e["target"]], ts, e.get("label") or "",
-                                replay=replay_rows, threshold=thr),
+            "items": _items,
         }
         ledger.append(rec)
     out = os.path.join(home, "shadow", "wake-ledger.jsonl")
