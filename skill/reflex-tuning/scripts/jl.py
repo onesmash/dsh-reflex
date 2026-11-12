@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """reflex jsonl 读写helper。存在的理由：本会话内 json.load 误用于 jsonl 达 3 次。"""
-import json, sys
+import json, os, sys
 
 def load(path):
-    """读 jsonl → list[dict]。自动兼容被误写成 JSON 数组的旧文件。"""
+    """读 jsonl → list[dict]。自动兼容被误写成 JSON 数组的旧文件。
+
+    文件不存在时返回空列表（而不是抛异常）——调用方多半是"有就用，没有就当空"。
+    """
     out = []
+    if not os.path.exists(path):
+        return out
     with open(path, encoding="utf-8", errors="replace") as fh:
         raw = fh.read()
     dec = json.JSONDecoder()

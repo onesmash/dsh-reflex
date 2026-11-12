@@ -852,7 +852,7 @@ function install(rt, ctx, cfg) {
 
   // 排版信封 —— 由插件负责, 脚本只出 items[].title/body。
   // "其中 N 条为冷却期累积 / 跨 N 轮扫描" 这类信息来自插件跨轮统计, 脚本不可能知道。
-  function renderScriptTarget(displayName, ctx, extra) {
+  function renderScriptTarget(displayName, ctx, extra, wakeKey) {
     const items = ctx.items ?? []
     const parts = [`[分层智能体·L1·${displayName}] ${items.length ? `${items.length} 条值得关注` : '需要关注'}`]
     const meta = []
@@ -879,6 +879,15 @@ function install(rt, ctx, cfg) {
     })
     if (extra) parts.push(extra)
     parts.push(`请评估并决策是否需要处理。需要更多数据时, L0 数据源入口: ${cfg.l0.storeDir}/manifest.json`)
+    // 给 L2 的打标提示（不是给用户的操作指令）。
+    // 为什么放在推送里：L2 回答「是否需要处理」时，已经形成了对这批内容价值的判断；
+    // 不当场记录，这个判断就丢了 —— 实测 wake-ledger 有 87 条唤醒、人工标注 0 条。
+    // 注意：这是建议性提示，不标也不影响判定。
+    if (wakeKey) {
+      parts.push('')
+      parts.push(`📝 处理完后请顺手标一下（供阈值拟合用）：\`wake_label ${wakeKey} 1\` 有用 · \`wake_label ${wakeKey} 0\` 没用`)
+      parts.push(`   可加备注：\`wake_label ${wakeKey} 0 "全是产品公告"\`。标不标都不影响你的回复，只是帮下次少推点噪音。`)
+    }
     return parts.join('\n')
   }
 
@@ -1139,7 +1148,7 @@ function install(rt, ctx, cfg) {
         interim: (ctx) => !!ctx,
         interimReason: (ctx) => ctx?.reason ?? '脚本判定命中',
         mergeCtx: mergeScriptDecisions,
-        render: (ctx, extra) => renderScriptTarget(t.displayName ?? key, ctx, extra),
+        render: (ctx, extra) => renderScriptTarget(t.displayName ?? key, ctx, extra, ctx?.__wakeKey),
       }]))
     ALL_TARGETS = { ...TARGETS, ...scriptTargetAdapters }
   }
@@ -1355,6 +1364,11 @@ function install(rt, ctx, cfg) {
             continue
           }
           if (contentChanged(targetKey, fp)) {
+            // 打标用的 wake_key 必须与 wake_ledger 生成的完全一致（`<target>:<ts_ms>`），
+            // 且 ts 就是日志行的时间。这里的 Date.now() 与紧随的 log() 同毫秒级；
+            // ledger 按秒匹配，够用。
+            const wakeKey = `${targetKey}:${Date.now()}`
+            ctx = { ...ctx, __wakeKey: wakeKey }
             log(`L1[${targetKey}]: ${label}`)
             const delivered = await wakeL2(target.render(ctx, `(${label})`))
             if (delivered) {
