@@ -511,7 +511,22 @@ def main():
         return 0
 
     def _build_rec(key, lab, note, dims=None, why=""):
-        """构造一条标签记录。item 级与批级的区分在这里统一处理。"""
+        """构造一条标签记录。item 级与批级的区分在这里统一处理。
+
+        label 的语义（2026-11-13 收敛）：**label 是 action 的派生值，不是独立信号。**
+        实测 95 条标签里 label 与 action 100% 一致（51/51 有 action 的样本），
+        说明原先的 value 维度已被 action 完全覆盖 —— 保留两套只会让人以为
+        有两个独立信号。所以填了 action 时，label 一律从 action 重算：
+
+          act / know  → label 1
+          none        → label 0
+
+        这样做不是掩盖矛盾，而是把「写错了」变成「写不出来」：
+        想表达 action 装不下的意思，就该加维度（如 offtopic），不该让 label 飘。
+        不填 action 时（批级标签、老格式）仍尊重传入的 lab。
+        """
+        if dims and dims.get("action"):
+            lab = 0 if dims["action"] == "none" else 1
         rec = {"wake_key": key, "label": lab, "note": note,
                "labeled_by": "L2", "at": int(time.time() * 1000)}
         parts = key.split(":")

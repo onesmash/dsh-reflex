@@ -46,17 +46,21 @@ version: 1.0.2
      - **item 级打标（2026-11-13 加）**：批级标签只能表达「这批里有没有好东西」，
        一批 44 条里可能 1 条有用 43 条垃圾，标成 1 就把 43 条垃圾记成正例特征。
        插件在推送里给每条附 `wake_label <target>:i:<item_id> 0|1`，粒度到单条。
-     - **多维标签（2026-11-13 加）**：`--dup 0|1 --kind tech|news|promo|opinion|data|meta
-       --action act|know|none --shelf now|week|ever|gone --why "一句话结论"`。
-     - **offtopic（2026-11-13 加）**：`--offtopic 0|1` 区分「内容差」与「方向不搭」。
-       实测 95 条标签中 `action != none` 与 `label == 1` **100% 一致**（49/49），
-       `value` 已被 `action` 完全冗余——所以不要再加 value/relevance 双维度
-       （会摊薄样本：95 条拆 4 格，每格 ~24 条，低于可拟合下限）。
-       缺的只是「内容有实料但跟用户方向不搭」这一类：Meshy 3D / BYD 巴西产能 /
+     - **标签维度**：`--dup 0|1 --kind tech|news|promo|opinion|data|meta
+       --action act|know|none --shelf now|week|ever|gone --why "一句话结论"`
+     - **`label` 是 `action` 的派生值，不是独立信号（2026-11-13 删除 value 维度）**。
+       实测 95 条标签里 `action != none` 与 `label == 1` **100% 一致**（51/51），
+       原先的 `value` 已被 `action` 完全覆盖。保留两套只会让人以为有两个独立信号。
+       现在填了 action 时 label 一律强制重算（act/know→1，none→0），
+       **矛盾写法会被自动纠正**——想表达 action 装不下的意思，就该加维度，不该让 label 飘。
+       由 `test_label_dims.py` 守护这条不变量。
+     - **`--offtopic 0|1`（2026-11-13 加）**：区分「内容差」与「方向不搭」。
+       缺的正是「内容有实料但跟用户方向不搭」这一类：Meshy 3D / BYD 巴西产能 /
        Honda CR-V 混动 —— 判据给高分**没有错**，错在相关性没筛。
        填了 offtopic=1 的负例**不计入判据质量评估**，它指向的是相关性筛选问题。
-       单维无法解释「为什么分数分不开」——内容无价值 / 重复 / 规则漏拦在单维里都是 0，
-       但修法完全不同（改判据 / 加去重 / 改过滤器）。维度让失效可归因。
+       也**不要**加 value/relevance 双维度：95 条拆 4 格每格 ~24 条，低于可拟合下限。
+     - 单维无法解释「为什么分数分不开」——内容无价值 / 重复 / 方向不搭在单维里都是 0，
+       但修法完全不同（改判据 / 加去重 / 改相关性筛选）。维度让失效可归因。
      - `--export-item-labels <path>`：把 item 标签 join 上 shadow 分数，输出给 `threshold_fit.py`
    - `label_attribution.py`（2026-11-13 新增）：多维标签归因分析
      - 负例归因：重复导致 vs 内容无价值，分别对应「该加去重」和「该改判据」
@@ -115,6 +119,8 @@ python3 "$S/wake_ledger.py" --export-item-labels /tmp/item.jsonl --tag <tag>
 python3 "$S/threshold_fit.py" --tag <tag> --mode live --labels /tmp/item.jsonl
 #     归因分析（负例为什么是负例 / 分数在哪类有效 / 时效分布）：
 python3 "$S/label_attribution.py" --tag <tag>
+#     维度不变量测试（改打标逻辑后必须跑）：
+python3 "$S/test_label_dims.py"
 #     ⚠️ 坑：导出文件不要带 idx —— idx 是分层抽样 sample-<tag>.json 的专用序号，
 #        threshold_fit 见 idx 会优先走 idx_map 通道，把 item 标签错配成批级
 #        （实测 46 条错配 45 条）。
