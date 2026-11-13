@@ -91,6 +91,16 @@ def decide(items, state_file, now_ms, wait_min=60.0, immediate=0.98, defer=True,
     for d in stored:
         age = now_ms - int(d.get("at") or 0)
         (fresh if age <= wait_ms else late).append(d)
+
+    # 跨轮去重（2026-11-13 修）：本轮命中的 id 若已在暂存里，那是**同一条**又过了一次
+    # 阈值，不是「第二条到达」。不排掉的话，单条低分内容隔一轮再来就会被当成两条合并发出
+    # ——实测 test_wake_policy.py T1 复现。生产里会真的发生：x-timeline 每轮重新扫描，
+    # 同一推文可能连续两轮都过阈值（target 侧的 seen_ids 只在单轮内有效）。
+    _cur_ids = {str(it.get("id") or "") for it in cur if it.get("id")}
+    if _cur_ids:
+        fresh = [d for d in fresh if str((d.get("item") or {}).get("id") or "") not in _cur_ids]
+        late = [d for d in late if str((d.get("item") or {}).get("id") or "") not in _cur_ids]
+
     late_items = []
     if late_min is not None:
         for d in late:
