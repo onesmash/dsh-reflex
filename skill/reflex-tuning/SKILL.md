@@ -43,6 +43,18 @@ version: 1.0.2
        分数 ≥late_min 单独补发，否则丢弃（`late_min=None` 退回旧的"超时即丢弃"）
      - 2026-10-18 调整原因：0.9785 的高价值单条被 0.98 阈值按 60 分钟规则暂存了 46 分钟才随第二条发出
    - `wake_ledger.py`：从 reflex 日志 + DSH 会话正文还原每次唤醒的投递/用户回应/L2 动作，支持批量标注
+     - **item 级打标（2026-11-13 加）**：批级标签只能表达「这批里有没有好东西」，
+       一批 44 条里可能 1 条有用 43 条垃圾，标成 1 就把 43 条垃圾记成正例特征。
+       插件在推送里给每条附 `wake_label <target>:i:<item_id> 0|1`，粒度到单条。
+     - **多维标签（2026-11-13 加）**：`--dup 0|1 --kind tech|news|promo|opinion|data|meta
+       --action act|know|none --shelf now|week|ever|gone --why "一句话结论"`。
+       单维无法解释「为什么分数分不开」——内容无价值 / 重复 / 规则漏拦在单维里都是 0，
+       但修法完全不同（改判据 / 加去重 / 改过滤器）。维度让失效可归因。
+     - `--export-item-labels <path>`：把 item 标签 join 上 shadow 分数，输出给 `threshold_fit.py`
+   - `label_attribution.py`（2026-11-13 新增）：多维标签归因分析
+     - 负例归因：重复导致 vs 内容无价值，分别对应「该加去重」和「该改判据」
+     - 分层评估：按 kind 分别算正负例均分差，判断分数在**哪一类**上有效
+     - 时效分布：按 shelf 看正例率，支持按时效分档推送
    - `replay_wake_eval.py`：把回放通过条目按发布时间聚成"假设唤醒"，做唤醒级（OR 语义）评估
    - `wake_policy_sim.py`：策略仿真（baseline / wait / thresh / combo），输出精度、正例覆盖、每天唤醒量
 5. **因果敏感度审计**（`pc_inject.py`，Predictable Change，源自 CausalCoT arXiv:2610.31639）
@@ -81,6 +93,21 @@ python3 "$S/calibration.py" --tag <tag> --labels-tag <labelTag> --mode replay --
 python3 "$S/wake_ledger.py" --export-pending /tmp/pending.jsonl
 python3 "$S/wake_ledger.py" --label-batch /tmp/labels-batch.jsonl
 python3 "$S/wake_ledger.py" --report "$REFLEX_HOME/shadow/wake-report.md"
+
+# 6b) item 级 + 多维打标（2026-11-13）
+#     单条：
+#       wake_label "<target>:i:<item_id>" 1 --kind tech --dup 0 --action act \
+#                  --shelf ever --why "NeurIPS论文，删0.05%权重匹配全量微调"
+#     批量（推荐，每行一条，支持行首 # 注释）：
+python3 "$S/wake_ledger.py" --batch-labels /tmp/labels.txt
+#     导出给阈值拟合（join 上 shadow 分数）：
+python3 "$S/wake_ledger.py" --export-item-labels /tmp/item.jsonl --tag <tag>
+python3 "$S/threshold_fit.py" --tag <tag> --mode live --labels /tmp/item.jsonl
+#     归因分析（负例为什么是负例 / 分数在哪类有效 / 时效分布）：
+python3 "$S/label_attribution.py" --tag <tag>
+#     ⚠️ 坑：导出文件不要带 idx —— idx 是分层抽样 sample-<tag>.json 的专用序号，
+#        threshold_fit 见 idx 会优先走 idx_map 通道，把 item 标签错配成批级
+#        （实测 46 条错配 45 条）。
 
 # 7) 回放构造唤醒 + 策略仿真
 python3 "$S/replay_wake_eval.py" --tag <tag> --export /tmp/wakes.jsonl

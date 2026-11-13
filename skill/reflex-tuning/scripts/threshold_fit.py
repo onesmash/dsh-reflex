@@ -59,8 +59,16 @@ def load_shadow(home, tag, mode):
 
 
 def load_labels(home, tag, path, idx_map=None):
-    """标签文件: 每行 {"key": "...", "label": 0|1} 或 {"idx": N, "label": 0|1}。"""
+    """标签文件: 每行 {"key": "...", "label": 0|1} 或 {"idx": N, "label": 0|1}
+    或 {"id": "<原始id>", "score": ..., "label": 0|1}（item 级，2026-11-13 加）。
+
+    item 级标签的来源是 wake_ledger.py --export-item-labels：它已把
+    12 位 hash 反查回原始 id 并 join 上 shadow 分数。这里只要认识 "id" 字段。
+    为什么要单独一条通道：批级标签的 key 是「整批 id 拼接后的 hash」，
+    item 级标签的 key 是「单条 id 的 hash」，形式完全不同，不能混在一个 dict 里。
+    """
     labs = {}
+    item_labs = {}
     if not path:
         path = os.path.join(home, "shadow", f"labels-{tag}.jsonl")
     if not os.path.exists(path):
@@ -79,11 +87,54 @@ def load_labels(home, tag, path, idx_map=None):
                 lab = int(lab)
             else:
                 continue
-            if "idx" in o and idx_map and int(o["idx"]) in idx_map:
+            # ⚠️ 顺序要紧（2026-11-13 踩过）：item 级标签的导出文件若同时带 idx，
+            #    会先命中 idx_map（那是分层抽样 sample-<tag>.json 的序号表），
+            #    把 item 标签错配到完全无关的 shadow key 上 —— 实测 46 条里
+            #    45 条被错配成 batch 分支。所以 item 级必须最先判断。
+            if o.get("item_id") or (o.get("scope") == "item" and o.get("id")):
+                item_labs[str(o.get("item_id") or o["id"])] = lab
+            elif "idx" in o and idx_map and int(o["idx"]) in idx_map:
                 labs[idx_map[int(o["idx"])]] = lab
+            elif o.get("id"):
+                item_labs[str(o["id"])] = lab        # 无 idx 冲突时按 id 对齐
             elif o.get("key"):
                 labs[o["key"]] = lab
+    # 两套字典合并：批级用 key，item 级用 id。键空间不会撞
+    # （shadow 的 key 是 16 位 hex，id 是 19 位数字）。
+    labs.update(item_labs)
     return labs
+
+
+def load_item_shadow(home, tag, mode="live"):
+    """读 shadow 并把 id 作为主键（item 级标签只能靠 id 对齐，不能用 key）。
+    返回 {id: {"id","score","state"}}，同 id 保留最后一次分数。
+    """
+    files = sorted(glob.glob(os.path.join(home, "shadow", f"{tag}-*.jsonl")))
+    by_id = {}
+    for f in files:
+        base = os.path.basename(f)
+        if base.startswith(("labels-", "sample-", "wake-", "ab-")):
+            continue
+        try:
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except Exception:
+                        continue
+                    if mode != "both" and r.get("mode") != mode:
+                        continue
+                    tid = r.get("id")
+                    if not tid or r.get("score") is None:
+                        continue
+                    by_id[str(tid)] = {"id": str(tid), "score": float(r["score"]),
+                                       "state": r.get("state", "")}
+        except FileNotFoundError:
+            continue
+    return by_id
 
 
 def thresholds_of(scores, labels, ratios, weights=None, n_boot=400, seed=7):
@@ -260,12 +311,32 @@ def main():
             pass
 
     labels = load_labels(a.home, a.tag, a.labels, idx_map)
-    labeled = [r for r in items if r["key"] in labels]
-    lab_scores = [r["score"] for r in labeled]
-    lab_labels = [labels[r["key"]] for r in labeled]
-    lab_w = [weights.get(r["key"], 1.0) for r in labeled]
+    # 标签对齐支持两种粒度（2026-11-13）：
+    #   ① 批级（历史默认）：labels 的键是「整批 id 拼接后 sha1」，对 shadow 的 key。
+    #   ② item 级：labels 的键是原始 id，对 shadow 的 id。
+    # 两种都要认，否则加了 item 级标签之后旧标签会突然全部失效。
+    def _label_of(r):
+        if r["key"] in labels:
+            return labels[r["key"]], "batch"
+        tid = r.get("id")
+        if tid is not None and str(tid) in labels:
+            return labels[str(tid)], "item"
+        return None, None
 
-    summary = {"tag": a.tag, "mode": a.mode, "dist": dist, "labeled": len(labeled)}
+    labeled = []
+    _scopes = {"batch": 0, "item": 0}
+    for r in items:
+        lab, scope = _label_of(r)
+        if lab is None:
+            continue
+        _scopes[scope] = _scopes.get(scope, 0) + 1
+        labeled.append((r, lab))
+    lab_scores = [r["score"] for r, _ in labeled]
+    lab_labels = [lab for _, lab in labeled]
+    lab_w = [weights.get(r["key"], 1.0) for r, _ in labeled]
+
+    summary = {"tag": a.tag, "mode": a.mode, "dist": dist, "labeled": len(labeled),
+               "label_scopes": dict(_scopes)}
     report = []
     report.append(f"# 阈值拟合报告 · {a.tag} ({a.mode})\n")
     report.append(f"- 样本: **{dist['n']}** 条打分; 分数中位数 {dist['median']}, 范围 {dist['min']}–{dist['max']}")
@@ -282,6 +353,10 @@ def main():
     if labeled:
         base = sum(lab_labels) / len(lab_labels)
         report.append(f"## 标注样本 (n={len(labeled)}, 正例率 {fmt_pct(base)})\n")
+        if _scopes.get("item"):
+            report.append(f"> 标签粒度: item 级 {_scopes.get('item', 0)} 条 / 批级 {_scopes.get('batch', 0)} 条。"
+                          f"**item 级标签才反映单条价值；批级标签的键是整批哈希，"
+                          f"正例会连带批内所有条目。**\n")
         if any(w != 1.0 for w in lab_w):
             report.append("> 分层抽样标注, 指标与效用已按 1/入选概率 加权, 可近似还原总体。\n")
         cur_m = metrics_at(lab_scores, lab_labels, cur, lab_w) if cur is not None else None

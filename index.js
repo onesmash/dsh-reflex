@@ -868,6 +868,14 @@ function install(rt, ctx, cfg) {
         const body = String(it?.body ?? '')
         if (title) parts.push(`${i + 1}. ${title}`)
         if (body) parts.push(body.split('\n').map(l => (title ? `   ${l}` : l)).join('\n'))
+        // 每条 item 自己的打标 key（item 级标签，2026-11-13 加）。
+        // 为什么需要：批级 key 只能标「这一批有没有好东西」，而一批 44 条里
+        // 可能 1 条有用 43 条垃圾 —— 标成 1 就把 43 条垃圾记成正例特征。
+        // 实测（47 条 item 级人工标签）：批级标签拟合出的阈值对 item 级
+        // 分类几乎无区分力（正例均分 0.934 / 负例 0.918，差 0.016）。
+        // 只有每条的 key 独立落盘，标签才能和 item 分数对齐。
+        const itemKey = it?.wakeKey
+        if (itemKey) parts.push(`   [标这条: \`wake_label ${itemKey} 1\` · \`wake_label ${itemKey} 0\`]`)
         parts.push('')
       })
     }
@@ -1376,6 +1384,21 @@ function install(rt, ctx, cfg) {
               ? `${targetKey}:${createHash('sha1').update(_ids).digest('hex').slice(0, 12)}`
               : null
             if (wakeKey) ctx = { ...ctx, __wakeKey: wakeKey }
+            // 每条 item 生成自己的打标 key（2026-11-13）。
+            // 用 item.id **原文**，不哈希：哈希不可逆，见到 key 不知道是哪条，
+            // 归因时要暴力比对全部 id 才能反查（3500 条 × 每次分析）。
+            // 原 id 可读、可反查、无碰撞，长度只多 7 个字符。
+            // 保留批级 wakeKey 不动：它服务于「这一批值不值得」的粗粒度判断，
+            // 两级并存，想粗标粗、想细标细。
+            const _mkItemKey = (id) => (id ? `${targetKey}:i:${String(id)}` : null)
+            if (Array.isArray(ctx?.items)) {
+              ctx = {
+                ...ctx,
+                items: ctx.items.map(it => (it && it.id && !it.wakeKey)
+                  ? { ...it, wakeKey: _mkItemKey(it.id), itemId: String(it.id) }
+                  : it),
+              }
+            }
             log(`L1[${targetKey}]: ${label}`)
             const delivered = await wakeL2(target.render(ctx, `(${label})`))
             if (delivered) {

@@ -31,6 +31,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -314,6 +315,71 @@ def load_labels(home):
     return out
 
 
+def export_item_labels(home, tag):
+    """把 item 级标签和 shadow 里的分数对齐，输出 threshold_fit 可直接吃的 JSONL。
+
+    产物每行：{"idx": 稳定序号, "score": 判据分, "label": 0|1, "id": 原始id, "note": ...}
+    为什么要这一步：wake-labels.jsonl 里只有 12 位 hash，没有分数；而分数在
+    shadow 里按 id 索引。两个文件唯一的公共语言是「id 的 sha1 前 12 位」，
+    所以在这里做一次 join，下游就不必各自实现一遍。
+    """
+    import glob
+    labels = load_labels(home)
+    item_labels = {k: v for k, v in labels.items() if v.get("scope") == "item"}
+    if not item_labels:
+        return [], {"reason": "no item-level labels"}
+
+    # shadow 里 id -> score
+    score_of = {}
+    for f in sorted(glob.glob(os.path.join(home, "shadow", f"*{tag}*.jsonl"))):
+        base = os.path.basename(f)
+        if base.startswith(("labels-", "sample-", "wake-", "ab-")):
+            continue
+        try:
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except Exception:
+                        continue
+                    tid = r.get("id")
+                    sc = r.get("score")
+                    if tid and sc is not None:
+                        score_of[str(tid)] = float(sc)
+        except OSError:
+            continue
+
+    rows = []
+    for key, rec in item_labels.items():
+        ik = rec.get("item_key") or ""
+        if not ik:
+            continue
+        # 反查：哪些 id 的 sha1 前 12 位等于 ik
+        # 直接对 score_of 的键做哈希比对（id 数量级 ~3500，可接受）
+        hit_id = None
+        for tid in score_of:
+            if hashlib.sha1(tid.encode()).hexdigest()[:12] == ik:
+                hit_id = tid
+                break
+        if hit_id is None:
+            continue
+        rows.append({"id": hit_id, "score": score_of[hit_id],
+                     "label": int(rec.get("label", 0)),
+                     "note": rec.get("note", ""), "target": rec.get("target", "")})
+    rows.sort(key=lambda r: r["score"])
+    # 刻意不输出 idx：idx 是「分层抽样 sample-<tag>.json」的专用序号，
+    # threshold_fit 见到 idx 会优先走 idx_map 通道（2026-11-13 踩过这个坑，
+    # 46 条 item 标签被错配成批级）。这里只给 id，让下游按 id 对齐。
+    for r in rows:
+        r.pop("idx", None)
+    stats = {"matched": len(rows), "item_labels": len(item_labels),
+             "shadow_ids": len(score_of)}
+    return rows, stats
+
+
 def rebuild(home):
     events = parse_log(home)
     # 会话正文按 session 解析一次
@@ -377,6 +443,26 @@ def main():
     ap.add_argument("--report", default="", help="写出唤醒级标注报告 (markdown)")
     ap.add_argument("--label", nargs=2, metavar=("WAKE_KEY", "LABEL"), default=None)
     ap.add_argument("--note", default="")
+    # ---- 多维打标（2026-11-13）----
+    # 单维 0/1 无法解释「为什么分数分不开」：内容无价值 / 重复 / 规则漏拦
+    # 在单维里都是 0，但修法完全不同。维度让失效可归因。
+    # 全部可选：不传时行为与旧版完全一致，向后兼容。
+    ap.add_argument("--dup", type=int, choices=[0, 1], default=None,
+                    help="是否重复：1=今天已推过同一信息，0=首次")
+    ap.add_argument("--kind", default=None,
+                    choices=["tech", "news", "promo", "opinion", "data", "meta"],
+                    help="内容类型")
+    ap.add_argument("--action", default=None, choices=["act", "know", "none"],
+                    help="行动性：act=有明确下一步 / know=知道即可 / none=噪音")
+    ap.add_argument("--shelf", default=None, choices=["now", "week", "ever", "gone"],
+                    help="时效：now=今天内 / week=一周内 / ever=长期 / gone=过期")
+    ap.add_argument("--why", default="",
+                    help="一句话理由（结论，非推理过程），限 50 字")
+    ap.add_argument("--batch-labels", default="",
+                    help="批量打标文件, 每行: <wake_key> <0|1> [--kind ... --dup ... --why ...]")
+    ap.add_argument("--export-item-labels", default="",
+                    help="把 item 级标签 join 上 shadow 分数, 输出 JSONL (给 threshold_fit 吃)")
+    ap.add_argument("--tag", default="x-timeline", help="配合 --export-item-labels 指定 target tag")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args()
@@ -403,6 +489,87 @@ def main():
         print(f"导入 {n} 条标注 -> {path}")
         return 0
 
+    if a.export_item_labels:
+        rows, stats = export_item_labels(a.home, a.tag)
+        os.makedirs(os.path.dirname(os.path.abspath(a.export_item_labels)), exist_ok=True)
+        with open(a.export_item_labels, "w", encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+        pos = sum(1 for r in rows if r["label"] == 1)
+        print(f"导出 {len(rows)} 条 item 级标签 → {a.export_item_labels}")
+        print(f"  正例 {pos} / 负例 {len(rows) - pos}")
+        print(f"  统计: {stats}")
+        if rows:
+            print(f"  分数范围: {rows[0]['score']:.2f} ~ {rows[-1]['score']:.2f}")
+        return 0
+
+    def _build_rec(key, lab, note, dims=None, why=""):
+        """构造一条标签记录。item 级与批级的区分在这里统一处理。"""
+        rec = {"wake_key": key, "label": lab, "note": note,
+               "labeled_by": "L2", "at": int(time.time() * 1000)}
+        parts = key.split(":")
+        if len(parts) >= 3 and parts[1] == "i":
+            rec["scope"] = "item"
+            rec["target"] = parts[0]
+            rec["item_key"] = parts[2]
+        else:
+            rec["scope"] = "batch"
+            rec["target"] = parts[0] if parts else ""
+        if dims:
+            rec["dims"] = dims
+        if why:
+            rec["why"] = why[:120]
+        return rec
+
+    if a.batch_labels:
+        path = os.path.join(a.home, "shadow", "wake-labels.jsonl")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        n = 0
+        bad = 0
+        with open(path, "a", encoding="utf-8") as fh:
+            for ln in open(a.batch_labels, encoding="utf-8"):
+                ln = ln.strip()
+                if not ln or ln.startswith("#"):
+                    continue
+                # 格式: <wake_key> <0|1> [--kind xxx] [--dup 0|1] [--action xxx]
+                #       [--shelf xxx] [--why "..."] [--note "..."]
+                toks = shlex.split(ln)
+                if len(toks) < 2:
+                    bad += 1
+                    continue
+                key, lab_s = toks[0], toks[1]
+                try:
+                    lab_i = int(lab_s)
+                except ValueError:
+                    bad += 1
+                    continue
+                if lab_i not in (0, 1):
+                    bad += 1
+                    continue
+                opt = {"note": "", "why": ""}
+                dims = {}
+                i = 2
+                while i < len(toks):
+                    t = toks[i]
+                    if t.startswith("--") and i + 1 < len(toks):
+                        name, val = t[2:], toks[i + 1]
+                        if name == "dup":
+                            dims["dup"] = int(val)
+                        elif name in ("kind", "action", "shelf"):
+                            dims[name] = val
+                        elif name == "why":
+                            opt["why"] = val
+                        elif name == "note":
+                            opt["note"] = val
+                        i += 2
+                    else:
+                        i += 1
+                fh.write(json.dumps(_build_rec(key, lab_i, opt["note"], dims or None,
+                                               opt["why"]), ensure_ascii=False) + "\n")
+                n += 1
+        print(f"批量标注 {n} 条" + (f"（跳过 {bad} 行格式错误）" if bad else ""))
+        return 0
+
     if a.label:
         key, lab = a.label
         try:
@@ -412,10 +579,24 @@ def main():
             return 2
         path = os.path.join(a.home, "shadow", "wake-labels.jsonl")
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        # item 级 key 形如 "x-timeline:i:<sha1(id)[:12]>"（2026-11-13 加）。
+        # 为什么要区分：批级 key 只能表达「这批里有没有好东西」，item 级
+        # 才能表达「这一条有没有用」。两者混在同一个字段里，拟合时无法区分
+        # 标签粒度，会把批的正例特征算到批内每一条上（实测正是如此）。
+        dims = {}
+        if a.dup is not None:
+            dims["dup"] = a.dup
+        for _k in ("kind", "action", "shelf"):
+            _v = getattr(a, _k, None)
+            if _v:
+                dims[_k] = _v
+        rec = _build_rec(key, lab, a.note, dims or None, a.why)
         with open(path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"wake_key": key, "label": lab, "note": a.note,
-                                 "labeled_by": "L2", "at": int(time.time() * 1000)}, ensure_ascii=False) + "\n")
-        print(f"已标注 {key} -> {lab}")
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        bits = ["item 级" if rec["scope"] == "item" else "批级"]
+        if dims:
+            bits.append("维度 " + " ".join(f"{k}={v}" for k, v in dims.items()))
+        print(f"已标注 {key} -> {lab}（{'，'.join(bits)}）")
         return 0
 
     ledger, out = rebuild(a.home)
