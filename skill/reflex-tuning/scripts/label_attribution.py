@@ -102,6 +102,7 @@ def main():
             "kind": dims.get("kind"),
             "action": dims.get("action"),
             "shelf": dims.get("shelf"),
+            "offtopic": dims.get("offtopic"),      # 2026-11-13：内容有实料但方向不搭
             "why": rec.get("why", ""),
         })
 
@@ -115,18 +116,31 @@ def main():
     # ---- 归因：负例为什么是负例 ----
     neg = [r for r in rows if r["label"] == 0]
     if neg:
-        print("=" * 56)
-        print("负例归因（回答：该改判据，还是该加去重）")
-        print("=" * 56)
+        print("=" * 60)
+        print("负例归因（回答：该改判据、加去重、还是不加任何规则）")
+        print("=" * 60)
+        # 三种原因分开（2026-11-13）：
+        #   重复   → dup=1，该加去重
+        #   无关   → offtopic=1（内容有实料但方向不搭），不该据此改判据
+        #   内容差 → 其余，该改判据
+        # 混在一起的后果：把 offtopic 也算进「判据失灵」，会误判判据质量。
         dup_n = sum(1 for r in neg if r["dup"] == 1)
-        nodup_n = len(neg) - dup_n
-        print(f"  重复导致     {dup_n:3d} 条  ({dup_n / len(neg) * 100:.0f}%)  → 该加去重")
-        print(f"  内容本身无价值 {nodup_n:3d} 条  ({nodup_n / len(neg) * 100:.0f}%)  → 该改判据")
-        kinds = collections.Counter(r["kind"] for r in neg if r["kind"])
-        if kinds:
-            print("\n  负例内容类型：")
-            for k, v in kinds.most_common():
-                print(f"    {k:8} {v:3d}")
+        offtopic = [r for r in neg if r.get("offtopic") == 1 and r["dup"] != 1]
+        rest = [r for r in neg if r["dup"] != 1 and r.get("offtopic") != 1]
+        tot = len(neg) or 1
+        print(f"  重复导致       {dup_n:3d} 条  ({dup_n / tot * 100:3.0f}%)  → 该加去重")
+        print(f"  方向不搭       {len(offtopic):3d} 条  ({len(offtopic) / tot * 100:3.0f}%)  → 无需改判据，改相关性筛选")
+        print(f"  内容本身无价值 {len(rest):3d} 条  ({len(rest) / tot * 100:3.0f}%)  → 该改判据")
+        if rest:
+            kinds = collections.Counter(r["kind"] for r in rest if r["kind"])
+            if kinds:
+                print("\n  内容差的类型分布：")
+                for k, v in kinds.most_common():
+                    print(f"    {k:8} {v:3d}")
+        if offtopic:
+            print("\n  方向不搭的条目（这些不该算判据的错）：")
+            for r in offtopic[:6]:
+                print(f"    {r['score']:.2f} {r.get('why', '')[:52]}")
         print()
 
     # ---- 分层评估：不同类型分别算 P/R ----

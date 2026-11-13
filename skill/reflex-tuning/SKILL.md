@@ -48,6 +48,13 @@ version: 1.0.2
        插件在推送里给每条附 `wake_label <target>:i:<item_id> 0|1`，粒度到单条。
      - **多维标签（2026-11-13 加）**：`--dup 0|1 --kind tech|news|promo|opinion|data|meta
        --action act|know|none --shelf now|week|ever|gone --why "一句话结论"`。
+     - **offtopic（2026-11-13 加）**：`--offtopic 0|1` 区分「内容差」与「方向不搭」。
+       实测 95 条标签中 `action != none` 与 `label == 1` **100% 一致**（49/49），
+       `value` 已被 `action` 完全冗余——所以不要再加 value/relevance 双维度
+       （会摊薄样本：95 条拆 4 格，每格 ~24 条，低于可拟合下限）。
+       缺的只是「内容有实料但跟用户方向不搭」这一类：Meshy 3D / BYD 巴西产能 /
+       Honda CR-V 混动 —— 判据给高分**没有错**，错在相关性没筛。
+       填了 offtopic=1 的负例**不计入判据质量评估**，它指向的是相关性筛选问题。
        单维无法解释「为什么分数分不开」——内容无价值 / 重复 / 规则漏拦在单维里都是 0，
        但修法完全不同（改判据 / 加去重 / 改过滤器）。维度让失效可归因。
      - `--export-item-labels <path>`：把 item 标签 join 上 shadow 分数，输出给 `threshold_fit.py`
@@ -98,6 +105,9 @@ python3 "$S/wake_ledger.py" --report "$REFLEX_HOME/shadow/wake-report.md"
 #     单条：
 #       wake_label "<target>:i:<item_id>" 1 --kind tech --dup 0 --action act \
 #                  --shelf ever --why "NeurIPS论文，删0.05%权重匹配全量微调"
+#     内容有实料但方向不搭（不据此改判据）：
+#       wake_label "<target>:i:<item_id>" 0 --kind news --action none --offtopic 1 \
+#                  --why "Meshy 3D 有实料但非用户方向"
 #     批量（推荐，每行一条，支持行首 # 注释）：
 python3 "$S/wake_ledger.py" --batch-labels /tmp/labels.txt
 #     导出给阈值拟合（join 上 shadow 分数）：

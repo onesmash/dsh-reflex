@@ -456,6 +456,13 @@ def main():
                     help="行动性：act=有明确下一步 / know=知道即可 / none=噪音")
     ap.add_argument("--shelf", default=None, choices=["now", "week", "ever", "gone"],
                     help="时效：now=今天内 / week=一周内 / ever=长期 / gone=过期")
+    # offtopic（2026-11-13）：区分「内容差」与「方向不搭」。
+    # 实测 95 条标签里 action 与 label 100% 一致，value 冗余；但 news 类负例
+    # 混着两种原因：重复（dup 已管）和无关（原先只能塞进 why 的自由文本）。
+    # 加这个维度后三种负例能分开归因：offtopic 不改判据，promo 才改。
+    # 可选：只有 news 类需要填，其余留空，避免摊薄主样本。
+    ap.add_argument("--offtopic", type=int, choices=[0, 1], default=None,
+                    help="是否与用户方向无关：1=内容有实料但方向不搭（不据此改判据）")
     ap.add_argument("--why", default="",
                     help="一句话理由（结论，非推理过程），限 50 字")
     ap.add_argument("--batch-labels", default="",
@@ -553,8 +560,8 @@ def main():
                     t = toks[i]
                     if t.startswith("--") and i + 1 < len(toks):
                         name, val = t[2:], toks[i + 1]
-                        if name == "dup":
-                            dims["dup"] = int(val)
+                        if name in ("dup", "offtopic"):
+                            dims[name] = int(val)
                         elif name in ("kind", "action", "shelf"):
                             dims[name] = val
                         elif name == "why":
@@ -590,6 +597,8 @@ def main():
             _v = getattr(a, _k, None)
             if _v:
                 dims[_k] = _v
+        if a.offtopic is not None:
+            dims["offtopic"] = a.offtopic
         rec = _build_rec(key, lab, a.note, dims or None, a.why)
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
