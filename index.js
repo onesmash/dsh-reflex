@@ -887,15 +887,10 @@ function install(rt, ctx, cfg) {
     })
     if (extra) parts.push(extra)
     parts.push(`请评估并决策是否需要处理。需要更多数据时, L0 数据源入口: ${cfg.l0.storeDir}/manifest.json`)
-    // 给 L2 的打标提示（不是给用户的操作指令）。
-    // 为什么放在推送里：L2 回答「是否需要处理」时，已经形成了对这批内容价值的判断；
-    // 不当场记录，这个判断就丢了 —— 实测 wake-ledger 有 87 条唤醒、人工标注 0 条。
-    // 注意：这是建议性提示，不标也不影响判定。
-    if (wakeKey) {
-      parts.push('')
-      parts.push(`📝 处理完后请顺手标一下（供阈值拟合用）：\`wake_label ${wakeKey} 1\` 有用 · \`wake_label ${wakeKey} 0\` 没用`)
-      parts.push(`   可加备注：\`wake_label ${wakeKey} 0 "全是产品公告"\`。标不标都不影响你的回复，只是帮下次少推点噪音。`)
-    }
+    // 打标提示已全部下移到每条 item（见上方 forEach）。批级打标（wake_key 整批哈希）
+    // 于 2026-11-13 移除：实测 107 条 item 标签对 8 条批级，批级已被取代；且批级
+    // 语义是「这批里有没有好东西」，会把批内垃圾记成正例特征。唤醒级「这次好不好」
+    // 由 wake_ledger 从日志+会话反推，不需人工再标一遍。
     return parts.join('\n')
   }
 
