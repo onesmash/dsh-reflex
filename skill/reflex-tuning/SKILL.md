@@ -143,7 +143,13 @@ python3 "$S/replay_wake_eval.py" --tag <tag> --export /tmp/wakes.jsonl
 python3 "$S/wake_policy_sim.py" --items /tmp/passed-items-labeled.json --days 5
 
 # 8) 因果敏感度审计（判据指纹）
-python3 "$S/pc_inject.py" --tag <tag> --days all --sample 100
+#    ⚠️ 必须传 --options-json（生产判据的 yes/no 描述）。不带时脚本会【静默】
+#       回退到 DEFAULT_OPTIONS（3 选项通用判据：值得立即打断/不紧急/信息不足），
+#       于是报告有数、结论错——2026-11-14 实测同一批 30 样本：
+#       默认判据 noise_append 0%（不通过）vs 生产判据 70%、Δp −0.006（通过）。
+#       判据选项可从 target 生成：见 tools/tune-preflight.py 的提取逻辑。
+python3 "$S/pc_inject.py" --tag <tag> --days all --sample 100 \
+        --options-json "$REFLEX_HOME/shadow/options-<tag>.json"
 #    可复现: 首次加 --snapshot-out DIR, 之后 --from-snapshot DIR/pc-snapshot-*.jsonl 复跑
 #    纯标题源自动走 blob 模板; 强制: --template auto|fielded|blob; 报告在 $REFLEX_HOME/shadow/pc/
 
@@ -190,12 +196,22 @@ bash "$S/reflex_e2e_probe.sh" --timeout 300
      只把事实摆进 state、不告诉模型怎么用，模型会在语义相近的两个类别之间来回摆（平票 → 阈值边缘）。
    所以调这类判据先问两句：**上下文够不够（跨条目/跨 thread）**、**已知事实有没有告诉模型怎么用**。
 
+10. **工具在口径不匹配时会静默回退默认值**（2026-11-14，三例）：
+    - `pc_inject.py` 取不到 `OPTIONS = [` → 用 `DEFAULT_OPTIONS`（3 选项通用判据），
+      报告照出、指标齐全、结论错误。判据指纹因此得出过假阴性（0% 不变性）。
+    - `stamp-targets.py` 同一正则 → `optionsHash` 静默为 None，registry 缺字段也不报错。
+    - `shadow-semif.sh` 缺 `REFLEX_*` env → 回退本地打分器（必败），报错被 `|| true` 吞。
+    ⟹ 任何「跑完了」的工具，都要问一句：它取输入失败时是报错还是回退？
+    对抗手段：产物绑定输入指纹（判据 hash / state 截断 / 标签 hash / 阈值），
+    并跑 `python3 $REFLEX_HOME/tools/tune-preflight.py --tag <tag>`（退出码 3 = 结论不可引用）。
+
 ## 验证清单
 
 - [ ] `shadow_stats` 有数据：`wc -l $REFLEX_HOME/shadow/<tag>-*.jsonl`
 - [ ] 回放批次与逐条分数一致（抽 3 条手跑对比）
 - [ ] 拟合报告里 `通过量` 与 `P/R` 同时给出，且带固定基线（always-wake / always-suppress / 同量随机）
 - [ ] 证书带样本量规划；小样本不下结论
+- [ ] `tune-preflight.py --tag <tag>` 退出码 0（判据 hash / 阈值 / state 截断 / 标签 hash / 指纹绑定全对齐）
 - [ ] target 改动后：`python3 <repo>/tests/reflex-shadow-regress.py`（运行时）或 `python3 tests/test-tuning-tools.py`（仓库；tests/ 仅仓库，不随 npm 包发布）
 - [ ] target/采集源改动后：`bash "$S/reflex_e2e_probe.sh"` PASS（采集→判定→唤醒全链实测）
 - [ ] 策略变更可回滚：单条目策略用 `REFLEX_X_DEFER=0`；判据/阈值改回脚本默认值即热生效
