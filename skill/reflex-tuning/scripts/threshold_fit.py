@@ -71,6 +71,11 @@ def load_labels(home, tag, path, idx_map=None):
     item_labs = {}
     if not path:
         path = os.path.join(home, "shadow", f"labels-{tag}.jsonl")
+    elif not os.path.isabs(path) and not os.path.exists(path):
+        # 相对路径按 shadow 目录解析（2026-11-14：原来按 cwd，跑一次就静默「没有标签」）
+        cand = os.path.join(home, "shadow", path)
+        if os.path.exists(cand):
+            path = cand
     if not os.path.exists(path):
         return labs
     with open(path, encoding="utf-8", errors="replace") as fh:
@@ -260,6 +265,10 @@ def main():
     ap.add_argument("--export-sample", type=int, default=0)
     ap.add_argument("--report", default="")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--need-pos", type=int, default=20,
+                    help="下结论所需最少正例数；不足则报告标注『临时值』并退出码 2")
+    ap.add_argument("--allow-small", action="store_true",
+                    help="正例不足也当结论用（会写进报告，供审计）")
     a = ap.parse_args()
 
     items = load_shadow(a.home, a.tag, a.mode)
@@ -413,6 +422,42 @@ def main():
         report.append("先用 `--export-sample 120` 导出样本, 标完写进 "
                       f"`shadow/labels-{a.tag}.jsonl` 再跑一次。\n")
 
+    # ---------- 样本量门禁（O9, 2026-11-14）----------
+    # 为什么：45 条样本 8 个正例就定阈值的教训。skill 写着「小样本不下结论」，
+    # 但工具不拦就等于没写。这里直接算出「按当前样本能声称的下界」并给退出码。
+    if labeled:
+        n_pos = sum(lab_labels)
+        cur_tau = cur if cur is not None else None
+        tp = sum(1 for sc, lb in zip(lab_scores, lab_labels) if cur_tau is not None and sc >= cur_tau and lb == 1)
+        fp = sum(1 for sc, lb in zip(lab_scores, lab_labels) if cur_tau is not None and sc >= cur_tau and lb == 0)
+        lb = None
+        try:
+            from risk_certificate import cp_lower
+            if tp + fp:
+                lb = cp_lower(tp, tp + fp, 0.05)
+        except Exception:
+            lb = None
+        report.append("\n## 样本量门禁 (O9)\n")
+        report.append(f"- 标注样本 {len(labeled)} 条 · 正例 **{n_pos}** 条"
+                      + (f" · 当前阈值 {cur_tau:g} 处 TP {tp} / FP {fp}" if cur_tau is not None else ""))
+        if lb is not None:
+            report.append(f"- 精确率单侧 95% 下界: **{fmt_pct(lb)}**（Clopper-Pearson，"
+                          f"只对抽样分布成立）")
+        need = a.need_pos
+        if n_pos < need:
+            report.append(f"- ⛔ **正例 {n_pos} < {need}**：本报告的阈值只能当【临时值】，"
+                          f"不得作为「校准结论」引用")
+            if not a.allow_small:
+                summary["sample_gate"] = {"positives": n_pos, "need": need, "passed": False}
+            else:
+                report.append("- ⚠️ 已用 --allow-small 强制放行（结论需在审计里注明样本不足）")
+                summary["sample_gate"] = {"positives": n_pos, "need": need, "passed": False,
+                                          "forced": True}
+        else:
+            report.append(f"- ✓ 正例 {n_pos} ≥ {need}：可给一个工作点，但分档（kind/dup/offtopic）仍需更多")
+            summary["sample_gate"] = {"positives": n_pos, "need": need, "passed": True}
+        report.append("")
+
     report.append("\n## 怎么落地\n")
     report.append("- 改阈值: 优先改 `targets/<tag>.sh` 里的 `THRESHOLD=` 默认值 (热生效); "
                   "不要写 `targets/<tag>.env.json` (插件启动时读取, 要重启 DSH)")
@@ -426,6 +471,11 @@ def main():
     else:
         print("\n".join(report))
         print(f"\n报告已写入 {out}")
+    g = summary.get("sample_gate") or {}
+    if g and not g.get("passed") and not a.allow_small:
+        print("\n⛔ 样本量门禁未通过：阈值不可作为校准结论引用（加 --allow-small 可放行）",
+              file=sys.stderr)
+        return 2
     return 0
 
 

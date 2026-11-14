@@ -27,6 +27,7 @@
   旧 stamp-targets.py 只认 A，对 B 静默返回 None —— 这正是 11-14 那条漏检的成因。
 """
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -43,6 +44,21 @@ def sha16(s):
     return hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
 
 
+def canonical_hash(question, options):
+    """与 tools/judge-sync.py 完全一致的判据指纹算法。
+
+    只对语义字段（question + 每个 option 的 id/description）求规范化哈希：
+    改措辞一定变，重排/缩进不变。registry / pc_inject / judge-sync 三处必须同算法，
+    否则「绑定了判据版本」只是自欺。
+    """
+    canon = {
+        "question": question or "",
+        "options": [{"id": str(o.get("id")), "description": o.get("description") or ""} for o in options],
+    }
+    blob = json.dumps(canon, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return sha16(blob)
+
+
 def read(p):
     try:
         with open(p, encoding="utf-8") as f:
@@ -57,19 +73,24 @@ def extract_rubric(target_path):
     if s is None:
         return None, None, "target 文件不存在"
 
-    m = re.search(r"^OPTIONS\s*=\s*\[", s, re.M)
-    if m:
-        i = m.start()
-        j = s.find("\n]", i)
-        seg = s[i:j + 2] if j > 0 else s[i:]
-        return "options", seg, "OPTIONS 段"
-
-    ys = re.search(r'^SHADOW_YES\s*=\s*"([^"]*)"', s, re.M)
-    ns = re.search(r'^SHADOW_NO\s*=\s*"([^"]*)"', s, re.M)
     qs = re.search(r'^QUESTION\s*=\s*"([^"]*)"', s, re.M)
+    question = qs.group(1) if qs else ""
+
+    m = re.search(r"^OPTIONS\s*=\s*(\[.*?\n\])", s, re.M | re.S)
+    if m:
+        raw = re.sub(r",(\s*[\]}])", r"\1", m.group(1))
+        for parse in (ast.literal_eval, json.loads):
+            try:
+                return ("options", (question, parse(raw)), "OPTIONS 段")
+            except Exception:
+                continue
+        return None, None, "OPTIONS 段存在但不是合法字面量"
+
+    ys = re.search(r'^SHADOW_YES\s*=\s*"((?:[^"\\]|\\.)*)"', s, re.M)
+    ns = re.search(r'^SHADOW_NO\s*=\s*"((?:[^"\\]|\\.)*)"', s, re.M)
     if ys and ns:
-        seg = "\x00".join([qs.group(1) if qs else "", ys.group(1), ns.group(1)])
-        return "shadow", seg, "QUESTION/SHADOW_YES/SHADOW_NO"
+        opts = [{"id": "yes", "description": ys.group(1)}, {"id": "no", "description": ns.group(1)}]
+        return "shadow", (question, opts), "QUESTION/SHADOW_YES/SHADOW_NO"
 
     return None, None, "既无 OPTIONS 段也无 SHADOW_YES/NO 常量"
 
@@ -133,6 +154,59 @@ def save_registry(d):
     os.replace(tmp, TF)
 
 
+def current_fingerprint(tag):
+    """一个 tag 当前的四项指纹（O10：产物必须绑这四项，缺一即不可引用）。"""
+    base = tag.replace("-replay2", "").replace("-replay", "")
+    target = os.path.join(HOME, "targets", f"{base}.sh")
+    collector = os.path.join(HOME, "collectors", f"{base}.sh")
+    style, rubric, why = extract_rubric(target)
+    judge_p = os.path.join(HOME, "judge", f"{base}.json")
+    fp = {"tag": base, "rubricSource": why if style else None}
+    if style:
+        fp["optionsHash"] = canonical_hash(*rubric)
+    s = read(judge_p)
+    if s:
+        try:
+            d = json.loads(s)
+            fp["judgeHash"] = d.get("rubricHash")
+        except Exception:
+            fp["judgeHash"] = None
+    fp["threshold"] = extract_threshold(target)
+    fp["stateTruncation"] = extract_truncation(collector)
+    meta = load_registry().get(tag) or {}
+    lf = os.path.join(HOME, meta.get("labelsFile") or f"shadow/labels-{base}.jsonl")
+    fp["labelsHash"] = sha16(read(lf)) if os.path.exists(lf) else None
+    return fp
+
+
+def write_meta(tag, artifact):
+    fp = current_fingerprint(tag)
+    fp["artifact"] = os.path.abspath(artifact)
+    import time
+    fp["writtenAt"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    out = artifact + ".meta.json"
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(fp, f, ensure_ascii=False, indent=2)
+    return out, fp
+
+
+def verify_meta(tag, artifact):
+    out = artifact + ".meta.json"
+    s = read(out)
+    if not s:
+        return False, f"缺 {os.path.basename(out)}（产物未绑定口径）"
+    try:
+        old = json.loads(s)
+    except Exception as e:
+        return False, f"{os.path.basename(out)} 不合法: {e}"
+    cur = current_fingerprint(tag)
+    drift = [k for k in ("optionsHash", "judgeHash", "threshold", "stateTruncation", "labelsHash")
+             if old.get(k) != cur.get(k)]
+    if drift:
+        return False, "产物绑定值已失效: " + ", ".join(f"{k}({old.get(k)}→{cur.get(k)})" for k in drift)
+    return True, f"口径一致（{os.path.basename(artifact)}）"
+
+
 def check_tag(tag, reg, args):
     """返回 [(level, check, message)]。"""
     out = []
@@ -145,7 +219,7 @@ def check_tag(tag, reg, args):
     if style is None:
         out.append((FAIL, "判据可提取", f"{why}（{target}）"))
         return out
-    rh = sha16(rubric)
+    rh = canonical_hash(*rubric)
     out.append((OK, "判据可提取", f"{why} · hash={rh}"))
 
     thr = extract_threshold(target)
@@ -218,6 +292,15 @@ def check_tag(tag, reg, args):
     else:
         out.append((OK, "指纹绑定当前判据", f"verdict={pc['verdict']}@{pc['optionsHash']}"))
 
+    # 产物必须绑定口径（O10）：registry 里登记的 artifact 每个都要有 .meta.json 且仍一致
+    for art in (meta.get("artifacts") or []):
+        ap = art if os.path.isabs(art) else os.path.join(HOME, art)
+        if not os.path.exists(ap):
+            out.append((FAIL, "产物存在", f"{art} 找不到"))
+            continue
+        ok, msg = verify_meta(tag, ap)
+        out.append((OK if ok else FAIL, "产物绑定口径", f"{art}: {msg}"))
+
     return out
 
 
@@ -228,7 +311,7 @@ def stamp(tag, reg):
     style, rubric, _ = extract_rubric(target)
     meta = reg.setdefault(tag, {})
     if rubric:
-        meta["optionsHash"] = sha16(rubric)
+        meta["optionsHash"] = canonical_hash(*rubric)
         meta["rubricStyle"] = style
     thr = extract_threshold(target)
     if thr is not None:
@@ -248,6 +331,10 @@ def main():
     ap.add_argument("--tag", default="all", help="target 名，或 all")
     ap.add_argument("--home", default=HOME)
     ap.add_argument("--stamp", action="store_true", help="把当前状态登记进 shadow_targets.json")
+    ap.add_argument("--write-meta", default=None,
+                    help="给该产物写 <path>.meta.json（绑定判据/阈值/截断/标签四项指纹）")
+    ap.add_argument("--verify-meta", default=None,
+                    help="校验产物的 .meta.json 是否仍与当前状态一致（不一致退出码 3）")
     ap.add_argument("--need-pos", type=int, default=20,
                     help="下结论所需最少正例数（默认 20：够拟合一个工作点）")
     args = ap.parse_args()
@@ -256,6 +343,16 @@ def main():
     reg = load_registry()
     tags = [t for t in reg if not t.endswith("-replay") and not t.endswith("-replay2")] \
         if args.tag == "all" else [args.tag]
+
+    if args.write_meta:
+        out, fp = write_meta(args.tag, args.write_meta)
+        print(f"[meta] {out}")
+        print(json.dumps(fp, ensure_ascii=False, indent=2))
+        return 0
+    if args.verify_meta:
+        ok, msg = verify_meta(args.tag, args.verify_meta)
+        print(("✓ " if ok else "✗ ") + msg)
+        return 0 if ok else 3
 
     if args.stamp:
         for t in tags:

@@ -201,6 +201,9 @@ def main():
     ap.add_argument("--labels-tag", default="", help="标签来自哪个 tag (默认同 --tag; 判据变体用 state_hash 对齐)")
     ap.add_argument("--home", default=DEFAULT_HOME)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--need-pos", type=int, default=20,
+                    help="下结论所需最少正例数；不足则证书标注『不可作校准结论』并退出码 2")
+    ap.add_argument("--allow-small", action="store_true")
     ap.add_argument("--report", default="")
     a = ap.parse_args()
 
@@ -306,6 +309,19 @@ def main():
         rep.append(f"| 误报率 ≤ {float(r)*100:.0f}% | {n} |")
     for p, n in out["sample_size_planning"]["zero_fp_to_certify_precision_ge"].items():
         rep.append(f"| precision ≥ {float(p)*100:.0f}% | {n} |")
+    n_pos_gate = tp + fn
+    small = n_pos_gate < a.need_pos
+    rep += ["", "## 样本量门禁 (O9)\n",
+            f"- 正例 **{n_pos_gate}** 条 · 唤醒集合 {n_wake} 条"
+            + (f" · 精确率下界 {fmt(out['certificate']['precision_lower'])}" if n_wake else "")]
+    if small:
+        rep += [f"- ⛔ 正例 {n_pos_gate} < {a.need_pos}：**本证书不得作为「校准结论」引用**，只能当临时值。"
+                f"要对 precision 下结论，至少需连续 5 次全中（≥50%）、14 次（≥80%）、29 次（≥90%）。"]
+        if a.allow_small:
+            rep += ["- ⚠️ 已用 --allow-small 放行；引用时须注明样本不足"]
+    else:
+        rep += [f"- ✓ 正例 {n_pos_gate} ≥ {a.need_pos}：可给一个工作点；分档结论仍需更多样本"]
+
     rep += ["",
             "## 口径与限制\n",
             "- 标签是**分层抽样** (边界带优先), 上表 CP 区间严格来说只对抽样分布成立, 不能直接当总体指标。",
@@ -316,11 +332,15 @@ def main():
     open(report_path, "w", encoding="utf-8").write("\n".join(rep) + "\n")
     out["report"] = report_path
 
+    out["sample_gate"] = {"positives": n_pos_gate, "need": a.need_pos, "passed": not small}
     if a.json:
         print(json.dumps(out, ensure_ascii=False, indent=2))
     else:
         print("\n".join(rep))
         print(f"\n报告已写入 {report_path}")
+    if small and not a.allow_small:
+        print("\n⛔ 样本量门禁未通过：证书不可作为校准结论引用（--allow-small 可放行）", file=sys.stderr)
+        return 2
     return 0
 
 

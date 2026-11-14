@@ -45,7 +45,7 @@ python3 "$S/pc_inject.py" --tag x-timeline --days all --sample 30 \
 python3 "$S/labels-join-key.py" x-timeline
 
 # 拟合后给元数据打 hash
-python3 "$S/stamp-targets.py"
+python3 "$REFLEX_HOME/tools/tune-preflight.py" --tag all --stamp   # 原 stamp-targets.py 已并入
 
 # 按模板分轨看审计
 python3 "$S/audit-by-template.py" x-timeline all

@@ -21,8 +21,10 @@
 打分走 run_score.sh (本地 SemIf), 零 API 成本。
 """
 import argparse
+import ast
 import hashlib
 import json
+from types import SimpleNamespace
 import os
 import random
 import re
@@ -252,15 +254,49 @@ def sample_records(records, n, seed=7):
 
 
 def extract_options(target_script):
+    """从 target 脚本提取判据（OPTIONS 段）。
+
+    2026-11-14 教训：这里原来取不到就 return DEFAULT_OPTIONS（3 选项通用判据），
+    结果对 jev-friction（用 SHADOW_YES/NO 写法）整批判据指纹是在另一套判据下测的，
+    产出「有报告、指标齐全、结论错误」的假阴性。取不到就是取不到，必须交给调用方报错。
+    """
     try:
         src = open(target_script, encoding="utf-8").read()
         m = re.search(r"OPTIONS = (\[.*?\n\])", src, re.S)
-        if m:
-            raw = re.sub(r",(\s*[\]}])", r"\1", m.group(1))   # 列表尾逗号不是合法 JSON
-            return json.loads(raw)
+        if not m:
+            return None
+        raw = re.sub(r",(\s*[\]}])", r"\1", m.group(1))
+        # 2026-11-14：OPTIONS 段是 Python 字面量（可能含隐式字符串拼接），不是 JSON。
+        # 先用 ast.literal_eval，再退回 json.loads —— 否则 x-timeline 这种写法会被判为
+        # 提取失败并（旧版本）静默回退 DEFAULT_OPTIONS。
+        for parse in (ast.literal_eval, json.loads):
+            try:
+                return parse(raw)
+            except Exception:
+                continue
+        return None
     except Exception:
-        pass
-    return json.loads(json.dumps(DEFAULT_OPTIONS))
+        return None
+
+
+def resolve_options(args):
+    """判据来源优先级：--options-json > target 的 OPTIONS 段 > 报错。
+
+    `--allow-default-options` 保留给「先用通用判据跑通链路」的调试场景，
+    且会在报告头打红字，避免又被当成生产结论。
+    """
+    if args.options_json:
+        return json.load(open(args.options_json, encoding="utf-8")), f"options-json:{args.options_json}"
+    target = args.target or args.tag
+    got = extract_options(os.path.join(args.home, "targets", f"{target}.sh"))
+    if got:
+        return got, f"target-options:{target}"
+    if args.allow_default_options:
+        return json.loads(json.dumps(DEFAULT_OPTIONS)), "DEFAULT_OPTIONS(调试用，非生产判据)"
+    raise SystemExit(
+        f"pc_inject: 无法从 targets/{target}.sh 提取判据（该 target 不是 `OPTIONS = [` 写法）。\n"
+        f"  → 用 --options-json 传生产判据（可从 tools/judge-sync.py 生成）\n"
+        f"  → 或加 --allow-default-options 仅做链路调试（结论不可引用）")
 
 
 # ---------- 打分与配对 ----------
@@ -294,6 +330,8 @@ def main():
     ap.add_argument("--options-json", default=None)
     ap.add_argument("--out", default=None)
     ap.add_argument("--template", default="auto", choices=["auto", "fielded", "blob"])
+    ap.add_argument("--allow-default-options", action="store_true",
+                    help="取不到判据时允许回退 DEFAULT_OPTIONS（仅调试；报告会标红）")
     ap.add_argument("--snapshot-out", default=None, help="把实际采样记录写入快照目录, 供可复现复跑")
     ap.add_argument("--from-snapshot", default=None, help="跳过采样, 直接用快照文件记录")
     args = ap.parse_args()
@@ -327,10 +365,18 @@ def main():
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
         print(f"[snapshot] {snap_path}")
 
-    target = args.target or args.tag
-    tscript = os.path.join(home, "targets", f"{target}.sh")
-    options = (json.load(open(args.options_json, encoding="utf-8"))
-               if args.options_json else extract_options(tscript))
+    options, options_src = resolve_options(SimpleNamespace(**{**vars(args), "home": home}))
+    # canonical 判据指纹：{question, options[id,description]} 的规范化 JSON。
+    # 与 tools/judge-sync.py、tune-preflight.py 同算法——四处同一个数才能叫「绑定版本」。
+    _q = (picked[0].get("question") if picked else "") or ""
+    options_hash = hashlib.sha256(json.dumps(
+        {"question": _q,
+         "options": [{"id": str(o.get("id")), "description": o.get("description") or ""}
+                     for o in options]},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:16]
+    if options_src.startswith("DEFAULT_OPTIONS"):
+        sys.stderr.write("[pc_inject] ⚠️ 用的是 DEFAULT_OPTIONS（3 选项通用判据），"
+                         "本次判据指纹结论【不可引用】到任何生产判据\n")
 
     candidates = []
     keyed = []            # [(key, record)] —— shadow 的 id 可能重复(位置索引), 载体键用采样序号
@@ -395,7 +441,10 @@ def main():
              f"- 样本: {len(picked)} · sample_hash={sample_hash} · ε={args.eps}",
              f"- 模板: {args.template} (fielded {tmpl_count['fielded']} / blob {tmpl_count['blob']})",
              f"- 打分器: `{args.score_cmd}`",
+             f"- 判据: `{options_src}` · optionsHash=`{options_hash}`「本报告唯一绑定此判据版本」",
              ""]
+    if options_src.startswith("DEFAULT_OPTIONS"):
+        lines.insert(4, "- ⛔ **本报告用的是 DEFAULT_OPTIONS（3 选项通用判据），不得作为生产判据的指纹结论**")
     if orig_errs:
         lines.append(f"- 原分复现 MAE: {statistics.mean(orig_errs):.4f} ( fresh 打分 vs shadow 记录, "
                      "越低说明评分过程确定性越好 )")

@@ -159,6 +159,35 @@ bash "$S/reflex_e2e_probe.sh" --timeout 300
 #    只测投递(不测判定)可用插件钩子: touch "$REFLEX_HOME/wake-test" → 下一轮强制 wakeL2
 ```
 
+## 判据单一源与门禁（O7–O11, 2026-11-14 落地）
+
+调优的产物必须能回答四个问题：**用哪版判据、喂多少 state、用哪份标签、阈值多少**。
+这四项对不上，任何 P/R 数字都不可引用。工具链：
+
+```bash
+T="$REFLEX_HOME/tools"
+python3 "$T/judge-sync.py" --tag <tag>          # 从 target 抽判据 → judge/<tag>.json（唯一源）
+python3 "$T/judge-sync.py" --tag all --check    # judge 与 target 是否分叉
+python3 "$T/tune-preflight.py" --tag <tag>      # 六类机械检查：0 通过 / 2 告警 / 3 结论不可引用
+python3 "$T/tune-preflight.py" --tag <tag> --write-meta <产物>   # 产物绑口径
+python3 "$T/tune-ab.py" --tag <tag> --a judge/<tag>.json --b /tmp/new.json --tau <τ>  # 改判据前强制 A/B
+```
+
+- **judge/<tag>.json 是唯一源**：`jev-friction` 的 target 已改为读它（读不到才用内联常量兜底）。
+  改判据 = 改这一个文件 + 重拟合阈值；`tune-preflight` 会拿它的 canonical 哈希
+  （question + options，`judge-sync.py` 与 `tune-preflight.py` 同算法）与 registry 对齐。
+- **改判据必须先 A/B**：`tune-ab.py` 在同一批标注样本上跑两套判据，
+  `accept`(0)/`inconclusive`(2)/`reject`(3)。用「YES/NO 互换」做负样本实测：
+  AUC 0.61 → 0.34、精确率 47%→13%，工具判 `reject`。
+- **样本量门禁**：`threshold_fit.py` 与 `risk_certificate.py` 在正例 < `--need-pos`（默认 20）
+  时会打印「不可作为校准结论引用」并退出码 2（`--allow-small` 可放行，会写进报告供审计）。
+- **产物绑口径**：`tune-preflight.py --write-meta <产物>` 生成 `<产物>.meta.json`
+  （optionsHash / judgeHash / threshold / stateTruncation / labelsHash）；
+  registry 的 `artifacts` 列表每次 preflight 校验，任一项漂移即硬失败。
+- **OPTIONS 段是 Python 字面量，不是 JSON**：x-timeline 用隐式字符串拼接，
+  `json.loads` 必失败——`pc_inject.py` 与 `judge-sync.py` 现在都先 `ast.literal_eval`。
+  旧版在这里静默回退 `DEFAULT_OPTIONS`，指纹结论因此长期是错的（见坑 #10）。
+
 ## target 侧约定
 
 - 用 `$REFLEX_TUNING_DIR/shadow-semif.sh` 作为 `SEMIF`（影子记录；缺失则自动退回真实打分）。
