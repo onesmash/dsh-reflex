@@ -133,19 +133,61 @@ L0 采集和 L1 判定**都是脚本驱动的**，两者同一套契约（自动
 
 ## 4. 常见脚本模板
 
+> **先用脚手架，别手搓**：`bash $REFLEX_HOME/tools/new-source.sh <name>` 会一次生成采集器 + target +
+> 两个 env + schema 五件套，本节的三个契约坑已内置防法。下面是手写时的参考与必读警示。
+
 ```bash
 #!/bin/bash
 # 数据源: <名称> — 一句话说明采集什么
 # 契约: stdout 每行一个 JSON fact; source/ts 由插件补
+#       退出 0 + 空输出 = 本轮无数据（正常）; 退出非 0 = 记 L0 <名称> failed
+
+set -uo pipefail
 
 # 采集你的数据...
-DATA="$(your-collector-command)"
+DATA="$(your-collector-command 2>/dev/null)" || { echo "[源名] 通道失败" >&2; exit 1; }
+[ -z "$DATA" ] && exit 1        # 不要用空输出伪装成"没有新数据"
 
 cat <<EOF
 {"metric":"<metric>","raw":{...你的字段...},"meta":{"provider":"<来源>"}}
 EOF
 exit 0
 ```
+
+### 4.1 三个契约坑（不避开就会静默失败）
+
+| # | 坑 | 症状 | 正确做法 |
+|---|---|---|---|
+| 1 | **heredoc 顶掉管道 stdin** | 写 `cmd \| python3 - <<'PY'` 时 python 读到空输入，**不报错**，表现为「明明有数据却一条不出」 | 管道输出先落临时文件，把**路径**当参数传给 python |
+| 2 | **stdout 是 JSONL 协议** | 调试用 `print`/`echo` 混进 stdout，下游 JSON 解析整行失败 | 所有调试信息走 `>&2`；stdout 只放事实行（target 只放一行决策 JSON） |
+| 3 | **就地重写运行中的脚本** | 采集循环正跑时被 `write` 截断，bash 读到半截，出现莫名其妙的语法错误并产生一条假失败 | 写 `.tmp` → `bash -n` 校验 → `mv` 原子替换 |
+
+> 坑 1 与坑 2 在 target 脚本上同样成立且更致命：target 的 stdin 就是事实流，
+> stdout 的唯一一行就是决策。两者都踩过的实例见 `targets/` 里带注释的实现。
+
+### 4.2 需要语义判定时（target + 影子）
+
+脚本 target 落盘即自动启用。判定建议分两层：
+
+- **确定性层**：规则命中即唤醒。快、可解释、不花钱。
+- **语义影子层**：调 `$REFLEX_SEMIF_RUN` 逐条打分，**只记账不唤醒**，攒够样本再拟合阈值转正。
+
+三件必须知道的事：
+
+1. **分数由 `options[].description` 驱动，不是 `question`**。改判据措辞会让分数整体位移，
+   旧阈值随之失效，必须重新校准。
+2. **影子文件不要自己写**。`shadow-semif.sh` 已把全量分（含阈值以下）落到
+   `$REFLEX_HOME/shadow/<tag>-<date>.jsonl`，字段含 `score/p_yes/question/state` 全文。
+   自建第二份会让两套口径在复算时对不上。
+3. **手动跑 ≠ 插件跑**。插件只在 profile 显式配了 `l1.backend` 时才注入
+   `REFLEX_DECIDE_BACKEND` / `REFLEX_JEV_*` 全套；手动敲命令少一个就静默回退本地后端，
+   且失败被 `|| true` 吞掉。手动跑之前先：
+   ```bash
+   eval "$(bash $HOME/.dsh/dsh-reflex/tools/semif-env.sh --target <name>)"
+   ```
+
+校准用现成工具链（不必自研）：`shadow_replay.py --target <name>` 全量回放 →
+`calibration.py` 工作点换算与阈值拟合 → 阈值写回 target。
 
 ## 5. 启用（配置层，不改代码）
 
