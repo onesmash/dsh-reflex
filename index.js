@@ -298,6 +298,32 @@ function install(rt, ctx, cfg) {
     }
   } catch (e) { log(`semif-resident deploy fail: ${e.message}`) }
 
+  // ---------- 通用工具: defaults/tools → $REFLEX_HOME/tools (sync) ----------
+  // 为什么收编: 这两个工具解决的是「加数据源」的通用痛点(手动跑≠插件跑、五件套手搓),
+  // 且必须与插件版本同源 —— 留在运行目录时别人装插件拿不到, 手动跑的 env 口径也会随
+  // 插件注入逻辑漂移(注入哪些变量由 index.js 决定, 工具跟不上就静默回退本地后端)。
+  // 与 semif-resident 同策略: 内容不同即覆盖, 用户改过先留 .bak-user 再覆盖。
+  try {
+    const toolsDefaults = join(__dirname, 'defaults', 'tools')
+    if (existsSync(toolsDefaults)) {
+      const dstDir = join(cfg.l0.homeDir, 'tools')
+      mkdirSync(dstDir, { recursive: true })
+      let tn = 0
+      for (const e of readdirSync(toolsDefaults)) {
+        if (e === '.DS_Store') continue
+        const s = join(toolsDefaults, e), d = join(dstDir, e)
+        try {
+          if (existsSync(d) && readFileSync(d).equals(readFileSync(s))) continue
+          if (existsSync(d)) { try { cpSync(d, d + '.bak-user', { force: true }) } catch {} }
+          cpSync(s, d)
+          if (e.endsWith('.sh')) { try { chmodSync(d, 0o755) } catch {} }
+          tn++
+        } catch (err) { log(`tools file copy fail ${e}: ${err.message}`) }
+      }
+      if (tn) log(`tools deployed: ${tn} 个文件 → ${dstDir}`)
+    }
+  } catch (e) { log(`tools deploy fail: ${e.message}`) }
+
   // 投递服务: 用 ds-bot 同款机制 = ctx.sessionController.resolveAgent(sessionId) → agent.followup(message)
   // (schedule 服务在插件上下文不可见, 已探明; sessionController 是 ds-bot 必需服务, 对插件可见)
   let sessionCtrl = null
