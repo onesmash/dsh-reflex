@@ -1,0 +1,13 @@
+#!/bin/bash
+# wake_label <wake_key> <1=有用|0=没用> [备注]
+set -uo pipefail
+S="$HOME/.agents/skills/reflex-tuning/scripts/wake_ledger.py"
+H="${REFLEX_HOME:-$HOME/.dsh/dsh-reflex}"
+if [ $# -lt 2 ]; then
+  echo "用法: wake_label <wake_key> <1|0> [备注]" >&2
+  echo "  wake_key 在推送尾部 [wake ...] 里" >&2
+  exit 2
+fi
+ARGS=(--home "$H" --label "$1" "$2")
+[ -n "${3:-}" ] && ARGS+=(--note "$3")
+exec python3 "$S" "${ARGS[@]}"

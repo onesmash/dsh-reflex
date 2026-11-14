@@ -117,6 +117,27 @@ def pr_at(scores, labels, tau):
             tp / (tp + fn) if tp + fn else None, tp, fp, fn)
 
 
+def resolve_score_cmd():
+    """打分器解析顺序：$REFLEX_SCORE_CMD → tools/resolve-scorer.sh → 报错。
+
+    为什么不内置默认路径：本机是 jev 后端 + 源码仓里的 jev-score.mjs，
+    别人装的是 npm 包 + 本地 SemIf，路径完全不同。硬编码就是换台机器必挂。
+    """
+    env = os.environ.get("REFLEX_SCORE_CMD")
+    if env:
+        return env
+    cands = [os.path.join(HOME, "tools", "resolve-scorer.sh"),
+             os.path.expanduser("~/.agents/skills/reflex-tuning/scripts/resolve-scorer.sh")]
+    for c in cands:
+        if os.path.exists(c):
+            rc = subprocess.run(["bash", c], capture_output=True, text=True)
+            out = [x.strip() for x in (rc.stdout or "").splitlines() if x.strip()]
+            if rc.returncode == 0 and out:
+                return out[-1]
+    raise SystemExit("tune-ab: 无法解析打分器。用 --score-cmd 指定，或设 REFLEX_SCORE_CMD，"
+                     "或确保 tools/resolve-scorer.sh 可用")
+
+
 def score_rows(rows, score_cmd, out_path):
     inp = out_path + ".in.jsonl"
     with open(inp, "w", encoding="utf-8") as f:
@@ -150,9 +171,8 @@ def main():
     ap.add_argument("--margin", type=float, default=0.02, help="AUC 显著性门槛（默认 0.02）")
     ap.add_argument("--labels", default=None)
     ap.add_argument("--sample", default=None)
-    # 默认用工具自己所在目录的包装脚本（不能跟 REFLEX_HOME 走：临时 home 里没有它）
-    ap.add_argument("--score-cmd",
-                    default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "jev-score-cmd.sh"))
+    ap.add_argument("--score-cmd", default=None,
+                    help="打分器命令；默认走 $REFLEX_SCORE_CMD 或 resolve-scorer.sh 自动解析")
     ap.add_argument("--home", default=HOME)
     a = ap.parse_args()
 
@@ -166,6 +186,7 @@ def main():
     if tau is None:
         raise SystemExit("tune-ab: 没给 --tau，registry 里也没有该 tag 的 threshold")
 
+    a.score_cmd = a.score_cmd or resolve_score_cmd()
     qa, oa = rubric_of(a.a)
     qb, ob = rubric_of(a.b)
     ha, hb = rubric_hash(qa, oa), rubric_hash(qb, ob)

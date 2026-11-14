@@ -145,8 +145,13 @@ def main():
     reg_p = os.path.join(home, "tools", "shadow_targets.json")
     s = read(reg_p)
     reg = json.loads(s) if s else {}
-    tags = ([t for t in reg if not t.endswith("-replay") and not t.endswith("-replay2")]
-            if a.tag == "all" else [a.tag])
+    if a.tag == "all":
+        tags = [t for t in reg if not t.endswith("-replay") and not t.endswith("-replay2")]
+        if not tags:                      # 没有 registry 也能用：直接扫 targets/
+            tdir = os.path.join(home, "targets")
+            tags = sorted(f[:-3] for f in os.listdir(tdir) if f.endswith(".sh")) if os.path.isdir(tdir) else []
+    else:
+        tags = [a.tag]
 
     worst = 0
     for tag in tags:
@@ -167,8 +172,7 @@ def main():
         else:
             h, err = sync(tag, home)
             if err:
-                print(f"✗ {tag}: {err}")
-                worst = 3
+                print(f"— {tag}: 跳过（{err}）")
             else:
                 print(f"✓ {tag}: judge/{tag}.json + shadow/options-{tag}.json · rubricHash={h}")
     return worst
