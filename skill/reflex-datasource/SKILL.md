@@ -20,6 +20,15 @@ version: 2.1.2
 
 > 定位插件安装目录：Bot 收到本 skill 时若需读详细规则 `DATASOURCE.md`，用 `npm ls dsh-reflex`（在 profile 目录）或从运行报错中的文件路径反推，或直接读取 `$HOME/.dsh/dsh-reflex/manifest.json`（L0 自描述，给出了数据源布局）。不要假设某个固定的源码 checkout 路径。
 
+## 先跑脚手架，别手搓
+
+```bash
+bash $REFLEX_HOME/tools/new-source.sh <name>        # 生成五件套，三坑防法已内置
+```
+
+生成采集器 + target + 两个 env + schema。加 `--no-target` 只要采集侧。
+打磨思路：先手写一个单元跑通，再让工具对齐它——脚手架就是那个工具。
+
 ## 核心流程（4 步，不改插件核心代码）
 
 1. **写 collector 脚本** → 丢进 `$HOME/.dsh/dsh-reflex/collectors/<name>.sh`
@@ -76,6 +85,20 @@ exit 0
 - collector 用独立会话名（如 `--session feed-collect`）采集，结束 `close`，**不要常驻 headless 浏览器**
 - **会话过期要以非 0 退出**（记 `L0 <name> failed`），绝不能把空数据伪装成"没有新事件"
 - 告诉用户失效后怎么恢复（一条命令重跑导出工具）
+
+## 影子与校准（有语义判定时必读）
+
+三件必须知道的事：
+
+1. **分数由 `options[].description` 驱动，不是 `question`**。改判据措辞会让分数整体位移，旧阈值随之失效，必须重新校准。
+2. **影子文件不要自己写**。`shadow-semif.sh` 已把全量分（含阈值以下）落到 `$REFLEX_HOME/shadow/<tag>-<date>.jsonl`（字段含 `score/p_yes/question/state` 全文）。自建第二份等于两套口径，复算时对不上。
+3. **手动跑 ≠ 插件跑**。插件只在 profile 显式配了 `l1.backend` 时才注入 `REFLEX_DECIDE_BACKEND` / `REFLEX_JEV_*` 全套；手动少一个就静默回退本地后端，且失败被 `|| true` 吞掉。所以：
+   ```bash
+   eval "$(bash $REFLEX_HOME/tools/semif-env.sh --target <name>)"
+   ```
+   不带 `--target` 也行；加 `--check` 只体检不注入。
+
+校准链路（现成工具，不必自研）：`shadow_replay.py --target <name>` 全量回放 → `calibration.py` 工作点换算与阈值拟合 → 阈值写回 target。
 
 ## 让新源能唤醒 L2（可选）
 
