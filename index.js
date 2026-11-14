@@ -1206,6 +1206,12 @@ function install(rt, ctx, cfg) {
         isScript: true,
         minIntervalMs: t.minIntervalMs === 'auto' ? sourceIntervalMs(key) : (t.minIntervalMs ?? 0),
         interruptAlways: !!t.interruptAlways,      // 由 <name>.env.json 配置, 默认遵守安静时段
+        // 投递目标覆盖必须搬进 adapter：decideOnce 用的是 ALL_TARGETS，不是 SCRIPT_TARGETS。
+        // 2026-11-14 踩过：env.json 里写了 wakeTo=群，启动日志也打印了路由，
+        // 但这条没搬 → target.wakeTo 恒 undefined → 全部悄悄回落到 Chief 私聊。
+        wakeTo: t.wakeTo,
+        // 条目型 target: 指纹相同即静默，不再「冷却期过后重新关注」
+        exactDedupe: !!t.exactDedupe,
         collect: async (facts) => {
           // env.json 里声明了 sources 的 target: 本轮没有它关心的源的数据时, 连脚本都不用起。
           // 不加这道闸, target 脚本会被每分钟空跑一次 —— 因为 disk 每分钟产出一条事实,
@@ -1285,6 +1291,12 @@ function install(rt, ctx, cfg) {
         ? (last.fp.availBucket !== fp.availBucket || last.fp.usedBucket !== fp.usedBucket)  // 状态分桶变化
         : JSON.stringify(last.fp) !== JSON.stringify(fp)                                    // 内容指纹变化
       if (changed) return true
+      // 【条目型 target】同一批条目不该「冷却期过后重新关注」。
+      // 状态型(disk 满了)重复提醒是对的；事件型(同一批消息/同一局对局)重复提醒是噪音 ——
+      // 2026-11-14 实测：jev-friction 三条已在 16:55 投过并标注，21:00 又被当新事件推了一遍，
+      // 因为「同状态超 30 分钟 → 视为重新关注」这条规则对事件型也是敞开的。
+      // 判据由 target 自己的 env.json 声明：exactDedupe=true → 指纹相同即静默，不再看冷却期。
+      if (ALL_TARGETS?.[targetKey]?.exactDedupe) return false
     }
     const cooldownMs = cfg.l1.cooldownMs ?? 30 * 60 * 1000
     if (Date.now() - (last.at ?? 0) < cooldownMs) return false
@@ -1517,8 +1529,8 @@ function install(rt, ctx, cfg) {
 
   log(`dsh-reflex installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}" sources=[${effectiveSources().join(',')}] targets=[${activeTargets.join(',')}]`)
   try {
-    const routes = Object.keys(SCRIPT_TARGETS).filter(k => SCRIPT_TARGETS[k].wakeTo)
-      .map(k => `${k}→${resolveWakeTarget(SCRIPT_TARGETS[k].wakeTo).label}`)
+    const routes = Object.keys(ALL_TARGETS).filter(k => ALL_TARGETS[k] && ALL_TARGETS[k].wakeTo)
+      .map(k => `${k}→${resolveWakeTarget(ALL_TARGETS[k].wakeTo).label}`)
     if (routes.length) log(`L2 wake routes(override): ${routes.join(', ')}`)
   } catch (e) { log(`log wake routes fail: ${e.message}`) }
   // scriptEnv 一并返回: 密钥注入是"必须可验证"的逻辑(读代码相信不算证据),
