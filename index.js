@@ -354,6 +354,28 @@ function install(rt, ctx, cfg) {
     return undefined
   }
 
+  // ---------- L2 投递目标解析 ----------
+  // 默认投 cfg.l1.targetBot 的私聊（Chief）。target 自己的 <name>.env.json 可用 wakeTo 覆盖：
+  //   {"kind":"group","name":"昇腾Jev大赛"}     → 投进该群（rooms 的 key 就是群 session id）
+  //   {"kind":"bot","name":"Chief"} 或 "Chief"  → 投进某 Bot 私聊
+  // 为什么按名字找群：配置里写 session uuid 不可读，群一改名就失配；名字是用户侧稳定标识。
+  // 找不到时返回 undefined 并让调用方【报错不投】，绝不静默退回私聊——否则告警悄悄改道。
+  function resolveWakeTarget(wakeTo) {
+    const to = wakeTo ?? cfg.l1.targetBot
+    if (typeof to === 'string') return { sessionId: botSessionId(to), label: `bot:${to}` }
+    if (to && to.kind === 'group') {
+      try {
+        const state = JSON.parse(readFileSync(cfg.statePath, 'utf8'))
+        for (const [id, room] of Object.entries(state.rooms ?? {})) {
+          if (room?.name === to.name) return { sessionId: id, label: `group:${to.name}` }
+        }
+      } catch (e) { log(`resolveWakeTarget group error: ${e.message}`) }
+      return { sessionId: undefined, label: `group:${to.name}(not found)` }
+    }
+    const name = (to && to.name) ?? String(to)
+    return { sessionId: botSessionId(name), label: `bot:${name}` }
+  }
+
   // 复刻 dsh-llm createUserMessage (只加 id; 返回可被 followup 接受的 user 消息)
   function createUserMessageLike({ content, source }) {
     return { id: `msg-${randomUUID().replace(/-/g, '').slice(0, 24)}`, role: 'user', content, source }
@@ -363,11 +385,29 @@ function install(rt, ctx, cfg) {
   // 返回"是否真的投出去了"。调用方必须据此决定要不要记指纹 ——
   // 投递失败还记指纹, 这条告警就被永久去重、再也发不出来(2026-10-15 20:55 实测丢过一次:
   // 插件正在重载 → sessionController unavailable → 失败却记了指纹 → 那条"有人在等你回话"消失)。
-  async function wakeL2(summary) {
+  // 投递顺序: 先按 wakeTo 覆盖的目标投, 失败再退回默认 targetBot（Chief 私聊）。
+  // 为什么必须有这一层: 告警系统最坏的失败不是「投错地方」, 是「以为投了其实没投」。
+  // 覆盖目标可能是群(群被删/改名/room 无法 resolveAgent), 一旦失败又不能静默丢弃,
+  // 就退回默认私聊并显式打一行 fallback 日志 —— 至少要有人看到。
+  async function wakeL2(summary, wakeTo) {
+    const primary = wakeTo ?? cfg.l1.targetBot
+    const order = [primary]
+    if (wakeTo !== undefined && wakeTo !== null) order.push(cfg.l1.targetBot)
+    let lastErr = null
+    for (const to of order) {
+      const ok = await wakeL2Once(summary, to)
+      if (ok) return true
+      lastErr = to
+    }
+    if (order.length > 1) log(`L2 wake FALLBACK failed: 覆盖目标与默认目标都没投出去 (${JSON.stringify(order)})`)
+    else log(`L2 wake failed: ${JSON.stringify(lastErr)}`)
+    return false
+  }
+
+  async function wakeL2Once(summary, wakeTo) {
     try {
-      const targetName = cfg.l1.targetBot
-      const sessionId = botSessionId(targetName)
-      if (!sessionId) { log(`L2 wake failed: no session for "${targetName}"`); return false }
+      const { sessionId, label } = resolveWakeTarget(wakeTo)
+      if (!sessionId) { log(`L2 wake miss: no session for "${label}"`); return false }
       const sc = sessionCtrlSvc()
       if (!sc?.resolveAgent) { log('L2 wake failed: sessionController unavailable'); return false }
       const resolved = await sc.resolveAgent(sessionId)
@@ -387,7 +427,7 @@ function install(rt, ctx, cfg) {
       if (agent?.followup) agent.followup(message)
       else if (agent?.steer) agent.steer(message)
       else { log('L2 wake failed: agent has no followup/steer'); return false }
-      log(`L2: woken "${targetName}" (${sessionId}) via sessionController`)
+      log(`L2: woken "${label}" (${sessionId}) via sessionController`)
       return true
     } catch (e) {
       log(`L2 wake error: ${e.message}`)
@@ -1421,7 +1461,7 @@ function install(rt, ctx, cfg) {
               }
             }
             log(`L1[${targetKey}]: ${label}`)
-            const delivered = await wakeL2(target.render(ctx, `(${label})`))
+            const delivered = await wakeL2(target.render(ctx, `(${label})`), target.wakeTo)
             if (delivered) {
               saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: label } })
               if (pending) savePending(targetKey, null)
@@ -1451,7 +1491,7 @@ function install(rt, ctx, cfg) {
         log(`L1[${targetKey}]: ${configuredBackend() || 'semif'} winning=${d.winning} pYes=${d.pYes.toFixed(3)}`)
         if (d.pYes >= cfg.l1.threshold) {
           if (contentChanged(targetKey, fp)) {
-            const delivered = await wakeL2(target.render(ctx, `(SemIf pYes=${d.pYes.toFixed(2)})`))
+            const delivered = await wakeL2(target.render(ctx, `(SemIf pYes=${d.pYes.toFixed(2)})`), target.wakeTo)
             if (delivered) {
               saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: 'semif' } })
               if (pending) savePending(targetKey, null)
@@ -1476,6 +1516,11 @@ function install(rt, ctx, cfg) {
   try { ctx.effect(() => () => { clearInterval(t0); clearInterval(t1) }, 'dsh-reflex: L0/L1 timers') } catch {}
 
   log(`dsh-reflex installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}" sources=[${effectiveSources().join(',')}] targets=[${activeTargets.join(',')}]`)
+  try {
+    const routes = Object.keys(SCRIPT_TARGETS).filter(k => SCRIPT_TARGETS[k].wakeTo)
+      .map(k => `${k}→${resolveWakeTarget(SCRIPT_TARGETS[k].wakeTo).label}`)
+    if (routes.length) log(`L2 wake routes(override): ${routes.join(', ')}`)
+  } catch (e) { log(`log wake routes fail: ${e.message}`) }
   // scriptEnv 一并返回: 密钥注入是"必须可验证"的逻辑(读代码相信不算证据),
   // 测试直接调它比对环境变量, 不必真跑一轮采集。
   return { collectOnce, decideOnce, wakeL2, scriptEnv }
