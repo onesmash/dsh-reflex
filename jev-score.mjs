@@ -124,7 +124,7 @@ function defaultSummaryPath(outputPath) {
     : `${outputPath}.summary.md`
 }
 
-function writeSummary(path, { input, output, rows, model, backend }) {
+function writeSummary(path, { input, output, rows, model, backend, skipped = [] }) {
   const lines = [
     '# Jev (SystemOne) result validation',
     '',
@@ -142,6 +142,9 @@ function writeSummary(path, { input, output, rows, model, backend }) {
   for (const row of rows) {
     const best = row.probabilities.indexOf(Math.max(...row.probabilities))
     lines.push(`| \`${row.id}\` | \`${row.option_ids[best]}\` | ${row.probabilities[best].toFixed(6)} |`)
+  }
+  if (skipped.length > 0) {
+    lines.push('', 'Skipped rows (provider content filter, never scored): ' + skipped.map(r => '`' + r.id + '`').join(', '))
   }
   lines.push('', 'Validation: passed.', '')
   writeFileSync(path, lines.join('\n'), 'utf8')
@@ -161,7 +164,12 @@ async function main() {
   note(`scoring ${inputs.length} row(s) with ${args.model} via ${args.baseUrl}`)
 
   // 任一行失败 → 整体失败，绝不提交半成品（与 run_score.sh 的原子语义一致）。
+  // 唯一例外：provider 的内容审核拒绝（阿里云 MaaS 的 DataInspectionFailed）。
+  // 那种行永远打不了分（重试一万次也一样），留着它会让整批全废——2026-11-16 02:47
+  // 实测过一次：一条推文被拦，x-timeline 那一轮 4 条全部没进判断环节。
+  // 因此这类行跳过并在 summary 里留痕，其余照常打分；只有「一条都没成」才算失败。
   const results = []
+  const skipped = []
   for (let index = 0; index < inputs.length; index++) {
     const row = inputs[index]
     let scored
@@ -175,7 +183,13 @@ async function main() {
         retries: Number.isFinite(args.retries) ? args.retries : 2,
       })
     } catch (error) {
-      fail(`row "${row.id}" failed: ${error.message}`)
+      const message = error?.message || String(error)
+      if (/DataInspectionFailed/.test(message)) {
+        note(`row "${row.id}" skipped: provider content filter`)
+        skipped.push({ id: row.id, reason: 'content_filter' })
+        continue
+      }
+      fail(`row "${row.id}" failed: ${message}`)
     }
     results.push({
       id: row.id,
@@ -183,6 +197,10 @@ async function main() {
       probabilities: alignProbabilities(optionIds[index], scored.probs),
       model: { backend: args.backend, source: args.model, revision: null },
     })
+  }
+
+  if (results.length === 0) {
+    fail(`no row could be scored: all ${inputs.length} row(s) rejected by the provider content filter`)
   }
 
   mkdirSync(dirname(args.output), { recursive: true })
@@ -207,6 +225,7 @@ async function main() {
     writeSummary(stagedSummary, {
       input: args.input, output: args.output, rows: results,
       model: args.model, backend: args.backend,
+      skipped,
     })
 
     renameSync(stagedResult, args.output)

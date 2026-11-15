@@ -170,6 +170,32 @@ test('任一行失败即整体失败，不提交半成品', async () => {
   assert.equal(existsSync(output), false)
 })
 
+test('provider 内容审核拒绝的行被跳过，其余照常打分', async () => {
+  let call = 0
+  handler = (req, res) => {
+    call += 1
+    if (call === 2) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ code: 'DataInspectionFailed', message: '<400> InternalError' }))
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ answers: { q: { probabilities: { yes: 1, no: 0 } } } }))
+  }
+  const dir = workdir()
+  const input = writeInput(dir)
+  const output = join(dir, 'out.jsonl')
+  // 内容审核拒绝不是打分失败：那条内容永远送不进去，留着它会让整批全废
+  // （2026-11-16 02:47 实测：一条推文被拦，x-timeline 那一轮 4 条全没进判断环节）。
+  await run(['--input', input, '--output', output, '--base-url', baseUrl], { JEV_RETRIES: '0' })
+  const lines = readFileSync(output, 'utf8').trim().split('\n')
+  assert.equal(lines.length, 1, '只应留下 1 行结果（另一行被跳过）')
+  assert.equal(JSON.parse(lines[0]).id, 'a')
+  const summary = readFileSync(join(dir, 'out.summary.md'), 'utf8')
+  assert.match(summary, /Skipped rows/)
+  assert.match(summary, /`b`/)
+})
+
 test('重试后仍失败才整体失败（默认 retries=2 生效）', async () => {
   let call = 0
   handler = (req, res) => {
