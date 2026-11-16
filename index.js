@@ -422,7 +422,14 @@ function install(rt, ctx, cfg) {
         //   缺失时该消息【既不进 relays 也不进 texts2】—— 正文完全不进渲染树,
         //   界面上只剩消息提醒气泡。2026-11-11 实测确认。
         //   roster 里查不到这个 id 时会回退到 senderName, 所以值本身随意, 非空即可。
-        source: { kind: 'bot', form: 'relay', role: 'request', exchangeId: randomUUID(), senderName: '分层智能体', senderSessionId: 'reflex-l1', hop: 0 },
+        // role 必须是 'post'（不是 'request'）。
+        // ds-bot 的群轮次只看三种来源能「开一轮」：kind=user、kind=schedule、kind=bot 且
+        // role ∈ {post,kickoff,goal}（groups.js 的 opens() 谓词）。而只有 role='post' 的 bot 消息
+        // 才会被塞进 relay 队列（turns.js 的 queueRoomMessage 前置条件）。
+        // 用 'request' 时：消息进了群会话，但 opens() 判假 → 合成中转直接 finish(stop) →
+        // 我们看到的「空 assistant 消息」，群里永远没人被叫到（2026-11-15 实测 32/32）。
+        // 这不是改 ds-bot，而是按它已经公开的契约投递。
+        source: { kind: 'bot', form: 'relay', role: 'post', exchangeId: randomUUID(), senderName: '分层智能体', senderSessionId: 'reflex-l1', roomId: sessionId, hop: 0 },
       })
       if (agent?.followup) agent.followup(message)
       else if (agent?.steer) agent.steer(message)
