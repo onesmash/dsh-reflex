@@ -352,20 +352,45 @@ def export_item_labels(home, tag):
         except OSError:
             continue
 
+    # 同一个 seq 在不同层有不同前缀：影子记录是 `<tag>-shadow-<seq>`，
+    # 而 target 推给群里的 item id 是 `<tag>-sem-<seq>` / `<tag>-p2-<seq>` / `<tag>-f1-<seq>`（jev-friction 实测）。
+    # 它们指向同一条消息，但字符串不相等，只按 id 或 sha1 反查会 0 命中
+    # （2026-11-16 实测：102 条 jev-friction 标签，matched 0）。
+    by_suffix = {}
+    for tid in score_of:
+        tail = str(tid).rsplit("-", 1)[-1]
+        if tail.isdigit():
+            by_suffix.setdefault(tail, []).append(tid)
+
     rows = []
+    stats_reason = {"exact": 0, "sha1": 0, "suffix": 0, "ambiguous_suffix": 0, "miss": 0}
     for key, rec in item_labels.items():
         ik = rec.get("item_key") or ""
         if not ik:
             continue
-        # 反查：哪些 id 的 sha1 前 12 位等于 ik
-        # 直接对 score_of 的键做哈希比对（id 数量级 ~3500，可接受）
-        hit_id = None
-        for tid in score_of:
-            if hashlib.sha1(tid.encode()).hexdigest()[:12] == ik:
-                hit_id = tid
-                break
+        hit_id = ik if ik in score_of else None
+        reason = "exact" if hit_id else ""
         if hit_id is None:
+            # 反查：哪些 id 的 sha1 前 12 位等于 ik
+            # 直接对 score_of 的键做哈希比对（id 数量级 ~3500，可接受）
+            for tid in score_of:
+                if hashlib.sha1(tid.encode()).hexdigest()[:12] == ik:
+                    hit_id = tid
+                    reason = "sha1"
+                    break
+        if hit_id is None:
+            # 第三档：同一 tag 内按数字后缀认（前缀不同、seq 相同即同一条）
+            # 只在后缀唯一时采用，避免两条 id 共用一个序号时张冠李戴。
+            tail = str(ik).rsplit("-", 1)[-1]
+            cands = by_suffix.get(tail, []) if tail.isdigit() else []
+            if len(cands) == 1:
+                hit_id, reason = cands[0], "suffix"
+            elif len(cands) > 1:
+                stats_reason["ambiguous_suffix"] += 1
+        if hit_id is None:
+            stats_reason["miss"] += 1
             continue
+        stats_reason[reason] += 1
         rows.append({"id": hit_id, "score": score_of[hit_id],
                      "label": int(rec.get("label", 0)),
                      "note": rec.get("note", ""), "target": rec.get("target", "")})
@@ -376,7 +401,7 @@ def export_item_labels(home, tag):
     for r in rows:
         r.pop("idx", None)
     stats = {"matched": len(rows), "item_labels": len(item_labels),
-             "shadow_ids": len(score_of)}
+             "shadow_ids": len(score_of), "by_reason": stats_reason}
     return rows, stats
 
 
