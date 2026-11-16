@@ -429,6 +429,15 @@ function install(rt, ctx, cfg) {
         // 用 'request' 时：消息进了群会话，但 opens() 判假 → 合成中转直接 finish(stop) →
         // 我们看到的「空 assistant 消息」，群里永远没人被叫到（2026-11-15 实测 32/32）。
         // 这不是改 ds-bot，而是按它已经公开的契约投递。
+        // 私聊同样必须是 'post'（2026-11-16 实测，22 条唤醒全踩）：
+        //   ① 渲染：parts.js 的 displayItems 只把 role='post' 的 bot 消息画成正文气泡；
+        //      其余角色（request/reply/...）只画一行 "Message from 分层智能体"，正文不可见，
+        //      点开走 state.exchanges 也查不到（那本账只有 ds-bot 自己的 deliver 会记）。
+        //   ② 更严重的是回复一起消失：role='request' 命中 turns.js 的 expectsReply()
+        //      → claimTrigger() 把那一轮写进 state.exchangeTurns → displayItems 的 hidden
+        //      把该轮所有 assistant/message 全部丢弃。实测 part 6 里 22 次唤醒、12 个轮次
+        //      被标记，12 条回复没在界面上出现过。
+        //   改成 'post' 后两条同时消失：画成气泡 + 不标记交换轮，回复照常显示。
         source: { kind: 'bot', form: 'relay', role: 'post', exchangeId: randomUUID(), senderName: '分层智能体', senderSessionId: 'reflex-l1', roomId: sessionId, hop: 0 },
       })
       if (agent?.followup) agent.followup(message)
