@@ -14,13 +14,12 @@
 # 环境变量:
 #   REFLEX_SCORE_CMD      完整命令，直接返回
 #   REFLEX_JEV_SCORE      jev 打分器路径（默认 $HOME/SourceCode/dsh-reflex/jev-score.mjs）
-#   REFLEX_CREDENTIALS    凭据文件（默认 $HOME/.dsh/.credentials.yaml）
+#   REFLEX_CREDENTIALS    凭据文件（默认 $HOME/.dsh/.credentials.yaml；由 jev-key-env.sh 在运行时读取）
 #   REFLEX_SCORER_CACHE   包装器输出路径（默认 $REFLEX_HOME/runtime/jev-score-wrap.sh）
 #   JEV_BASE_URL / JEV_MODEL
 set -uo pipefail
 
 HOME_DIR="${REFLEX_HOME:-$HOME/.dsh/dsh-reflex}"
-CRED="${REFLEX_CREDENTIALS:-$HOME/.dsh/.credentials.yaml}"
 JEV_SCORE="${REFLEX_JEV_SCORE:-$HOME/SourceCode/dsh-reflex/jev-score.mjs}"
 WRAP="${REFLEX_SCORER_CACHE:-$HOME_DIR/runtime/jev-score-wrap.sh}"
 
@@ -40,33 +39,6 @@ if [ ! -f "$KEY_ENV" ]; then
     echo "[resolve-scorer] ⚠️ 缺少 jev-key-env.sh：jev 打分将因取不到 JEV_API_KEY 而失败(78)" >&2
   fi
 fi
-
-_read_cred() {   # $1 = key 名；支持嵌套 yaml
-  [ -f "$CRED" ] || return 1
-  python3 - "$CRED" "$1" <<'PY'
-import sys
-try:
-    import yaml
-except ImportError:
-    sys.exit(1)
-path, key = sys.argv[1], sys.argv[2]
-try:
-    d = yaml.safe_load(open(path))
-except Exception:
-    sys.exit(1)
-def find(o):
-    if isinstance(o, dict):
-        for k, v in o.items():
-            if k == key:
-                return v
-            r = find(v)
-            if r:
-                return r
-    return None
-v = find(d)
-print(v if v else "")
-PY
-}
 
 # 1) 显式指定
 if [ -n "${REFLEX_SCORE_CMD:-}" ]; then

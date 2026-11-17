@@ -29,7 +29,7 @@ try:
     import yaml
 except ImportError:
     sys.exit(0)
-p = os.path.expanduser("~/.dsh/.credentials.yaml")
+p = os.path.expanduser(os.environ.get("REFLEX_CREDENTIALS") or "~/.dsh/.credentials.yaml")
 
 def find(o):
     if isinstance(o, dict):
