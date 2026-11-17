@@ -24,6 +24,23 @@ CRED="${REFLEX_CREDENTIALS:-$HOME/.dsh/.credentials.yaml}"
 JEV_SCORE="${REFLEX_JEV_SCORE:-$HOME/SourceCode/dsh-reflex/jev-score.mjs}"
 WRAP="${REFLEX_SCORER_CACHE:-$HOME_DIR/runtime/jev-score-wrap.sh}"
 
+# 凭据解析器自举（2026-11-17）：仓库随附一份，运行时缺了就装过去。
+# 为什么：包装器只记「去哪儿找 key」，若这份解析器缺失，jev 会在每次打分时 exit 78，
+# 且错误发生在运行时而不是安装时 —— 新克隆一台机器就会踩到。
+KEY_ENV="$HOME_DIR/tools/jev-key-env.sh"
+if [ ! -f "$KEY_ENV" ]; then
+  _self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+  if [ -n "${_self_dir:-}" ] && [ -f "$_self_dir/jev-key-env.sh" ]; then
+    mkdir -p "$HOME_DIR/tools"
+    if cp -p "$_self_dir/jev-key-env.sh" "$KEY_ENV"; then
+      chmod 700 "$KEY_ENV" 2>/dev/null || true
+      echo "[resolve-scorer] 已安装凭据解析器: $KEY_ENV" >&2
+    fi
+  else
+    echo "[resolve-scorer] ⚠️ 缺少 jev-key-env.sh：jev 打分将因取不到 JEV_API_KEY 而失败(78)" >&2
+  fi
+fi
+
 _read_cred() {   # $1 = key 名；支持嵌套 yaml
   [ -f "$CRED" ] || return 1
   python3 - "$CRED" "$1" <<'PY'
@@ -57,15 +74,16 @@ if [ -n "${REFLEX_SCORE_CMD:-}" ]; then
 fi
 
 # 2) jev
-KEY="$(_read_cred JEV_API_KEY)"
-if [ -n "$KEY" ] && [ -f "$JEV_SCORE" ]; then
+# 2026-11-17：不再读取并内联凭据。key 由 tools/jev-key-env.sh 在运行时解析。
+if [ -f "$JEV_SCORE" ]; then
   mkdir -p "$(dirname "$WRAP")"
   JEV_URL_RESOLVED="${JEV_BASE_URL:-https://llm-ei7x74obik76ddkb.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone}"
   JEV_MODEL_RESOLVED="${JEV_MODEL:-decision-model-preview}"
   cat > "$WRAP" <<WRAPEOF
 #!/bin/bash
 # 自动生成，勿手改（由 tools/resolve-scorer.sh 产生）
-export JEV_API_KEY="$KEY"
+# 2026-11-17：不内联凭据，运行时解析（见 tools/jev-key-env.sh）
+. "$HOME_DIR/tools/jev-key-env.sh" || exit 78
 export JEV_MODEL="$JEV_MODEL_RESOLVED"
 export JEV_BASE_URL="$JEV_URL_RESOLVED"
 exec node "$JEV_SCORE" "\$@"
