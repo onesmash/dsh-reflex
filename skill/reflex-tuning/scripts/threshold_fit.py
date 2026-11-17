@@ -254,6 +254,20 @@ def fmt_pct(x):
     return "-" if x is None else f"{x*100:.1f}%"
 
 
+def cp_lower_safe(k, n, alpha=0.05):
+    """CP 单侧下界; cp_lower 不可用时返回 None。
+
+    返回 None 必须显式判, 不能当成「通过」—— 否则又是静默兜底。
+    """
+    if not n or k is None:
+        return None
+    try:
+        from risk_certificate import cp_lower
+        return cp_lower(k, n, alpha)
+    except Exception:
+        return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag", default="x-timeline")
@@ -269,6 +283,11 @@ def main():
                     help="下结论所需最少正例数；不足则报告标注『临时值』并退出码 2")
     ap.add_argument("--allow-small", action="store_true",
                     help="正例不足也当结论用（会写进报告，供审计）")
+    ap.add_argument("--target-precision", type=float, default=0.80,
+                    help="证书门禁: 当前阈值处 precision 的 CP 单侧 95% 下界低于此值 → 退出码 3"
+                         "（默认 0.80，即开启；报告先落盘再返回）")
+    ap.add_argument("--allow-uncertified", action="store_true",
+                    help="证书门禁不通过也放行（会写进报告与 json，供审计；不要用它绕开真实不达标）")
     a = ap.parse_args()
 
     items = load_shadow(a.home, a.tag, a.mode)
@@ -390,15 +409,18 @@ def main():
         # 候选阈值的全量通过量 (不依赖标注) + 标注样本上的加权 P/R, 方便选工作点
         report.append("")
         report.append("## 工作点对比 (通过量按全量样本, P/R 按加权标注)\n")
-        report.append("| 阈值 | 通过条数 | 占全量 | Precision | Recall |")
-        report.append("|---|---|---|---|---|")
+        report.append("| 阈值 | 通过条数 | 占全量 | Precision | Recall | CP 下界(未加权) |")
+        report.append("|---|---|---|---|---|---|")
         shown = sorted({round(f["tau"], 6) for f in fits.values()} | ({round(cur, 6)} if cur is not None else set()))
         for tau in shown:
             n_pass = sum(1 for r in items if r["score"] >= tau)
             m = metrics_at(lab_scores, lab_labels, tau, lab_w)
             mark = " **(当前)**" if cur is not None and abs(tau - cur) < 1e-9 else ""
+            k_i = sum(1 for sc, ll in zip(lab_scores, lab_labels) if sc >= tau and ll == 1)
+            n_i = sum(1 for sc in lab_scores if sc >= tau)
+            lb_i = cp_lower_safe(k_i, n_i)
             report.append(f"| {tau:.3f}{mark} | {n_pass} | {fmt_pct(n_pass/dist['n'])} | "
-                          f"{fmt_pct(m['precision'])} | {fmt_pct(m['recall'])} |")
+                          f"{fmt_pct(m['precision'])} | {fmt_pct(m['recall'])} | {fmt_pct(lb_i)} |")
         # 固定基线 (路由评测教训: 必须给出 always-wake / always-suppress / 同量随机对照,
         # 否则"模型比阈值好"可能只是选层构成差异)
         if cur is not None:
@@ -456,6 +478,25 @@ def main():
         else:
             report.append(f"- ✓ 正例 {n_pos} ≥ {need}：可给一个工作点，但分档（kind/dup/offtopic）仍需更多")
             summary["sample_gate"] = {"positives": n_pos, "need": need, "passed": True}
+        # 证书门禁 (2026-11-17): 把 CP 下界从「打印给人看」变成「可以拒绝的验收位」。
+        # 只在显式给 --target-precision 时生效; 判据是下界, 不是点估计 ——
+        # 用点估计选点会让每个误报都被 100% 的漂亮数字盖住。
+        if a.target_precision is not None:
+            g_ok = lb is not None and lb >= a.target_precision
+            summary["certificate_gate"] = {
+                "tau": cur_tau, "target": a.target_precision,
+                "tp": tp, "wakes": tp + fp, "precision_lb": lb, "passed": g_ok,
+            }
+            if g_ok:
+                report.append(f"- ✓ 证书门禁: 下界 {fmt_pct(lb)} ≥ 目标 {a.target_precision:.0%}")
+            elif a.allow_uncertified:
+                summary["certificate_gate"]["forced"] = True
+                report.append(f"- ⚠️ **证书门禁未通过但已放行**（--allow-uncertified）："
+                              f"下界 {fmt_pct(lb)} < 目标 {a.target_precision:.0%}"
+                              f"（{tp}/{tp + fp}）→ 该工作点仍不可引用")
+            else:
+                report.append(f"- ⛔ **证书门禁**: 下界 {fmt_pct(lb)} < 目标 "
+                              f"{a.target_precision:.0%}（{tp}/{tp + fp}）→ 该工作点不可引用")
         report.append("")
 
     report.append("\n## 怎么落地\n")
@@ -476,6 +517,23 @@ def main():
         print("\n⛔ 样本量门禁未通过：阈值不可作为校准结论引用（加 --allow-small 可放行）",
               file=sys.stderr)
         return 2
+    cg = summary.get("certificate_gate") or {}
+    if labeled and a.target_precision is not None and not cg:
+        print("\n⛔ 证书门禁无法判定（没有当前阈值）：报告已落盘，该工作点不可引用",
+              file=sys.stderr)
+        return 3
+    if cg and not cg.get("passed"):
+        if a.allow_uncertified:
+            print(f"\n⚠️ 证书门禁未通过但已放行（--allow-uncertified）：τ={cg.get('tau')} 处下界 "
+                  f"{fmt_pct(cg.get('precision_lb'))} < 目标 {cg.get('target'):.0%}"
+                  f"（{cg.get('tp')}/{cg.get('wakes')}）；此结论不可引用",
+                  file=sys.stderr)
+            return 0
+        print(f"\n⛔ 证书门禁未通过：τ={cg.get('tau')} 处 CP 单侧下界 "
+              f"{fmt_pct(cg.get('precision_lb'))} < 目标 {cg.get('target'):.0%}"
+              f"（{cg.get('tp')}/{cg.get('wakes')}）；报告已落盘，该阈值不可引用",
+              file=sys.stderr)
+        return 3
     return 0
 
 
