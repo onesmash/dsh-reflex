@@ -138,6 +138,27 @@ python3 "$S/test_wake_policy.py"
 #        threshold_fit 见 idx 会优先走 idx_map 通道，把 item 标签错配成批级
 #        （实测 46 条错配 45 条）。
 
+# 6c) 标签方言：一个文件三种写法，五个工具同一份实现（2026-11-19）
+#
+#   方言      形状                                        谁产出
+#   idx      {"idx":12,"label":1}                          threshold_fit --export-sample 后的分层抽样标注
+#   key      {"key":"<state_hash>","label":1}              手写 / 与 shadow 直接对齐
+#   item     {"id":"<tweet id>","label":1}                 wake_label（**日常打标就是这种**）
+#
+#   工具                    吃哪种方言              怎么传
+#   threshold_fit.py        idx / key / item        --labels <path>
+#   tune-ab.py              idx / key / item        --labels <path>
+#   shadow_ab.py            idx / key / item        --labels <path>（不给则走 labels-<tag>.jsonl + sample）
+#   risk_certificate.py     idx / key / item        --labels <path>（不给则走固定路径，并与登记表比对口径）
+#   calibration.py          idx / key / item        --labels <path>
+#   wake_ledger.py          ——                      --export-item-labels 产出 item
+#
+#   ⚠️ 读不到时**必须报错**，不许静默返回空（labels_any.load 的 require_usable）。
+#      2026-11-19 之前：tune-ab 报「可对齐样本只有 0 条」（错因误导），
+#      risk_certificate 直接拿旧标签出证书（真静默）。两种坏结果都踩过。
+#   ⚠️ 同一行同时带 idx 与 id 时按 item 处理（否则 item 标签会被错配到无关 key，实测 46 条错 45 条）。
+#   ⚠️ 同一条被标两次会产生重复行：labels_any 报 duplicates，冲突标签报 conflicts（>0 要人工看）。
+
 # 7) 回放构造唤醒 + 策略仿真
 python3 "$S/replay_wake_eval.py" --tag <tag> --export /tmp/wakes.jsonl
 python3 "$S/wake_policy_sim.py" --items /tmp/passed-items-labeled.json --days 5
@@ -244,6 +265,12 @@ python3 "$T/tune-ab.py" --tag <tag> --a judge/<tag>.json --b /tmp/new.json --tau
 - [ ] target 改动后：`python3 <repo>/tests/reflex-shadow-regress.py`（运行时）或 `python3 tests/test-tuning-tools.py`（仓库；tests/ 仅仓库，不随 npm 包发布）
 - [ ] target/采集源改动后：`bash "$S/reflex_e2e_probe.sh"` PASS（采集→判定→唤醒全链实测）
 - [ ] 策略变更可回滚：单条目策略用 `REFLEX_X_DEFER=0`；判据/阈值改回脚本默认值即热生效
+- [ ] **preflight 前置**：任何改动之前先跑一次，把 exit≠0 的项当待办清单。
+      2026-11-19 实测：后置跑等于把「标签不可用」「无指纹」这两条免费 TODO 丢掉，随后又各自花时间补
+- [ ] **探针是有副作用的步骤**：`reflex_e2e_probe.sh` 走真实投递，会叫醒 1–2 次并把 `e2e-probe`
+      条目写进 wake-labels。跑之前预期这两条推送，跑完按 0 打标，评估时排除该 target
+- [ ] 标签方言对上了：用 `--labels` 传 item 标签时，工具应打印「方言=item · 对齐 N 条」；
+      打印「可对齐 0 条」说明方言没对上，不要去补样本
 
 ## 限制
 

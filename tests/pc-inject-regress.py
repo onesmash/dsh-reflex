@@ -300,6 +300,52 @@ def t8(tmp):
           '%s vs %s' % (m1 and m1.group(1), m2 and m2.group(1)))
 
 
+# ---------- t9: 原分复现 MAE 必须按日分区 ----------
+# 为什么(2026-11-19): 该指标原来是把所有天的记录混在一起算的。判据换过版本, 旧记录与
+# 当前判据不同源, 混算得到的 0.0304 会被读成「打分器有噪声」, 而实际是「判据换过」。
+# 一天一个数才能看出分界。
+def t9(tmp):
+    tmp = os.path.join(tmp, 'mae')
+    os.makedirs(os.path.join(tmp, 'home', 'shadow'), exist_ok=True)
+    opts = os.path.join(tmp, 'opts.json')
+    with open(opts, 'w') as f:
+        json.dump([{"id": "yes", "description": "值得"}, {"id": "no", "description": "不值得"},
+                   {"id": "insufficient", "description": "不足"}], f)
+    dA, dB = '2026-10-24', '2026-10-25'
+    for day, rec_score in ((dA, 0.90), (dB, 0.60)):
+        with open(os.path.join(tmp, 'home', 'shadow', f'x-timeline-{day}.jsonl'), 'w') as f:
+            for i in range(4):
+                r = mk_rec(i, i % 2 == 0)
+                r['score'] = rec_score
+                r['key'] = f'k{i}-{day}'          # 两天样本不能互相去重
+                r['state_hash'] = f'h{i}-{day}'
+                f.write(json.dumps(r, ensure_ascii=False) + '\n')
+    stub = os.path.join(tmp, 'stub9.sh')
+    with open(stub, 'w') as f:
+        f.write(STUB)
+    os.chmod(stub, 0o755)
+    out = os.path.join(tmp, 'out')
+    cmd = ['python3', PC, '--tag', 'x-timeline', '--days', 'all', '--sample', '8',
+           '--eps', '0.05', '--score-cmd', stub, '--out', out,
+           '--options-json', opts]
+    env = dict(os.environ, REFLEX_HOME=os.path.join(tmp, 'home'))
+    p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=120)
+    check('t9 rc=0', p.returncode == 0, p.stderr[-300:])
+    md = os.path.join(out, 'pc-report-x-timeline-all.md')
+    if not os.path.exists(md):
+        check('t9 报告落盘', False, md)
+        return
+    txt = open(md, encoding='utf-8').read()
+    import re as _re
+    m = _re.search(r'原分复现 MAE（分日）: (.+)', txt)
+    check('t9 报告含按日分区行', bool(m), txt[:400])
+    if m:
+        line = m.group(1)
+        check('t9 逐日列出且数值正确',
+              f'{dA} 0.0000' in line and f'{dB} 0.3000' in line, line)
+    check('t9 跨版本时给出警示', '跨判据版本' in txt or '跨版本' in txt, txt[:600])
+
+
 def main():
     if not os.path.exists(PC):
         print(f'FAIL pc_inject.py 不存在: {PC}')
@@ -315,6 +361,7 @@ def main():
         t6(load_mod())
         t7(load_mod())
         t8(tmp)
+        t9(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     fails = [r for r in results if not r[1]]

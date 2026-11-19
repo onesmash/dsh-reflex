@@ -117,6 +117,22 @@ def pr_at(scores, labels, tau):
             tp / (tp + fn) if tp + fn else None, tp, fp, fn)
 
 
+def _import_labels_any():
+    """从 skill 目录导入 labels_any（与 reflex-tuning 其余工具共用同一份实现）。"""
+    cands = [
+        os.environ.get("REFLEX_TUNING_DIR") or "",
+        os.path.expanduser("~/.agents/skills/reflex-tuning/scripts"),
+        os.path.join(HOME, "..", ".agents", "skills", "reflex-tuning", "scripts"),
+    ]
+    for d in cands:
+        if d and os.path.exists(os.path.join(d, "labels_any.py")):
+            if d not in sys.path:
+                sys.path.insert(0, d)
+            import labels_any  # noqa: E402
+            return labels_any
+    raise SystemExit("tune-ab: 找不到 labels_any.py（应与 reflex-tuning 的 scripts 同目录部署）")
+
+
 def resolve_score_cmd():
     """打分器解析顺序：$REFLEX_SCORE_CMD → tools/resolve-scorer.sh → 报错。
 
@@ -194,24 +210,26 @@ def main():
         raise SystemExit("tune-ab: 两套判据哈希相同，A/B 无意义")
 
     labels_p = a.labels or os.path.join(HOME, "shadow", f"labels-{a.tag}.jsonl")
-    sample_p = a.sample or os.path.join(HOME, "shadow", f"sample-{a.tag}.json")
     if not os.path.exists(labels_p):
         raise SystemExit(f"tune-ab: 缺标签文件 {labels_p}")
-    if not os.path.exists(sample_p):
-        raise SystemExit(f"tune-ab: 缺抽样映射 {sample_p}（先 threshold_fit --export-sample）")
-    items = read_json(sample_p).get("items") or []
-    labs = load_labels(labels_p)
+
+    # 标签方言统一走 labels_any.resolve()（idx / key / item 三方言通吃）。
+    # 旧 loader 会把 item 标签逐行丢掉，然后报「可对齐样本 0 条」——错因误导。
+    LA = _import_labels_any()
     states = load_shadow_states(a.tag)
+    try:
+        labs, _weights, dialect = LA.resolve(HOME, a.tag, path=(a.labels or ""))
+    except LA.LabelsError as e:
+        raise SystemExit(f"tune-ab: {e}")
+    pairs = [(f"k{k[:10]}", k, y) for k, y in labs.items() if k in states]
+    sys.stderr.write(f"tune-ab: 方言={dialect} · 对齐到 shadow state {len(pairs)}/{len(labs)} 条\n")
 
     rows, ys, used = [], [], 0
-    for it in items:
-        idx, key = int(it.get("idx")), it.get("key")
-        if idx not in labs or key not in states:
-            continue
+    for rid, key, lab in pairs:
         state, question, _ = states[key]
-        rows.append({"id": f"i{idx}", "state": state, "question": qa or question,
+        rows.append({"id": rid, "state": state, "question": qa or question,
                      "options": oa, "createdMs": 0})
-        ys.append(labs[idx])
+        ys.append(lab)
         used += 1
     if used < 10:
         raise SystemExit(f"tune-ab: 可对齐样本只有 {used} 条，A/B 不可信（需要 ≥10）")

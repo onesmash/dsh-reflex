@@ -188,6 +188,43 @@ def load_labels(home, tag, idx_map):
     return out
 
 
+def _import_labels_any():
+    """从 skill 目录导入 labels_any（三方言标签的唯一实现）。"""
+    cands = [
+        os.environ.get("REFLEX_TUNING_DIR") or "",
+        os.path.dirname(os.path.abspath(__file__)),
+        os.path.expanduser("~/.agents/skills/reflex-tuning/scripts"),
+    ]
+    for d in cands:
+        if d and os.path.exists(os.path.join(d, "labels_any.py")):
+            if d not in sys.path:
+                sys.path.insert(0, d)
+            import labels_any  # noqa: E402
+            return labels_any
+    raise SystemExit("risk_certificate: 找不到 labels_any.py（应与本脚本同目录部署）")
+
+
+def _load_id_key_map(home, tag):
+    """shadow 记录里的 id → key（state_hash），供 item 级标签对齐。"""
+    out = {}
+    for p in sorted(glob.glob(os.path.join(home, "shadow", f"{tag}-*.jsonl"))):
+        b = os.path.basename(p)
+        if "dict-backup" in p or ".bak" in p or b.startswith(("labels-", "sample-", "wake-", "ab-")):
+            continue
+        for line in open(p, encoding="utf-8", errors="replace"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            i, k = d.get("id"), d.get("key")
+            if i and k:
+                out[str(i)] = k
+    return out
+
+
 def fmt(x, digits=1):
     return "-" if x is None else f"{x*100:.{digits}f}%"
 
@@ -204,13 +241,76 @@ def main():
     ap.add_argument("--need-pos", type=int, default=20,
                     help="下结论所需最少正例数；不足则证书标注『不可作校准结论』并退出码 2")
     ap.add_argument("--allow-small", action="store_true")
+    ap.add_argument("--labels", default="",
+                    help="直接指定标签文件（idx / key / item 三种方言都吃；给定时绕过登记表口径守卫）")
+    ap.add_argument("--allow-stale-labels", action="store_true",
+                    help="登记表声明的标签集与工具实际读取的不一致时，仍继续（默认硬失败）")
     ap.add_argument("--report", default="")
     a = ap.parse_args()
 
     labels_tag = a.labels_tag or a.tag
+
+    # 口径守卫（2026-11-19）：登记表声明了 labelsFile/labelsHash，但本工具历史上只按
+    # 固定文件名 shadow/labels-<tag>.jsonl 取标签。于是出现过「登记表绿着 486 条、
+    # 证书算的是另一份 120 条旧样本」，而工具只把问题报成『正例不足』——
+    # 读者会去补样本，而真相是口径已经断了。这里改成硬失败。
+    reg_path = os.path.join(a.home, "tools", "shadow_targets.json")
+    reg_entry = {}
+    if os.path.exists(reg_path):
+        try:
+            reg_entry = (json.load(open(reg_path, encoding="utf-8")).get(labels_tag) or {})
+        except Exception:
+            reg_entry = {}
+    declared = "" if a.labels else (reg_entry.get("labelsFile") or "")
+    default_rel = f"shadow/labels-{labels_tag}.jsonl"
+    if declared and declared != default_rel:
+        decl_abs = declared if os.path.isabs(declared) else os.path.join(a.home, declared)
+        if not a.allow_stale_labels:
+            raise SystemExit(
+                "risk_certificate: 标签口径不一致，拒绝出证书\n"
+                f"  登记表声明：{declared}\n"
+                f"  本工具只读：{default_rel}\n"
+                "  ⟹ 继续跑会把『另一套标签』算成当前工作点的证书（历史上发生过一次）。\n"
+                "  办法：① 用 threshold_fit 的 CP 行（它支持 item 标签）；"
+                "② 给本工具加 item 标签支持；③ 确认无误后加 --allow-stale-labels。"
+            )
+        else:
+            print(f"[warn] 标签口径不一致但被 --allow-stale-labels 放行：{declared} vs {default_rel}",
+                  file=sys.stderr)
+
     items = load_shadow(a.home, a.tag, a.mode)
-    idx_map, weights = load_sample(a.home, labels_tag)
-    labels = load_labels(a.home, labels_tag, idx_map)
+
+    if a.labels:
+        # 直接指定标签文件：三方言通吃（2026-11-19 加）。
+        # item 方言没有分层抽样的权重语义（它是对已推送条目的自然标注），
+        # 所以 weights 置空 —— 后面 .get(key, 1.0) 会全部取 1.0，即不加权。
+        LA = _import_labels_any()
+        try:
+            L = LA.load(a.labels)
+        except LA.LabelsError as e:
+            raise SystemExit(f"risk_certificate: {e}")
+        weights = {}
+        if L.dialect == "key":
+            labels = dict(L.labs)
+        elif L.dialect == "item":
+            id2key = _load_id_key_map(a.home, a.tag)
+            labels, miss = {}, 0
+            for iid, lab in L.labs.items():
+                k = id2key.get(str(iid))
+                if k:
+                    labels[k] = lab
+                else:
+                    miss += 1
+            print(f"[labels] item 方言：{len(L.labs)} 条 → 对齐 {len(labels)} 条，未对齐 {miss} 条",
+                  file=sys.stderr)
+        else:
+            raise SystemExit(f"risk_certificate: --labels 给的是 {L.dialect} 方言，"
+                             f"本参数只接受 key / item；idx 方言请用默认路径（配 sample-<tag>.json）")
+        print(f"[labels] {L.describe()}", file=sys.stderr)
+    else:
+        idx_map, weights = load_sample(a.home, labels_tag)
+        labels = load_labels(a.home, labels_tag, idx_map)
+
     if not items or not labels:
         print("缺 shadow 数据或标签", file=sys.stderr)
         return 2

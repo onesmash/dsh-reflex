@@ -206,8 +206,29 @@ def load_labels(home, tag, idx_map):
     return out
 
 
-def resolve_rows(home, tag, labels_tag, mode):
+def _import_labels_any():
+    """从 skill 目录导入 labels_any（三方言标签的唯一实现）。"""
+    import sys as _sys
+    cands = [os.environ.get("REFLEX_TUNING_DIR") or "",
+             os.path.dirname(os.path.abspath(__file__)),
+             os.path.expanduser("~/.agents/skills/reflex-tuning/scripts")]
+    for d in cands:
+        if d and os.path.exists(os.path.join(d, "labels_any.py")):
+            if d not in _sys.path:
+                _sys.path.insert(0, d)
+            import labels_any  # noqa: E402
+            return labels_any
+    raise SystemExit("calibration: 找不到 labels_any.py（应与本脚本同目录部署）")
+
+
+def resolve_rows(home, tag, labels_tag, mode, labels_path=""):
     items = load_shadow(home, tag, mode)
+    if labels_path:
+        # 三方言通吃（2026-11-19）：--labels 给定时绕过 sample 清单与 idx 映射
+        LA = _import_labels_any()
+        labs, weights, _dialect = LA.resolve(home, tag, path=labels_path)
+        return [{"x": r["score"], "y": labs[r["key"]], "w": weights.get(r["key"], 1.0)}
+                for r in items if r["key"] in labs]
     idx_map, weights = load_sample(home, labels_tag)
     labels = load_labels(home, labels_tag, idx_map)
     if labels_tag == tag:
@@ -248,6 +269,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag", default="xtl-v2b")
     ap.add_argument("--labels-tag", default="x-timeline")
+    ap.add_argument("--labels", default="",
+                    help="直接指定标签文件（idx/key/item 三方言；给定时绕过 sample 清单）")
     ap.add_argument("--mode", default="replay", choices=["replay", "live", "both"])
     ap.add_argument("--operating", type=float, default=0.93)
     ap.add_argument("--home", default=DEFAULT_HOME)
@@ -255,7 +278,7 @@ def main():
     ap.add_argument("--report", default="")
     a = ap.parse_args()
 
-    rows = resolve_rows(a.home, a.tag, a.labels_tag, a.mode)
+    rows = resolve_rows(a.home, a.tag, a.labels_tag, a.mode, a.labels)
     if not rows:
         print("没有对齐的标注数据", file=sys.stderr)
         return 2

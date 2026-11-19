@@ -201,6 +201,7 @@ def load_shadow(home, tag, days):
     for f in files:
         if not os.path.exists(f):
             continue
+        _day = day_of_file(os.path.basename(f), tag)     # 原分复现 MAE 必须按日分区
         for line in open(f, encoding="utf-8", errors="replace"):
             line = line.strip()
             if not line:
@@ -210,8 +211,22 @@ def load_shadow(home, tag, days):
             except Exception:
                 continue
             if r.get("state") and r.get("question"):
+                r["_day"] = _day
                 rows.append(r)
     return rows
+
+
+def day_of_file(fname, tag):
+    """`<tag>-<day>.jsonl` → day；不是这个形状返回 'unknown'。
+
+    2026-11-19: 原分复现 MAE 原来把所有天的记录混在一起算。判据换过版本后（11-12 vs 11-14 之后），
+    旧记录与当前判据不同源，混算得到 0.0304，会被读成「打分器有噪声」，而实际是「判据换过」。
+    按日分区的 11-12=0.2860 / 11-14=0.0000 / 11-18=0.0000 一眼看出分界。
+    """
+    pre = tag + "-"
+    if not (fname.startswith(pre) and fname.endswith(".jsonl")):
+        return "unknown"
+    return fname[len(pre):-len(".jsonl")] or "unknown"
 
 
 def sample_records(records, n, seed=7):
@@ -401,9 +416,13 @@ def main():
     with open(tmp_in, "w", encoding="utf-8") as f:
         for c in candidates:
             f.write(json.dumps(c, ensure_ascii=False) + "\n")
-    for stale in (tmp_out, tmp_out + ".summary.md"):
+    # SemIf 打分器是 create-only: 重跑前必须清旧输出 + summary。
+    # 2026-11-19: summary 的真实文件名是 `<stem>.summary.md`（不是 `<out>.jsonl.summary.md`），
+    # 原来只删后者 ⟹ 第二次跑必然报「summary already exists」。两个名字都删。
+    _stem = tmp_out[:-len(".jsonl")] if tmp_out.endswith(".jsonl") else tmp_out
+    for stale in (tmp_out, tmp_out + ".summary.md", _stem + ".summary.md"):
         if os.path.exists(stale):
-            os.remove(stale)        # SemIf 打分器是 create-only, 重跑前必须清旧输出+summary
+            os.remove(stale)
     run_scorer(args.score_cmd, tmp_in, tmp_out)
     scores = {}
     for line in open(tmp_out, encoding="utf-8"):
@@ -414,6 +433,7 @@ def main():
 
     per_op = {op: [] for op in used_ops}
     orig_errs = []
+    orig_errs_by_day = {}
     raw_rows = []
     for key, r in keyed:
         rid = key
@@ -421,7 +441,9 @@ def main():
         if p0 is None:
             continue
         if r.get("score") is not None:
-            orig_errs.append(abs(p0 - float(r["score"])))
+            _err = abs(p0 - float(r["score"]))
+            orig_errs.append(_err)
+            orig_errs_by_day.setdefault(r.get("_day") or "unknown", []).append(_err)
         for op_name, _fn in key_ops[key].items():
             kind = KIND[op_name]
             pp = scores.get(f"{rid}:{op_name}")
@@ -448,6 +470,15 @@ def main():
     if orig_errs:
         lines.append(f"- 原分复现 MAE: {statistics.mean(orig_errs):.4f} ( fresh 打分 vs shadow 记录, "
                      "越低说明评分过程确定性越好 )")
+        _day_line = " · ".join(
+            f"{d} {statistics.mean(v):.4f} (n={len(v)})"
+            for d, v in sorted(orig_errs_by_day.items()))
+        lines.append(f"- 原分复现 MAE（分日）: {_day_line}")
+        _day_means = {d: statistics.mean(v) for d, v in orig_errs_by_day.items()}
+        if len(_day_means) > 1 and (max(_day_means.values()) - min(_day_means.values())) > 0.05:
+            lines.append("- ⚠️ **各日复现误差不一致 ⟹ 记录跨判据版本，整体 MAE 不可读**："
+                         "差值大的那天多半是旧判据或旧 state 模板产出的记录，"
+                         "不能当作「打分器有噪声」的证据。复现指标只在同一判据版本内可比。")
         lines.append("")
     lines.append("| 算子 | 类型 | 符合率 | 平均 Δp | 翻转率 | n |")
     lines.append("|---|---|---|---|---|---|")

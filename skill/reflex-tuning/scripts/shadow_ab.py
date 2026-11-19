@@ -51,6 +51,21 @@ def load_tag(home, tag, mode):
     return by_state
 
 
+def _import_labels_any():
+    """从 skill 目录导入 labels_any（三方言标签的唯一实现）。"""
+    import sys as _sys
+    cands = [os.environ.get("REFLEX_TUNING_DIR") or "",
+             os.path.dirname(os.path.abspath(__file__)),
+             os.path.expanduser("~/.agents/skills/reflex-tuning/scripts")]
+    for d in cands:
+        if d and os.path.exists(os.path.join(d, "labels_any.py")):
+            if d not in _sys.path:
+                _sys.path.insert(0, d)
+            import labels_any  # noqa: E402
+            return labels_any
+    raise SystemExit("shadow_ab: 找不到 labels_any.py（应与本脚本同目录部署）")
+
+
 def load_labels(home, labels_tag):
     path = os.path.join(home, "shadow", f"labels-{labels_tag}.jsonl")
     out = {}
@@ -122,19 +137,47 @@ def main():
     ap.add_argument("--mode", default="replay", choices=["replay", "live", "both"])
     ap.add_argument("--ratios", default="1,2,4")
     ap.add_argument("--current-threshold", type=float, default=None)
+    ap.add_argument("--labels", default="",
+                    help="直接指定标签文件（idx/key/item 三方言；给定时绕过 sample 清单）")
     a = ap.parse_args()
 
     labels_tag = a.labels_tag or a.tag_a
     A = load_tag(a.home, a.tag_a, a.mode)
     B = load_tag(a.home, a.tag_b, a.mode)
-    labels = load_labels(a.home, labels_tag)
-    manifest = load_manifest(a.home, labels_tag)
-    if not labels or not manifest:
-        print("没有标签或 sample 清单", file=sys.stderr)
-        return 2
-
     rows, miss_a, miss_b = [], 0, 0
-    if labels_tag == a.tag_a:
+
+    if a.labels:
+        # 三方言通吃（2026-11-19）：item 标签没有 sample 清单，直接按 key 对齐 A 的 state_hash
+        LA = _import_labels_any()
+        try:
+            labs, weights, dialect = LA.resolve(a.home, a.tag_a, path=a.labels)
+        except LA.LabelsError as e:
+            print(f"shadow_ab: {e}", file=sys.stderr)
+            return 2
+        A_by_key = {r["key"]: r for r in A.values()}
+        for key, y in labs.items():
+            ra = A_by_key.get(key)
+            if ra is None:
+                miss_a += 1
+                continue
+            rb = B.get(ra["state_hash"])
+            if rb is None:
+                miss_b += 1
+                continue
+            rows.append({"idx": key, "y": y, "w": weights.get(key, 1.0),
+                         "sa": ra["score"], "sb": rb["score"], "state": ra.get("state") or ""})
+        print(f"[labels] 方言={dialect} · 对齐 {len(rows)} 条（miss_a {miss_a} / miss_b {miss_b}）",
+              file=sys.stderr)
+    else:
+        labels = load_labels(a.home, labels_tag)
+        manifest = load_manifest(a.home, labels_tag)
+        if not labels or not manifest:
+            print("没有标签或 sample 清单", file=sys.stderr)
+            return 2
+
+    if a.labels:
+        pass          # rows 已由 --labels 分支建好
+    elif labels_tag == a.tag_a:
         A_by_key = {r["key"]: r for r in A.values()}
         for it in manifest:
             idx = int(it["idx"])
