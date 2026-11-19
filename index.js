@@ -389,13 +389,13 @@ function install(rt, ctx, cfg) {
   // 为什么必须有这一层: 告警系统最坏的失败不是「投错地方」, 是「以为投了其实没投」。
   // 覆盖目标可能是群(群被删/改名/room 无法 resolveAgent), 一旦失败又不能静默丢弃,
   // 就退回默认私聊并显式打一行 fallback 日志 —— 至少要有人看到。
-  async function wakeL2(summary, wakeTo) {
+  async function wakeL2(summary, wakeTo, mode) {
     const primary = wakeTo ?? cfg.l1.targetBot
     const order = [primary]
     if (wakeTo !== undefined && wakeTo !== null) order.push(cfg.l1.targetBot)
     let lastErr = null
     for (const to of order) {
-      const ok = await wakeL2Once(summary, to)
+      const ok = await wakeL2Once(summary, to, mode)
       if (ok) return true
       lastErr = to
     }
@@ -404,7 +404,7 @@ function install(rt, ctx, cfg) {
     return false
   }
 
-  async function wakeL2Once(summary, wakeTo) {
+  async function wakeL2Once(summary, wakeTo, mode) {
     try {
       const { sessionId, label } = resolveWakeTarget(wakeTo)
       if (!sessionId) { log(`L2 wake miss: no session for "${label}"`); return false }
@@ -440,7 +440,13 @@ function install(rt, ctx, cfg) {
         //   改成 'post' 后两条同时消失：画成气泡 + 不标记交换轮，回复照常显示。
         source: { kind: 'bot', form: 'relay', role: 'post', exchangeId: randomUUID(), senderName: '分层智能体', senderSessionId: 'reflex-l1', roomId: sessionId, hop: 0 },
       })
-      if (agent?.followup) agent.followup(message)
+      // 投递方式: followup 是排队(当前回合跑完才读), steer 是插话(打断当前回合立刻读)。
+      // 缺省 followup —— 不打断正在进行的活。实时流(target 声明 wakeMode:"steer")才插话:
+      // 实测(2026-11-19) 一轮长任务里三条实时转写唤醒排队 3~13 分钟才被读到,
+      // 对"实时"来说瓶颈不在链路, 在轮次。
+      const preferSteer = String(mode ?? '').toLowerCase() === 'steer'
+      if (preferSteer && agent?.steer) agent.steer(message)
+      else if (agent?.followup) agent.followup(message)
       else if (agent?.steer) agent.steer(message)
       else { log('L2 wake failed: agent has no followup/steer'); return false }
       log(`L2: woken "${label}" (${sessionId}) via sessionController`)
@@ -1292,6 +1298,8 @@ function install(rt, ctx, cfg) {
         // 2026-11-14 踩过：env.json 里写了 wakeTo=群，启动日志也打印了路由，
         // 但这条没搬 → target.wakeTo 恒 undefined → 全部悄悄回落到 Chief 私聊。
         wakeTo: t.wakeTo,
+        // 投递方式: "steer" = 插话打断当前回合(实时流用), 缺省 followup 排队
+        wakeMode: t.wakeMode,
         // 条目型 target: 指纹相同即静默，不再「冷却期过后重新关注」
         exactDedupe: !!t.exactDedupe,
         collect: async (facts) => {
@@ -1588,7 +1596,7 @@ function install(rt, ctx, cfg) {
               }
             }
             log(`L1[${targetKey}]: ${label}`)
-            const delivered = await wakeL2(target.render(ctx, `(${label})`), target.wakeTo)
+            const delivered = await wakeL2(target.render(ctx, `(${label})`), target.wakeTo, target.wakeMode)
             if (delivered) {
               saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: label } })
               if (pending) savePending(targetKey, null)
@@ -1618,7 +1626,7 @@ function install(rt, ctx, cfg) {
         log(`L1[${targetKey}]: ${configuredBackend() || 'semif'} winning=${d.winning} pYes=${d.pYes.toFixed(3)}`)
         if (d.pYes >= cfg.l1.threshold) {
           if (contentChanged(targetKey, fp)) {
-            const delivered = await wakeL2(target.render(ctx, `(SemIf pYes=${d.pYes.toFixed(2)})`), target.wakeTo)
+            const delivered = await wakeL2(target.render(ctx, `(SemIf pYes=${d.pYes.toFixed(2)})`), target.wakeTo, target.wakeMode)
             if (delivered) {
               saveLastWake({ ...(lastWake), [targetKey]: { fp, at: Date.now(), reason: 'semif' } })
               if (pending) savePending(targetKey, null)
