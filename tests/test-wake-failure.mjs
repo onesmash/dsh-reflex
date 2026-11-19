@@ -33,14 +33,17 @@ writeFileSync(join(home, 'targets', 'probe.env.json'), JSON.stringify({ sources:
 const statePath = join(home, 'state.json')
 writeFileSync(statePath, JSON.stringify({ bots: { 'bot-chief': { name: 'Chief', sessionId: 'session-chief' } } }), 'utf8')
 
+const allDelivered = []
 const delivered = []
-const workingSc = { resolveAgent: async () => ({ agent: { followup: (m) => delivered.push(m) } }) }
+// 只统计 probe 目标的投递: 临时 home 里 reflex-health 也会因为「叫不醒 L2」而播报,
+// 那是它该做的事, 但会把本用例的计数搅乱(基线里它被 pending 卡住, 现在能补投了)。
+const workingSc = { resolveAgent: async () => ({ agent: { followup: (m) => { allDelivered.push(m); if (String(m?.content?.[0]?.text ?? '').includes('probe')) delivered.push(m) } } }) }
 
 // 模拟 cordis 注入: 先注入一个"没有 resolveAgent"的服务(= 插件重载窗口), 之后可重挂
 let attach = null
 const noop = () => {}
 const ctx = {
-  logger: { info: noop, warn: noop, error: noop, debug: noop },
+  logger: { info: (...a) => { if (process.env.DEBUG) console.log('[dbg]', ...a) }, warn: (...a) => { if (process.env.DEBUG) console.log('[dbg]', ...a) }, error: (...a) => { if (process.env.DEBUG) console.log('[dbg]', ...a) }, debug: noop },
   on: noop, effect: noop, get: () => undefined,
   tools: { register: noop }, systemPrompt: { section: noop }, schedule: { register: noop },
   workspaceRegistry: {}, sessionController: {}, sessionTitle: {},

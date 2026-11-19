@@ -636,6 +636,7 @@ function install(rt, ctx, cfg) {
           type: ALL_TARGETS[k].isScript ? 'script' : 'builtin',
           name: ALL_TARGETS[k].name ?? k,
           minIntervalMs: ALL_TARGETS[k].minIntervalMs ?? 0,
+          evalIntervalMs: ALL_TARGETS[k].evalIntervalMs ?? null,
         })),
         queryTips: [
           'list sources: ls <storeDir>/',
@@ -653,7 +654,11 @@ function install(rt, ctx, cfg) {
   // 所有脚本源实际都按 l0.intervalMs(默认 60s) 跑, 浏览器类源(feed-timeline)会被拉到
   // 每分钟启停一次 Chrome, 既费资源又容易被目标站限流。这里补上。
   const lastCollectAt = {}
-  async function collectOnce() {
+  // opts.scheduled: 由自适应调度节拍传 true —— 那时才按每个源自己的 intervalMs 门控。
+  // 手工/测试直接调用 collectOnce() 不带该参数, 行为与改动前一致(每次都采),
+  // 否则「跑一轮」这件事在测试里会随时序随机变空转。
+  async function collectOnce(opts = {}) {
+    const gated = !!opts.scheduled
     refreshDiscovery()                 // 新脚本源落盘即生效 (目录签名门控, 空载近零成本)
     const ts = Date.now()
     let count = 0
@@ -667,8 +672,12 @@ function install(rt, ctx, cfg) {
       // 扫描循环给每个脚本源都塞了默认 intervalMs(= scriptIntervalMs), 若不加这个比较,
       // 默认值恰好等于节拍时会被反复跳过(抖动导致 60s 的源变成 120s 跑一次)。
       // 启动后 lastCollectAt 为空 → 首轮立即采一次。
-      const everyMs = (c.intervalMs ?? 0) > cfg.l0.intervalMs ? c.intervalMs : 0
-      if (everyMs && ts - (lastCollectAt[src] ?? 0) < everyMs) continue
+      // 每个源按【自己声明的】intervalMs 跑: 比全局节拍慢(浏览器类)靠这里降频,
+      // 比全局节拍快(live-asr 这类流式源)靠这里提速 —— 调度节拍 computeTickMs 会自动降到最小间隔。
+      // 95% 容差: 节拍抖动时 60s 的源不会因为差 20ms 被推到 120s(旧实现用
+      // 「> 全局节拍才生效」绕开同一个问题, 但那一绕也让快速源永远快不起来)。
+      const everyMs = (c.intervalMs ?? 0) > 0 ? c.intervalMs : (cfg.l0.intervalMs ?? 60_000)
+      if (gated && everyMs && ts - (lastCollectAt[src] ?? 0) < Math.floor(everyMs * 0.95)) continue
       lastCollectAt[src] = ts
       try {
         let rows
@@ -903,17 +912,28 @@ function install(rt, ctx, cfg) {
   }
 
   // 脚本 target 的累积合并: items 按 id 去重、新一轮排在前面; 自由文本 notice 只能整段拼接
-  function mergeScriptDecisions(prev, next) {
+  // 单封条目上限（2026-11-18 加）。
+  // 起因：安静时段攒了一夜，07:00 一次放出 **87 条**（日志 L1[x-timeline] 22:59/23:00）。
+  //       合并此前只做去重，没有上限；本轮实际只判 6 条、命中 1 条，其余全是旧条目。
+  // 危害不是"多收了几条"：87 条挤一封后这封失去可读性，读的人要么整封跳过（漏掉真信号），
+  //       要么逐条挑（成本从机器转移到人）。而"哪些值得看"本来就是这一层该做完的事。
+  // 口径：合并后只留【最新】的 cap 条（next 在前 = 最新，prev 在后 = 较早），
+  //       被丢的条数写进信封，不静默截断。cap <= 0 表示不限制。
+  const DEFAULT_MAX_ITEMS = 12
+  function mergeScriptDecisions(prev, next, cap = DEFAULT_MAX_ITEMS) {
     const prevItems = prev?.items ?? []
     const prevIds = new Set(prevItems.map(i => String(i?.id ?? '')).filter(Boolean))
     const seen = new Set()
-    const items = [...(next?.items ?? []), ...prevItems].filter(it => {
+    const merged = [...(next?.items ?? []), ...prevItems].filter(it => {
       const id = String(it?.id ?? '')
       if (!id) return true
       if (seen.has(id)) return false
       seen.add(id)
       return true
     })
+    const limit = Number.isFinite(cap) ? cap : DEFAULT_MAX_ITEMS
+    const over = limit > 0 && merged.length > limit ? merged.length - limit : 0
+    const items = over ? merged.slice(0, limit) : merged
     const notices = [
       ...(next?.notice ? [next.notice] : []),
       ...(prev?.notices ?? []),
@@ -929,6 +949,9 @@ function install(rt, ctx, cfg) {
       scanned: (prev?.scanned ?? 0) + (next?.scanned ?? 0),
       rounds: (prev?.rounds ?? 0) + (next?.rounds ?? 0),   // next 为 null 时(空跑补发)不计轮次
       carried: items.filter(it => prevIds.has(String(it?.id ?? ''))).length,
+      dropped: over,
+      droppedTotal: (prev?.droppedTotal ?? 0) + over,
+      maxItems: limit > 0 ? limit : 0,
     }
   }
 
@@ -939,6 +962,7 @@ function install(rt, ctx, cfg) {
     const parts = [`[分层智能体·L1·${displayName}] ${items.length ? `${items.length} 条值得关注` : '需要关注'}`]
     const meta = []
     if (ctx.carried) meta.push(`其中 ${ctx.carried} 条为此前暂存（冷却期或安静时段）`)
+    if (ctx.droppedTotal) meta.push(`另有 ${ctx.droppedTotal} 条超出单封上限未列（上限 ${ctx.maxItems || DEFAULT_MAX_ITEMS} 条，保留最新的）`)
     if ((ctx.rounds ?? 1) > 1) meta.push(`跨 ${ctx.rounds} 轮扫描`)
     if (ctx.scanned) meta.push(`累计扫描 ${ctx.scanned} 条`)
     if (meta.length) parts.push(meta.join(' · '))
@@ -1135,12 +1159,28 @@ function install(rt, ctx, cfg) {
   const sourceIntervalMs = (src) =>
     SCRIPT_SOURCES[src]?.intervalMs ?? cfg.l0.scriptIntervalMs ?? cfg.l0.intervalMs ?? 60_000
 
+  // 某个 target 的【判定节拍】—— 与唤醒闸门是两件事:
+  //   minIntervalMs   管「叫不叫醒」(命中后也攒着/合并, 到点补发)
+  //   evalIntervalMs  管「多久跑一次判定」
+  // 缺省 = l1.intervalMs, 与改动前完全一致; 脚本 target 在 targets/<name>.env.json 里
+  // 声明更小的 evalIntervalMs 即进快车道, 调度节拍自动降到全体的最小值(见 computeTickMs)。
+  // 为什么必须分开: minIntervalMs=0 表示「每句都叫醒」, 但它不回答「多久判一次」——
+  // 没有这个旋钮, 快车道会把磁盘那类 jev 判定也拖到 1Hz, 那是真花钱。
+  const lastEvalAt = {}
+  const targetEvalMs = (k) => {
+    const own = ALL_TARGETS?.[k]?.evalIntervalMs
+    return Number.isFinite(own) && own > 0 ? own : (cfg.l1.intervalMs ?? 60_000)
+  }
+
   // feed-timeline 的 SemIf 判据与阈值: 已随该 target 一起迁到 targets/feed-timeline.sh
   // (校准记录与踩过的坑都在那个脚本的注释里 —— 判据归脚本, 插件不再持有它的措辞)
   const TARGETS = {
     disk: {
       name: '磁盘存储',
       interruptAlways: true,      // 硬规则不被安静时段拦住: 磁盘满是"现在就得知道"的事
+      // 自己关心的源: 决定「有新事实时要立刻判」这条快速通道由哪些 fact 触发。
+      // 不声明的话, 快车道下任何源每秒吐一条都会把它拖进 1Hz 的 jev 判定。
+      sources: ['disk'],
       // ① 收集器: 该 target 作为"决策 context"的所有数据都在这组装 (含趋势, 供 L2 无状态决策)
       collect: async (facts) => {
         const diskFacts = facts.filter(f => f.source === 'disk')
@@ -1221,6 +1261,9 @@ function install(rt, ctx, cfg) {
         name: t.displayName ?? key,
         isScript: true,
         minIntervalMs: t.minIntervalMs === 'auto' ? sourceIntervalMs(key) : (t.minIntervalMs ?? 0),
+        // 判定节拍必须显式搬过来: adapter 是白名单式赋值, 漏一个字段就等于没配。
+        // (2026-11-19 踩过: env.json 写了 evalIntervalMs=200, 实际仍按 60s 判。)
+        evalIntervalMs: t.evalIntervalMs,
         interruptAlways: !!t.interruptAlways,      // 由 <name>.env.json 配置, 默认遵守安静时段
         // 投递目标覆盖必须搬进 adapter：decideOnce 用的是 ALL_TARGETS，不是 SCRIPT_TARGETS。
         // 2026-11-14 踩过：env.json 里写了 wakeTo=群，启动日志也打印了路由，
@@ -1238,7 +1281,7 @@ function install(rt, ctx, cfg) {
         },
         interim: (ctx) => !!ctx,
         interimReason: (ctx) => ctx?.reason ?? '脚本判定命中',
-        mergeCtx: mergeScriptDecisions,
+        mergeCtx: (prev, next) => mergeScriptDecisions(prev, next, Number(t.maxItems ?? cfg.l1?.maxItems ?? DEFAULT_MAX_ITEMS)),
         render: (ctx, extra) => renderScriptTarget(t.displayName ?? key, ctx, extra, ctx?.__wakeKey),
       }]))
     ALL_TARGETS = { ...TARGETS, ...scriptTargetAdapters }
@@ -1397,13 +1440,14 @@ function install(rt, ctx, cfg) {
   // 防重入: 脚本 target 可能要跑十几秒(要启浏览器、要调 SemIf), 一旦超过 l1.intervalMs,
   // setInterval 会让两轮决策并发 —— 它们会读到同一批事实各判一次, 造成重复唤醒。
   let deciding = false
-  async function decideOnce() {
+  async function decideOnce(opts = {}) {
     if (deciding) { log('L1: 上一轮决策尚未结束, 跳过本轮'); return }
     deciding = true
-    try { return await decideOnceInner() } finally { deciding = false }
+    try { return await decideOnceInner(opts) } finally { deciding = false }
   }
 
-  async function decideOnceInner() {
+  async function decideOnceInner(opts = {}) {
+    const gated = !!opts.scheduled
     refreshDiscovery()                 // 新脚本 target 落盘即生效 (与 L0 同一门控)
     reloadPending()                    // 磁盘为准: 别的实例(热重载残留)写进 pending 的条目也要补投
     // 测试钩子: wake-test 标记 → 强制唤醒 (端到端验证; 走真实 disk target.render 产出结构化通知)
@@ -1427,6 +1471,19 @@ function install(rt, ctx, cfg) {
     if (!facts.length && !Object.keys(pendingWakes).length) return
     for (const targetKey of activeTargets) {
       const target = ALL_TARGETS[targetKey]
+      // 判定门控。两条任一即判:
+      //   ① 本轮有【属于自己的】新事实 —— 立刻判。这条不能靠时间: 跳过一轮,
+      //      那批事实已被 readNewFacts 推进游标, 就永远没人再看它了(静默丢数据)。
+      //   ② 距上次判定已过 evalIntervalMs(缺省=l1.intervalMs, 与改动前一致)——
+      //      没有新事实时也要兜底跑, pending 的「到点补发」全靠这条。
+      // 两者都没有 → 跳过, 快车道才不会把 jev 判定拖成 1Hz。
+      const evalMs = targetEvalMs(targetKey)
+      const due = Date.now() - (lastEvalAt[targetKey] ?? 0) >= Math.floor(evalMs * 0.95)
+      const relevant = Array.isArray(target.sources) && target.sources.length
+        ? facts.some(f => target.sources.includes(f.source))
+        : facts.length > 0
+      if (gated && !due && !relevant) continue
+      lastEvalAt[targetKey] = Date.now()
       try {
         const rateLimit = target.minIntervalMs ?? 0
         // 安静时段与唤醒闸门是同一类限制(都靠 pending 累积绕过), 所以合并成一个 limited。
@@ -1536,14 +1593,65 @@ function install(rt, ctx, cfg) {
   }
 
   // ---------- 启动 ----------
-  collectOnce().catch(() => {})
-  const t0 = setInterval(() => collectOnce().catch(e => log(`L0 err: ${e.message}`)), cfg.l0.intervalMs)
-  const t1 = setInterval(() => decideOnce().catch(e => log(`L1 err: ${e.message}`)), cfg.l1.intervalMs)
-  t0.unref?.(); t1.unref?.()
-  // cordis effect(setup): 立即调用 setup, 其返回值才是 dispose 回调 (照 ds-bot 惯例双箭头)
-  try { ctx.effect(() => () => { clearInterval(t0); clearInterval(t1) }, 'dsh-reflex: L0/L1 timers') } catch {}
+  // 单节拍自适应调度: 节拍 = min(全局 L0/L1 间隔, 所有源/target 自己声明的更小间隔)。
+  // 为什么不用两个固定 setInterval: 旧实现里「源声明 200ms」只会被当成 0(=每轮都采),
+  // 而轮次本身 60s 一次 —— 快速源永远快不起来。这里把节拍与每个源/target 的
+  // due 判定分开: 节拍只保证「到点有人跑」, 谁跑由 collectOnce/decideOnce 内部的 due 门控决定。
+  // 下限 250ms: 配置写 0/负数时不至于忙等。
+  const computeTickMs = () => {
+    let t = Math.min(cfg.l0.intervalMs ?? 60_000, cfg.l1.intervalMs ?? 60_000)
+    for (const n of Object.keys(SCRIPT_SOURCES)) {
+      const iv = SCRIPT_SOURCES[n]?.intervalMs
+      if (Number.isFinite(iv) && iv > 0 && iv < t) t = iv
+    }
+    for (const k of activeTargets) {
+      const iv = targetEvalMs(k)
+      if (Number.isFinite(iv) && iv > 0 && iv < t) t = iv
+    }
+    return Math.max(t, 250)
+  }
+  let tickTimer = null
+  let stopped = false
+  const armTick = () => {
+    if (stopped) return
+    const tick = computeTickMs()
+    tickTimer = setTimeout(() => {
+      // L0 先跑, 跑完立刻判 —— 不能让「同一拍里判定读到采集之前的游标」白丢一拍
+      // (实测: 并发跑时决定性的那次判定抢先读到旧游标, 唤醒整整晚一拍)。
+      // 但一个慢源(x-timeline 起浏览器要 60s)也不能把 L1 拖住, 所以加一拍兜底:
+      // 采集没回来也照判, 只是本轮没有新事实。
+      let fired = false
+      const fireDecide = () => {
+        if (fired) return
+        fired = true
+        clearTimeout(guard)
+        decideOnce({ scheduled: true }).catch(e => log(`L1 err: ${e.message}`))
+      }
+      const guard = setTimeout(fireDecide, tick)
+      guard.unref?.()
+      collectOnce({ scheduled: true }).catch(e => log(`L0 err: ${e.message}`)).then(fireDecide)
+      armTick()
+    }, tick)
+    tickTimer.unref?.()
+  }
+  // 配置卫生提示必须在启动时就报一次, 不能只挂在 refreshDiscovery 里 ——
+  // 那条路径要等第一轮采集才走到, 而采集现在归调度器(是副作用)。
+  try { warnRedundantConfig() } catch (e) { log(`配置卫生检查失败: ${e.message}`) }
 
-  log(`dsh-reflex installed: L0=${cfg.l0.intervalMs}ms L1=${cfg.l1.intervalMs}ms target="${cfg.l1.targetBot}" sources=[${effectiveSources().join(',')}] targets=[${activeTargets.join(',')}]`)
+  // 调度器是一个【副作用】, 所以走宿主的效果通道注册(照 cordis 惯例: 立即执行 setup,
+  // 其返回值是 dispose)。这样做的实际好处: 测试里 ctx.effect 是空实现 → 计时器根本不起,
+  // 「手工跑一轮 collectOnce/decideOnce」的用例不会跟后台节拍抢同一批事实。
+  try {
+    ctx.effect(() => {
+      collectOnce({ scheduled: true }).catch(() => {})
+      armTick()
+      return () => { stopped = true; if (tickTimer) clearTimeout(tickTimer) }
+    }, 'dsh-reflex: L0/L1 tick')
+  } catch (e) { log(`L0/L1 调度注册失败: ${e.message}`) }
+
+  const fastTicks = [['l0', cfg.l0.intervalMs], ['l1', cfg.l1.intervalMs]]
+    .map(([k, v]) => `${k}=${v}ms`).join(' ')
+  log(`dsh-reflex installed: ${fastTicks} tick=${computeTickMs()}ms target="${cfg.l1.targetBot}" sources=[${effectiveSources().join(',')}] targets=[${activeTargets.join(',')}]`)
   try {
     const routes = Object.keys(ALL_TARGETS).filter(k => ALL_TARGETS[k] && ALL_TARGETS[k].wakeTo)
       .map(k => `${k}→${resolveWakeTarget(ALL_TARGETS[k].wakeTo).label}`)
