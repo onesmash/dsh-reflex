@@ -936,7 +936,10 @@ function install(rt, ctx, cfg) {
     const stale = (it) => {
       if (!maxAgeMs || maxAgeMs <= 0) return false
       const ts = Number(it?.ts ?? 0)
-      return Number.isFinite(ts) && ts > 0 && (now - ts) > maxAgeMs
+      // 声明了保鲜期就必须带 ts: 没有时间戳的条目等同于「不知道多旧」——
+      // 对实时流, 不知道多旧就是不能投(实测: 老格式条目没有 ts, 于是 12 分钟前的句子照样补投了两次)。
+      if (!Number.isFinite(ts) || ts <= 0) return true
+      return (now - ts) > maxAgeMs
     }
     const prevAll = prev?.items ?? []
     const expired = prevAll.filter(stale).length

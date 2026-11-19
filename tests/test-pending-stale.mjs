@@ -89,7 +89,20 @@ await apiB.decideOnce()
 check('未过期的暂存照常补投', delivered.length === 1 && textOf(delivered[0]).includes('一分钟前的新句子'),
   `delivered=${delivered.length} ${textOf(delivered[0]).slice(0, 80)}`)
 
-// ③ 没声明 pendingMaxAgeMs → 旧语义, 攒多久都补投
+// ③ 声明了保鲜期却【没有 ts】的条目 → 按过期处理
+// （实测 2026-11-19: 老格式条目没有 ts，于是 12 分钟前的句子照样补投了两次。
+//   不知道多旧 = 不能投，这条必须是硬的，不能靠"没有 ts 就当新鲜"。）
+delivered.length = 0
+const homeD = setUp('d', { pendingMaxAgeMs: 120000 }, [
+  { id: 'live-asr:4.00', title: '无戳', body: '没有时间戳的旧格式条目' },
+])
+const apiD = api(homeD)
+await apiD.collectOnce()
+await new Promise(r => setTimeout(r, 50))
+await apiD.decideOnce()
+check('声明了保鲜期但条目无 ts → 不补投', delivered.length === 0, `delivered=${delivered.length}`)
+
+// ④ 没声明 pendingMaxAgeMs → 旧语义, 攒多久都补投
 delivered.length = 0
 const homeC = setUp('c', {}, [
   { id: 'live-asr:3.00', title: '旧', body: '没声明保鲜期的旧句子', ts: Date.now() - 12 * 60 * 1000 },
