@@ -1046,9 +1046,11 @@ function install(rt, ctx, cfg) {
   //   release-progress 从未被调用过)。见 tests/test-facts-cursor.mjs。
   const MAX_FACTS_PER_ROUND = 1000   // 安全网, 不是节流阀: 正常一轮只有几条, 见上面注释
   function readNewFacts() {
+    // out 里带上位置: 截断时游标只能推进到【被返回的】最后一条, 不能越过没返回的。
+    // 2026-11-19 实测: 单次读入 2500 条时, 旧实现只返回最后 1000 条却把游标推到 2500,
+    // 前 1500 条被标记已消费、永远不再被读到(复现脚本: debug-nex/repro-bulk-truncation.mjs)。
     const out = []
     const dir = cfg.l0.storeDir
-    const next = {}
     try {
       const srcDirs = (existsSync(dir) ? readdirSync(dir) : []).filter(d => {
         try { if (d === 'manifest.json') return false; return statSync(join(dir, d)).isDirectory() } catch { return false }
@@ -1062,13 +1064,21 @@ function install(rt, ctx, cfg) {
           const lines = readFileSync(join(dir, src, f), 'utf8').split('\n').filter(Boolean)
           for (let i = startIdx; i < lines.length; i++) {
             let o; try { o = JSON.parse(lines[i]) } catch { continue }
-            out.push(o)
-            next[src] = { file: f, line: i + 1 }   // 每个源各记各的
+            out.push({ o, src, file: f, line: i + 1 })   // 每个源各记各的
           }
         }
       }
     } catch (e) { log(`L1 read fail: ${e.message}`) }
-    return { facts: out.slice(-MAX_FACTS_PER_ROUND), next }
+    // 取【最前】N 条(积压按顺序排干)。不能取最后 N 条: 那样游标对齐后会停在原地,
+    // 每轮返回同一批, 永远推不动; 不对齐则越过未返回的部分, 静默丢数据。
+    const kept = out.slice(0, MAX_FACTS_PER_ROUND)
+    if (out.length > kept.length) {
+      // 不能静默: 截断此前不留痕迹, 丢了也查不出来。
+      log(`L1: 本批事实 ${out.length} 条超过单轮上限, 余下 ${out.length - kept.length} 条留到下一轮`)
+    }
+    const next = {}
+    for (const e of kept) next[e.src] = { file: e.file, line: e.line }
+    return { facts: kept.map(e => e.o), next }
   }
   function advanceCursor(next) {
     let changed = false
