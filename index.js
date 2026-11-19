@@ -793,9 +793,6 @@ function install(rt, ctx, cfg) {
       // 永久标记为已见、再也等不到 facts(实测踩过, 见 mail.sh 的 dry-run 分支)。
       REFLEX_PLUGIN_INVOKED: '1',
       PATH: `/usr/local/bin:/opt/homebrew/bin:/bin:/usr/bin:/sbin:/usr/sbin:${process.env.HOME}/.local/bin:${process.env.PATH ?? ''}`,
-      SSL_CERT_FILE: process.env.SSL_CERT_FILE || '',
-      CURL_CA_BUNDLE: process.env.CURL_CA_BUNDLE || process.env.SSL_CERT_FILE || '',
-      REQUESTS_CA_BUNDLE: process.env.REQUESTS_CA_BUNDLE || process.env.CURL_CA_BUNDLE || process.env.SSL_CERT_FILE || '',
       // target 脚本要调 SemIf 时用它, 不必写死路径
       // 默认走影子包装: 真实打分不变(REFLEX_SHADOW_REAL=run_score.sh), 但全量分数(含阈值以下)
       // 落盘 shadow/ 供阈值拟合/回放/A-B。防递归由 wrapper 自带; 保留策略见 shadow_record.py。
@@ -808,6 +805,17 @@ function install(rt, ctx, cfg) {
       // 调优工具目录 (shadow 包装 / 唤醒策略库), 随插件 skill 部署
       REFLEX_TUNING_DIR: cfg.tuning.skillDir,
       ...(extra ?? {}),
+    }
+    // CA 变量只在【真的有值】时才注入。空字符串不是"没设置": Node/OpenSSL 会把它当成
+    // 「CA 文件路径 = ""」→ 所有 TLS 握手失败 → fetch failed。而这个失败发生在子进程里,
+    // 表现成"某个 target 脚本一调 HTTPS 就挂, 手工跑又正常"(2026-11-19 实测, jev 打分整条静默失效)。
+    const caFile = process.env.SSL_CERT_FILE || process.env.CURL_CA_BUNDLE || process.env.REQUESTS_CA_BUNDLE || ''
+    if (caFile) {
+      env.SSL_CERT_FILE = caFile
+      env.CURL_CA_BUNDLE = caFile
+      env.REQUESTS_CA_BUNDLE = caFile
+    } else {
+      for (const k of ['SSL_CERT_FILE', 'CURL_CA_BUNDLE', 'REQUESTS_CA_BUNDLE']) delete env[k]
     }
     // 决策后端: 只在显式配了才注入 —— 不配就别动, 让 target 自己的默认(semif)生效。
     // 注意 'semif' 也要注入: 它是"从默认切回本地"的显式选择。
@@ -1329,6 +1337,7 @@ function install(rt, ctx, cfg) {
   // 本轮/累积的条目数 —— 内置 target 用 notable[], 脚本 target 用 items[]
   const ctxItemCount = (ctx) => ctx?.items?.length ?? ctx?.notable?.length ?? 0
 
+  const lastMergeLog = {}
   function stateFingerprint(targetKey, ctx) {
     if (targetKey === 'disk') {
       const c = ctx?.current
@@ -1490,7 +1499,8 @@ function install(rt, ctx, cfg) {
         // interruptAlways 的 target(如磁盘硬规则)穿透安静时段 —— 磁盘满这类事没有"上班再说"。
         const quiet = isQuietNow(cfg.l1.quietHours) && !target.interruptAlways
         const limited = quiet || (!!rateLimit && (Date.now() - (lastWake[targetKey]?.at ?? 0)) < rateLimit)
-        const limitWhy = quiet ? '处于安静时段' : `距上次唤醒不足 ${Math.round(rateLimit / 60000)} 分钟`
+        const limitWhy = quiet ? '处于安静时段'
+          : `距上次唤醒不足 ${rateLimit >= 60000 ? Math.round(rateLimit / 60000) + ' 分钟' : Math.round(rateLimit / 1000) + ' 秒'}`
         const buffers = typeof target.mergeCtx === 'function'
 
         // 不支持累积的 target: 冷却期内直接短路, 连 collect 都不跑
@@ -1504,7 +1514,15 @@ function install(rt, ctx, cfg) {
         const pending = pendingWakes[targetKey]
         if (buffers && pending) {
           ctx = target.mergeCtx(pending, ctx)
-          if (ctx) log(`L1[${targetKey}]: 合并此前暂存 (共 ${ctxItemCount(ctx)} 条, 其中 ${ctx.carried ?? 0} 条为暂存)` )
+          if (ctx) {
+            // 只在「暂存的条目集合变了」时记一行。快车道是 1 秒一拍,
+            // 每拍都记会把日志写成每秒一行(实测: 一个暂存条目挂 20 秒 = 20 行一样的字)。
+            const sig = JSON.stringify((ctx.items ?? ctx.notable ?? []).map(x => String(x?.id ?? '')).sort())
+            if (lastMergeLog[targetKey] !== sig) {
+              lastMergeLog[targetKey] = sig
+              log(`L1[${targetKey}]: 合并此前暂存 (共 ${ctxItemCount(ctx)} 条, 其中 ${ctx.carried ?? 0} 条为暂存)`)
+            }
+          }
         }
         if (!ctx) continue
 
