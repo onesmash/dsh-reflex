@@ -928,8 +928,19 @@ function install(rt, ctx, cfg) {
   // 口径：合并后只留【最新】的 cap 条（next 在前 = 最新，prev 在后 = 较早），
   //       被丢的条数写进信封，不静默截断。cap <= 0 表示不限制。
   const DEFAULT_MAX_ITEMS = 12
-  function mergeScriptDecisions(prev, next, cap = DEFAULT_MAX_ITEMS) {
-    const prevItems = prev?.items ?? []
+  function mergeScriptDecisions(prev, next, cap = DEFAULT_MAX_ITEMS, maxAgeMs = 0) {
+    // 暂存(prev)里的条目可以「过期作废」: 流式源(实时转写这类)的旧句子,
+    // 十分钟后补投出去没有任何意义, 只会让用户看到早已过去的话。
+    // 判据由 target 自己的 env.json 声明 pendingMaxAgeMs; 缺省 0 = 不过期(旧行为)。
+    const now = Date.now()
+    const stale = (it) => {
+      if (!maxAgeMs || maxAgeMs <= 0) return false
+      const ts = Number(it?.ts ?? 0)
+      return Number.isFinite(ts) && ts > 0 && (now - ts) > maxAgeMs
+    }
+    const prevAll = prev?.items ?? []
+    const expired = prevAll.filter(stale).length
+    const prevItems = prevAll.filter(it => !stale(it))
     const prevIds = new Set(prevItems.map(i => String(i?.id ?? '')).filter(Boolean))
     const seen = new Set()
     const merged = [...(next?.items ?? []), ...prevItems].filter(it => {
@@ -957,6 +968,7 @@ function install(rt, ctx, cfg) {
       scanned: (prev?.scanned ?? 0) + (next?.scanned ?? 0),
       rounds: (prev?.rounds ?? 0) + (next?.rounds ?? 0),   // next 为 null 时(空跑补发)不计轮次
       carried: items.filter(it => prevIds.has(String(it?.id ?? ''))).length,
+      expired,
       dropped: over,
       droppedTotal: (prev?.droppedTotal ?? 0) + over,
       maxItems: limit > 0 ? limit : 0,
@@ -1289,7 +1301,9 @@ function install(rt, ctx, cfg) {
         },
         interim: (ctx) => !!ctx,
         interimReason: (ctx) => ctx?.reason ?? '脚本判定命中',
-        mergeCtx: (prev, next) => mergeScriptDecisions(prev, next, Number(t.maxItems ?? cfg.l1?.maxItems ?? DEFAULT_MAX_ITEMS)),
+        // 暂存条目的保鲜期: 流式源要短(旧句子补投没意义), 事件型源缺省不过期。
+        pendingMaxAgeMs: Number(t.pendingMaxAgeMs ?? 0),
+        mergeCtx: (prev, next) => mergeScriptDecisions(prev, next, Number(t.maxItems ?? cfg.l1?.maxItems ?? DEFAULT_MAX_ITEMS), Number(t.pendingMaxAgeMs ?? 0)),
         render: (ctx, extra) => renderScriptTarget(t.displayName ?? key, ctx, extra, ctx?.__wakeKey),
       }]))
     ALL_TARGETS = { ...TARGETS, ...scriptTargetAdapters }
@@ -1520,8 +1534,15 @@ function install(rt, ctx, cfg) {
             const sig = JSON.stringify((ctx.items ?? ctx.notable ?? []).map(x => String(x?.id ?? '')).sort())
             if (lastMergeLog[targetKey] !== sig) {
               lastMergeLog[targetKey] = sig
-              log(`L1[${targetKey}]: 合并此前暂存 (共 ${ctxItemCount(ctx)} 条, 其中 ${ctx.carried ?? 0} 条为暂存)`)
+              log(`L1[${targetKey}]: 合并此前暂存 (共 ${ctxItemCount(ctx)} 条, 其中 ${ctx.carried ?? 0} 条为暂存`
+                + (ctx.expired ? `, 过期作废 ${ctx.expired} 条` : '') + ')')
             }
+          } else {
+            // 合并结果为空 = 暂存里的条目全过期了。必须把这笔账销掉,
+            // 否则它每拍都会被重新合并一次, 永远挂在盘上(死数据)。
+            savePending(targetKey, null)
+            delete lastMergeLog[targetKey]
+            log(`L1[${targetKey}]: 暂存全部过期, 已清空`)
           }
         }
         if (!ctx) continue
