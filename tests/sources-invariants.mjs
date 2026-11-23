@@ -162,6 +162,12 @@ const MUTATIONS = [
     to: '\t\t\taddProbeRcX: "Exit code {code} (non-zero is recorded as failed; append || true when empty is normal)"',
   },
   {
+    name: 'P19 采集器不再最后落盘（提交点回到最前）',
+    prop: 'P19',
+    from: 'return [...collectorConfig, ...targetFiles, commitPoint]',
+    to: 'return [commitPoint, ...collectorConfig, ...targetFiles]',
+  },
+  {
     name: 'P18 条件字段不再跟模式走（all 模式也显示关键词框）',
     prop: 'P18',
     file: 'client.js',

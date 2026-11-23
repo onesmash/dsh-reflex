@@ -1,0 +1,26 @@
+---
+title: "Creating a data source: five files, five renames"
+---
+stateDiagram-v2
+  s0: nothing yet
+  s1: staged, invisible to the plugin
+  s2: visible source after 1/3 files
+  s3: process died, 0/3 files on disk
+  s4: visible source after 2/3 files
+  s5: process died, 1/3 files on disk
+  s6: created, source collects
+  s7: process died, 2/3 files on disk
+  s8: process died, 3/3 files on disk
+  [*] --> s0
+  s0 --> s1: you press create
+  s1 --> s0: a write fails, rollback
+  s1 --> s2: the config files land
+  s1 --> s3: the process is killed
+  s0 --> s3: you press create
+  s2 --> s0: a write fails, rollback
+  s2 --> s4: the target file lands
+  s2 --> s5: the process is killed
+  s4 --> s0: a write fails, rollback
+  s4 --> s6: the collector file lands
+  s4 --> s7: the process is killed
+  s6 --> s8: the process is killed

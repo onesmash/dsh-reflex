@@ -298,3 +298,47 @@ test('创建后的文件权限可执行（插件用 /bin/bash 跑，但人手也
     assert.match(st.stdout.trim(), /7[0-9]{2}/, `权限不对：${st.stdout.trim()}`)
   } finally { rmSync(d.root, { recursive: true, force: true }) }
 })
+
+// ---------- P19 崩溃原子性：把 TLC 反例搬到真实进程上重放 ----------
+//
+// TLC 的反例（docs/verification/create-source/report.md）只有两步：
+//   你点创建 → 采集器那个文件先落盘 → 此时"源"已经可见，但它的判定脚本还没落盘。
+// 落盘中途被杀就跑不到 catch，所以这条只能让子进程真的 SIGKILL 自己，再回来看盘上。
+// 规则：采集器存在 ⇒ 判定脚本也在（trigger=off 除外）。
+test('P19 进程死在落盘中途，不会留下"会采集但永远不叫醒"的源', () => {
+  const d = dirs()
+  try {
+    const child = join(d.root, 'crash-child.mjs')
+    const target = join(d.root, 'crash.mjs')
+    writeFileSync(child, [
+      "import { createSource, parseNewSource, BUILTIN_SOURCES } from " + JSON.stringify(new URL('../sources.mjs', import.meta.url).href),
+      "import { renameSync } from 'node:fs'",
+      "const dirs = { collectorsDir: process.env.RFX_C, targetsDir: process.env.RFX_T }",
+      "const spec = parseNewSource({ name: 'crash', about: 'crash replay', cmd: 'echo 1', intervalMs: 60000, trigger: { mode: 'all' } }, { builtins: BUILTIN_SOURCES })",
+      "let n = 0",
+      "createSource(dirs, spec, { rename: (a, b) => { n += 1; if (n === 2) process.kill(process.pid, 'SIGKILL'); renameSync(a, b) } })",
+    ].join('\n'), 'utf8')
+    writeFileSync(target, '', 'utf8')
+
+    const r = spawnSync(process.execPath, [child], {
+      encoding: 'utf8',
+      env: { ...process.env, RFX_C: d.collectors, RFX_T: d.targets },
+      timeout: 30000,
+    })
+    // 前提：进程真的死了（不是正常退出、不是脚本自己没跑起来）
+    assert.equal(r.signal, 'SIGKILL', `子进程没有被杀：signal=${r.signal} stderr=${r.stderr}`)
+
+    const landed = readdirSync(d.collectors).filter((f) => f.endsWith('.sh'))
+    const collector = existsSync(join(d.collectors, 'crash.sh'))
+    const targetScript = existsSync(join(d.targets, 'crash.sh'))
+    // 前提②：它确实死在中途（至少落了东西，也没落完）——否则这条测试什么都没验
+    const allDone = collector && targetScript
+      && existsSync(join(d.collectors, 'crash.env.json'))
+      && existsSync(join(d.collectors, 'crash.schema.json'))
+    assert.ok(!allDone, '子进程根本没死在中途，这条测试什么都没验')
+
+    assert.ok(!collector || targetScript,
+      `采集中途被杀后留下了半成品源：collectors/crash.sh 在盘上（${landed.join(',')}），`
+      + `但 targets/crash.sh 不存在 —— 这个源会一直采集、永远不叫醒，而且同名再也建不了`)
+  } finally { rmSync(d.root, { recursive: true, force: true }) }
+})

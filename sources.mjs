@@ -483,18 +483,29 @@ function describeTrigger(spec) {
   return '任何新条目都叫醒'
 }
 
-/** 一次创建会写哪些文件（界面据此做"提交前复核"）。 */
+/**
+ * 一次创建会写哪些文件（界面据此做"提交前复核"）。
+ *
+ * ⚠️ 顺序是设计的一部分，不是随手排的：`collectors/<name>.sh` 必须是**最后**一个落盘的文件。
+ * 它一出现，插件下一轮就把这个源当数据源；而五个文件是分别 rename 的，不是一次落盘的。
+ * 如果采集器先落盘，进程死在剩下的 rename 中途，就会留下「会一直采集、永远不叫醒」的源，
+ * 而且同名再也建不了（重名守卫会拒）。把它放在最后 = 它才是提交点：
+ * 前面任何一个文件没落成，源都还不可见，最多留下点无害的残留。
+ *
+ * 这条不是靠推理定的：docs/verification/create-source/ 有 TLC 模型，
+ * 现顺序 `Atomic breaks`（2 步），这个顺序 `Atomic` 守住；重放见 P19 的崩溃测试。
+ */
 export function planSourceFiles(spec) {
-  const collector = [
-    { dir: 'collectors', file: `${spec.name}.sh`, mode: 0o755 },
+  const collectorConfig = [
     { dir: 'collectors', file: `${spec.name}.env.json`, mode: 0o644 },
     { dir: 'collectors', file: `${spec.name}.schema.json`, mode: 0o644 },
   ]
-  if (spec.trigger.mode === 'off') return collector
-  return [...collector,
+  const targetFiles = spec.trigger.mode === 'off' ? [] : [
     { dir: 'targets', file: `${spec.name}.sh`, mode: 0o755 },
     { dir: 'targets', file: `${spec.name}.env.json`, mode: 0o644 },
   ]
+  const commitPoint = { dir: 'collectors', file: `${spec.name}.sh`, mode: 0o755 }
+  return [...collectorConfig, ...targetFiles, commitPoint]
 }
 
 /**
@@ -529,6 +540,9 @@ export function createSource(dirs, spec, options = {}) {
         : renderSchema(spec)
     return { ...item, path, content, tmp: `${path}.tmp.${process.pid}` }
   })
+  // rename 可注入：测试要复现「进程在落盘中途被杀」——这种崩溃跑不到 catch，
+  // 只能让子进程在第 N 次 rename 时真的杀掉自己，再回来检查盘上的状态。
+  const rename = typeof options.rename === 'function' ? options.rename : renameSync
   const renamed = []
   try {
     for (const f of rendered) {
@@ -539,7 +553,7 @@ export function createSource(dirs, spec, options = {}) {
       for (const f of rendered) if (f.file.endsWith('.sh')) options.check(f.path, f.content)
     }
     for (const f of rendered) {
-      renameSync(f.tmp, f.path)
+      rename(f.tmp, f.path)
       renamed.push(f.path)
     }
   } catch (e) {
