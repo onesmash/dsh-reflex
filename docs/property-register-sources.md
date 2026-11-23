@@ -1,6 +1,6 @@
 # 数据源开关与新增：性质登记表（S0 产出，S5 收口时再核）
 
-范围：Trigger 页的两件事 —— 开关既有源（P1–P9）、按三段式新增源（P10–P18）。
+范围：Trigger 页的四件事 —— 开关既有源（P1–P9）、按三段式新增源（P10–P18）、创建事务的崩溃原子性（P19）、界面无障碍底座（P20）。
 
 范围声明：**单进程、单写者**（DSH 宿主内一个插件实例；面板与终端同时改同一文件时，以文件最后状态为准，不做锁）。跨机/多实例同步不在本表范围内。
 
@@ -25,6 +25,7 @@
 | P17 | 界面用 `tr()` 取的每个文案 key，在 zh / en / 英文兜底三处词典里都存在（少一处只会让非 zh/en 用户看到 `addProbeRc` 这种字样，静态看不出来） | Chief | `client.js: SourcesPage / NewSourceForm / SRC_FALLBACK` | 单进程、仅 bundle | 不建模：静态完整性，由 bundle 冒烟守 | 变体：英文兜底删掉一条；命令 `node tests/check-sources-panel.mjs` | 0 | — | 守住（bundle） | 7ac0ac1 |
 | P18 | 三段式表单能被真的渲染，且版面结构守住：FEED/EVERY/TRIGGER 三段各只有一个标签（EVERY 的段标题与字段标签不再重复）、创建/取消都在、条件字段跟模式变（match 才有关键词框、semantic 才有判据框）、试跑结果（几行/几行合法/退出码/stderr）与创建失败原因都渲染出来；**操作条必须是表单的兄弟节点**（塞回 `.rfx-form` 内会被 `overflow` 裁掉、跟着内容滚走），创建按钮用 `form` 属性挂回表单；名字规则、试跑代价、会写入哪些文件三处提示都在 | Chief | `client.js: NewSourceForm / AddSourcePage` | 单进程、仅 bundle | 不建模：渲染冒烟走一遍 jsx 树，由 `tests/check-sources-panel.mjs` 覆盖 | 变体：条件字段不再跟模式走 → CASES[8] 红；把操作条塞回 `.rfx-form` 内 → 结构断言红；命令 `node tests/check-sources-panel.mjs`（视觉核对另跑 `node tests/render-add-source.mjs`） | 0 | 未做：未在运行中的 DSH 里点过；静态渲染已在 1440/900/390 截图核对 | 守住（渲染冒烟 + 结构） | b628405 |
 | P19 | 创建事务的崩溃原子性：`collectors/<name>.sh` 是唯一提交点（**最后**落盘）—— 任意时刻进程被杀，都不会留下「采集器在盘、判定脚本不在」的源 | Chief | `sources.mjs: planSourceFiles / createSource` | 单进程 | L2 | 模型 `docs/verification/create-source/`（现顺序 Atomic breaks、修法顺序守住）；变体：把提交点挪回最前 → P19 报红；命令 `bash docs/verification/create-source/check.sh`、`node tests/sources-invariants.mjs` | 0 | 部分：P19 用真 `SIGKILL` 子进程重放崩溃 | 守住（模型 + 崩溃重放） | 2f49ffd |
+| P20 | 界面无障碍底座恒在：三段各是 `<section aria-labelledby>` 且指向段内标题的真实 id；四个触发方式仍是**原生** `radio`（渲染树里不出现 `role="radio"` 自绘控件）；名字/命令/关键词/判据四个输入框都挂 `aria-describedby` 且提示 id 存在；保存失败由**常驻**的 `role="status"` + `aria-live="polite"` 播报；CSS 里 `:focus-visible` 环、`pointer:coarse` 下 44px、`prefers-reduced-motion` 三条不丢 | Chief | `client.js: NewSourceForm / SRC_CSS` | 单进程、仅 bundle | 不建模：静态结构契约，由渲染树断言守（像 lint，但删掉界面上不会有任何报错，只会让读屏与键盘用户走不通） | 7 个变体各自按名字报红：删 `aria-live`、删一段的 `aria-labelledby`、`radio`→`checkbox`、删名字框的 `aria-describedby`、`prefers-reduced-motion` / `pointer:coarse` / `:focus-visible` 各去掉；命令 `node tests/check-sources-panel.mjs`（注意：只把子串改写成仍包含原串的形式会**假绿**，必须真去掉） | 0 | 未做：没有屏幕阅读器实测，见 `ACCESSIBILITY.md` 的「已知障碍」 | 守住（渲染树断言；不验读屏实际播报） | 待回填 |
 
 ## S0：哪些性质建模、哪些不建模（决策留痕）
 
@@ -36,7 +37,7 @@
 其余 18 条不建模，替代证据写在各行的「证据等级 / 破坏变体」列里：
 
 - P1–P14：数据形状、输入校验、生成物行为 → 纯函数测试 + 真跑生成脚本的行为测试；
-- P15–P18：客户端 bundle 形状与渲染 → bundle 冒烟 + 渲染冒烟（伪 DOM 走一遍 jsx 树）；
+- P15–P18、P20：客户端 bundle 形状、渲染与无障碍底座 → bundle 冒烟 + 渲染冒烟（伪 DOM 走一遍 jsx 树）；
 - **并发同名创建不建模**：`createSource` 全是同步 fs 调用，同一事件循环里没有 `await` 交错点，
   两个请求不可能同时停在存在性检查与 rename 之间。理由同时写进模型的「不管的部分」。
 
@@ -65,7 +66,7 @@
    新增数据源只有一处真相——`collectors/<name>.sh` 存在与否（界面只是把它按三段式拼出来）。
 2. **哪条命令能重跑**：`bash docs/verification/create-source/check.sh`（P19 的 TLC 模型：0/1/2 三态）、
    `node tests/sources-invariants.mjs`（21 条破坏变体，覆盖 P1–P19）、
-   `node tests/check-sources-panel.mjs`（9 条：接线 + 请求体 + 本地校验 + 文案完整性 + 渲染冒烟）、
+   `node tests/check-sources-panel.mjs`（10 条：接线 + 请求体 + 本地校验 + 文案完整性 + 渲染冒烟 + 无障碍底座）、
    `node tests/create-source-route.mjs`（21 条：路由 → 落盘 → 真跑脚本）、
    `node --test tests/create-source.test.mjs`（16 条，含 P19 崩溃重放）、`node tests/check-client-bundle.mjs`（9 条），
    从干净 shell（`env -i`）一次跑完即 exit 0。

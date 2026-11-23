@@ -24,6 +24,7 @@ const CASES = [
   'P16 表单缺项时说清缺哪一项',
   'P17 界面用到的文案三处词典都齐',
   'P18 三段式表单能真的渲染出来',
+  'P20 无障碍底座在渲染树里齐着（原生控件 + 标注 + 播报）',
 ]
 
 let code
@@ -268,6 +269,71 @@ checkStack(CASES[8], () => {
   const page = textOf(mod.SourcesPage({ t: (key) => key }))
   assert(page.includes('Trigger'), `列表页标题没渲染出来：${page.slice(0, 160)}`)
   assert(page.includes('Add data source'), `列表页没有「添加数据源」入口：${page.slice(0, 240)}`)
+})
+
+// ⑨ 无障碍底座。这些在界面上「少了也不会报错」：删掉 aria-live 只是读屏不播报，
+//    把原生 radio 换成 div 只是键盘选不动 —— 所以只能靠渲染树断言守着。
+//    断言的是「属性写进去了、引用指向存在的 id」，不是「读屏读出来是对的」（后者见 ACCESSIBILITY.md 的已知障碍）。
+checkStack(CASES[9], () => {
+  const nodesOf = (node, out = []) => {
+    if (!node || typeof node !== 'object') return out
+    if (Array.isArray(node)) { for (const n of node) nodesOf(n, out); return out }
+    const props = node.props || {}
+    out.push({ type: node.type, props })
+    if (typeof node.type === 'function') nodesOf(node.type(props), out)
+    if ('children' in props) nodesOf(props.children, out)
+    return out
+  }
+  const byId = (nodes) => new Map(nodes.filter((n) => n.props.id).map((n) => [n.props.id, n]))
+  const refs = (nodes, attr) => nodes.flatMap((n) => String(n.props[attr] || '').split(/\s+/).filter(Boolean))
+  const base = {
+    form: { name: 'x', about: '', cmd: 'echo 1', intervalMs: 900000, mode: 'all', keywords: '', criteria: '' },
+    probe: { phase: 'idle', data: null, error: '' },
+    saveState: { phase: 'idle', error: '', name: '' },
+    tr: (key) => key,
+  }
+  const treeFor = (patch) => nodesOf(mod.NewSourceForm({ ...base, form: { ...base.form, ...patch } }))
+
+  const all = treeFor({ mode: 'all' })
+  const ids = new Set(all.map((n) => n.props.id).filter(Boolean))
+
+  // 三段各有一个能读出名字的标题：aria-labelledby → 段内 h2 的 id
+  for (const step of ['feed', 'every', 'trigger']) {
+    const id = `rfx-step-${step}`
+    assert(refs(all, 'aria-labelledby').includes(id), `第 ${step} 段没有 aria-labelledby：${id}`)
+    assert(ids.has(id), `aria-labelledby 指向的 id 不存在：${id}`)
+  }
+  // 所有 aria-labelledby / aria-describedby 都必须指向树里真的存在的 id（悬空引用读屏只会念个空）
+  const dangling = [...refs(all, 'aria-labelledby'), ...refs(all, 'aria-describedby')].filter((id) => !ids.has(id))
+  assert(dangling.length === 0, `这些 aria 引用指向不存在的 id：${[...new Set(dangling)].join(', ')}`)
+
+  // 保存失败必须有个常驻播报区：idle 时也在，读屏才有地方接话
+  const live = all.find((n) => n.props.role === 'status')
+  assert(live, '保存失败没有 role="status" 播报区')
+  assert(live.props['aria-live'] === 'polite', `播报区不是 aria-live="polite"：${String(live.props['aria-live'])}`)
+
+  // 输入框的提示用 aria-describedby 挂上，不靠视觉位置（关键词框只在 match、判据框只在 semantic）
+  const maps = {}
+  for (const mode of ['all', 'match', 'semantic']) maps[mode] = byId(treeFor({ mode }))
+  for (const [mode, id] of [['all', 'rfx-name'], ['all', 'rfx-cmd'], ['match', 'rfx-keywords'], ['semantic', 'rfx-criteria']]) {
+    const node = maps[mode].get(id)
+    assert(node, `${mode} 模式下控件没渲染出来：${id}`)
+    const hint = node.props['aria-describedby']
+    assert(typeof hint === 'string' && hint.trim(), `${id} 没有 aria-describedby，提示只靠视觉位置`)
+  }
+
+  // 触发方式必须是原生 radio：自绘控件（div + role="radio"）的键盘与读屏行为都得自己实现，不给自己留这条路
+  const radios = all.filter((n) => n.props.type === 'radio')
+  assert(radios.length === 4, `触发方式不是 4 个原生 radio（${radios.length} 个）`)
+  assert(radios.every((n) => n.type === 'input'), '触发方式的 radio 不在 <input> 上（原生 radio 才带键盘行为）')
+  assert(!all.some((n) => n.props.role === 'radio'), '出现了自绘的 role="radio" 控件')
+
+  // 三条只在 CSS 里、界面上看不出来的规则：焦点环 / 触屏 44px / 减少动态
+  assert(mod.SRC_CSS.includes(':focus-visible'), 'CSS 里没有 :focus-visible 焦点环')
+  assert(mod.SRC_CSS.includes('prefers-reduced-motion'), 'CSS 里没有 prefers-reduced-motion 规则')
+  const coarseAt = mod.SRC_CSS.indexOf('pointer:coarse')
+  assert(coarseAt >= 0, 'CSS 里没有 @media (pointer:coarse)')
+  assert(mod.SRC_CSS.slice(coarseAt, coarseAt + 200).includes('min-height:44px'), '触屏下的 44px 触摸目标没了')
 })
 
 const runAsync = async () => {
