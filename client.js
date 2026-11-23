@@ -35,9 +35,9 @@ window.__ModuleLoader__.load({
 			diagNotLanded: "保存未生效 —— 改动没有被接受。",
 			diagErrorPrefix: "保存出错：",
 			// —— 数据源页面（主列整页） ——
-			srcNav: "数据源",
-			srcTitle: "数据源",
-			srcDesc: "采集脚本的开关。改的是磁盘上的 <name>.paused 标记，采集器下一轮读到；不用改 profile，也不用重启。",
+			srcNav: "Trigger",
+			srcTitle: "Trigger",
+			srcDesc: "采集源就是 L1 的触发来源。这里开关每一路采集：暂停写的是磁盘上的 <name>.paused 标记，采集器下一轮读到，不用改 profile，也不用重启。",
 			srcRefresh: "刷新",
 			srcLoading: "读取中…",
 			srcSummary: "{n} 个采集中 · {m} 个已暂停",
@@ -87,9 +87,9 @@ window.__ModuleLoader__.load({
 			diagNotLanded: "Save did not take effect — the change was not accepted.",
 			diagErrorPrefix: "Save failed: ",
 			// —— sources page (global main panel) ——
-			srcNav: "Sources",
-			srcTitle: "Data sources",
-			srcDesc: "Switches for the collector scripts. Each toggle writes <name>.paused on disk, which the collector reads on its next round — no profile edit, no restart.",
+			srcNav: "Trigger",
+			srcTitle: "Trigger",
+			srcDesc: "Collectors are what trigger L1. Each switch writes <name>.paused on disk, which the collector reads on its next round — no profile edit, no restart.",
 			srcRefresh: "Refresh",
 			srcLoading: "Loading…",
 			srcSummary: "{n} collecting · {m} paused",
@@ -352,22 +352,41 @@ window.__ModuleLoader__.load({
 			if (!row.factsToday) return { text: t("srcStateIdle"), color: "var(--dsw-alias-label-secondary,#9ca3af)" };
 			return { text: t("srcStateOn"), color: "#2f855a" };
 		}
-		/** 侧栏图标：三条采集行，右侧三个点 —— 与"清单"语义一致，不画数据库。 */
-		function SourcesIcon(props) {
+		/** 侧栏图标：闪电 —— trigger 的通用符号（Zapier 那类自动化工具里 trigger 就是它）。 */
+		function TriggerIcon(props) {
 			const size = props && props.size ? props.size : 16;
-			return react_jsx_runtime.jsxs("svg", {
+			return react_jsx_runtime.jsx("svg", {
 				width: size, height: size, viewBox: "0 0 16 16", fill: "none",
 				"aria-hidden": "true", focusable: "false",
-				children: [
-					react_jsx_runtime.jsx("path", {
-						d: "M2.2 4h8.1M2.2 8h8.1M2.2 12h8.1",
-						stroke: "currentColor", strokeWidth: "1.3", strokeLinecap: "round"
-					}, "l"),
-					react_jsx_runtime.jsx("circle", { cx: "12.6", cy: "4", r: "1.15", fill: "currentColor" }, "d1"),
-					react_jsx_runtime.jsx("circle", { cx: "12.6", cy: "8", r: "1.15", fill: "currentColor" }, "d2"),
-					react_jsx_runtime.jsx("circle", { cx: "12.6", cy: "12", r: "1.15", fill: "currentColor" }, "d3")
-				]
+				children: react_jsx_runtime.jsx("path", {
+					d: "M9.1 1.9 3.9 8.6h3.3l-.5 5.5 5.4-6.9H8.6z",
+					stroke: "currentColor", strokeWidth: "1.3", strokeLinejoin: "round"
+				}, "b")
 			});
+		}
+		/**
+		 * 词典缺失时的英文兜底。
+		 * DSH 支持的语言比本插件登记的多（这里只有 zh/en）；若直接取 key，
+		 * 切到日语/法语时页面会显示 "srcTitle" 这种字样 —— 宁可回退英文。
+		 */
+		const SRC_FALLBACK = {
+			srcNav: "Trigger", srcTitle: "Trigger",
+			srcDesc: "Collectors are what trigger L1. Each switch writes <name>.paused on disk, which the collector reads on its next round — no profile edit, no restart.",
+			srcRefresh: "Refresh", srcLoading: "Loading…", srcSummary: "{n} collecting · {m} paused",
+			srcColName: "Name", srcColEvery: "Every", srcColToday: "Today", srcColLast: "Last success",
+			srcColState: "State", srcColAction: "Action",
+			srcPause: "Pause", srcResume: "Resume", srcWorking: "Working…",
+			srcStateOn: "Collecting", srcStateIdle: "No data", srcStatePaused: "Paused", srcStateFailed: "Failed",
+			srcBuiltinTitle: "Built-in sources",
+			srcBuiltinHint: "Controlled by the profile's l0.sources; reload DSH after changing them.",
+			srcBuiltinAct: "Profile-controlled",
+			srcEmpty: "No scripts in collectors yet — drop a <name>.sh there to enable one.",
+			srcLoadFail: "Read failed", srcRetry: "Retry", srcFollowing: "Follows global"
+		};
+		/** 取一条文案：当前语言没有就回退英文，再没有才回 key。 */
+		function srcText(t, key) {
+			const value = typeof t === "function" ? t(key) : key;
+			return !value || value === key ? (SRC_FALLBACK[key] || key) : value;
 		}
 		/** 页面样式。作为 <style> 元素渲染在组件里，卸载即移除，不写 document.head。 */
 		const SRC_CSS = [
@@ -395,6 +414,7 @@ window.__ModuleLoader__.load({
 		].join("\n");
 		function SourcesPage(props) {
 			const t = typeof props.t === "function" ? props.t : (k) => k;
+			const tr = (k) => srcText(t, k);
 			const [view, setView] = react.useState({ phase: "loading", data: null, error: "" });
 			const [busy, setBusy] = react.useState("");
 			const load = react.useCallback(async () => {
@@ -418,14 +438,14 @@ window.__ModuleLoader__.load({
 			const rows = (data && data.sources) || [];
 			const builtin = (data && data.builtin) || [];
 			const pausedCount = rows.filter((r) => r.paused).length;
-			const summary = t("srcSummary")
+			const summary = tr("srcSummary")
 				.replace("{n}", String(rows.length - pausedCount))
 				.replace("{m}", String(pausedCount));
 			const rowNode = (r) => {
-				const st = stateOf(r, t);
+				const st = stateOf(r, tr);
 				return react_jsx_runtime.jsxs("tr", { children: [
 					react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsx("span", { className: "rfx-name", children: r.name }) }, "n"),
-					react_jsx_runtime.jsx("td", { className: "rfx-td rfx-muted", children: everyLabel(r.intervalMs, t) }, "e"),
+					react_jsx_runtime.jsx("td", { className: "rfx-td rfx-muted", children: everyLabel(r.intervalMs, tr) }, "e"),
 					react_jsx_runtime.jsx("td", { className: "rfx-td rfx-num", children: String(r.factsToday || 0) }, "t"),
 					react_jsx_runtime.jsx("td", { className: "rfx-td rfx-num rfx-muted", children: clockLabel(r.lastFactAt) }, "l"),
 					react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsxs("span", { children: [
@@ -435,7 +455,7 @@ window.__ModuleLoader__.load({
 					react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsx("button", {
 						type: "button", className: "rfx-btn", disabled: busy === r.name,
 						onClick: () => void toggle(r),
-						children: busy === r.name ? t("srcWorking") : (r.paused ? t("srcResume") : t("srcPause"))
+						children: busy === r.name ? tr("srcWorking") : (r.paused ? tr("srcResume") : tr("srcPause"))
 					}) }, "a")
 				] }, r.name);
 			};
@@ -444,38 +464,38 @@ window.__ModuleLoader__.load({
 				react_jsx_runtime.jsxs("div", { className: "rfx-inner", children: [
 					react_jsx_runtime.jsxs("header", { className: "rfx-head", children: [
 						react_jsx_runtime.jsxs("div", { children: [
-							react_jsx_runtime.jsx("h1", { className: "rfx-title", children: t("srcTitle") }),
-							react_jsx_runtime.jsx("p", { className: "rfx-desc", children: t("srcDesc") })
+							react_jsx_runtime.jsx("h1", { className: "rfx-title", children: tr("srcTitle") }),
+							react_jsx_runtime.jsx("p", { className: "rfx-desc", children: tr("srcDesc") })
 						] }),
-						react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: () => void load(), children: t("srcRefresh") })
+						react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: () => void load(), children: tr("srcRefresh") })
 					] }),
 					react_jsx_runtime.jsxs("div", { className: "rfx-body", children: [
-						react_jsx_runtime.jsx("div", { className: "rfx-bar", children: data ? summary : t("srcLoading") }),
+						react_jsx_runtime.jsx("div", { className: "rfx-bar", children: data ? summary : tr("srcLoading") }),
 						view.error ? react_jsx_runtime.jsxs("div", { className: "rfx-error", children: [
-							react_jsx_runtime.jsx("span", { children: t("srcLoadFail") + "：" + view.error }),
-							react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: () => void load(), children: t("srcRetry") })
+							react_jsx_runtime.jsx("span", { children: tr("srcLoadFail") + "：" + view.error }),
+							react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: () => void load(), children: tr("srcRetry") })
 						] }) : null,
 						data && rows.length === 0 && !view.error
-							? react_jsx_runtime.jsx("p", { className: "rfx-muted", children: t("srcEmpty") })
+							? react_jsx_runtime.jsx("p", { className: "rfx-muted", children: tr("srcEmpty") })
 							: null,
 						rows.length > 0 ? react_jsx_runtime.jsxs("table", { className: "rfx-table", children: [
 							react_jsx_runtime.jsx("thead", { children: react_jsx_runtime.jsxs("tr", { children: [
-								react_jsx_runtime.jsx("th", { className: "rfx-th", children: t("srcColName") }),
-								react_jsx_runtime.jsx("th", { className: "rfx-th", children: t("srcColEvery") }),
-								react_jsx_runtime.jsx("th", { className: "rfx-th", children: t("srcColToday") }),
-								react_jsx_runtime.jsx("th", { className: "rfx-th", children: t("srcColLast") }),
-								react_jsx_runtime.jsx("th", { className: "rfx-th", children: t("srcColState") }),
-								react_jsx_runtime.jsx("th", { className: "rfx-th", children: t("srcColAction") })
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColName") }),
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColEvery") }),
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColToday") }),
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColLast") }),
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColState") }),
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColAction") })
 							] }) }),
 							react_jsx_runtime.jsx("tbody", { children: rows.map(rowNode) })
 						] }) : null,
 						builtin.length > 0 ? react_jsx_runtime.jsxs("section", { className: "rfx-sec", children: [
-							react_jsx_runtime.jsx("h2", { className: "rfx-secTitle", children: t("srcBuiltinTitle") }),
-							react_jsx_runtime.jsx("p", { className: "rfx-secHint", children: t("srcBuiltinHint") }),
+							react_jsx_runtime.jsx("h2", { className: "rfx-secTitle", children: tr("srcBuiltinTitle") }),
+							react_jsx_runtime.jsx("p", { className: "rfx-secHint", children: tr("srcBuiltinHint") }),
 							react_jsx_runtime.jsx("table", { className: "rfx-table", children: react_jsx_runtime.jsx("tbody", { children: builtin.map((b) => react_jsx_runtime.jsxs("tr", { children: [
 								react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsx("span", { className: "rfx-name", children: b.name }) }),
-								react_jsx_runtime.jsx("td", { className: "rfx-td rfx-muted", children: b.enabled ? t("srcStateOn") : t("srcStatePaused") }),
-								react_jsx_runtime.jsx("td", { className: "rfx-td rfx-muted", children: t("srcBuiltinAct") })
+								react_jsx_runtime.jsx("td", { className: "rfx-td rfx-muted", children: b.enabled ? tr("srcStateOn") : tr("srcStatePaused") }),
+								react_jsx_runtime.jsx("td", { className: "rfx-td rfx-muted", children: tr("srcBuiltinAct") })
 							] }, b.name)) }) })
 						] }) : null
 					] })
@@ -529,9 +549,9 @@ window.__ModuleLoader__.load({
 				name: "sidebar.panellist",
 				id: SRC_PANEL_ID,
 				order: 10,
-				label: () => t("srcNav"),
+				label: () => tr("srcNav"),
 				locale: NS
-			}, SourcesIcon)), "dsh-reflex: sources nav");
+			}, TriggerIcon)), "dsh-reflex: trigger nav");
 			ctx.effect(() => ctx.configForms.whileServed([ROW_NS], (served) => {
 				if (!served.has(ROW_NS)) return;
 				return ctx.slots.inject("plugins.row.config", () => ctx.slots.register({
@@ -547,7 +567,7 @@ window.__ModuleLoader__.load({
 		exports.NS = NS;
 		exports.reflexCall = reflexCall;
 		exports.SourcesPage = SourcesPage;
-		exports.SourcesIcon = SourcesIcon;
+		exports.TriggerIcon = TriggerIcon;
 		exports.apply = apply;
 		exports.inject = inject;
 		return module.exports;
