@@ -371,7 +371,7 @@ window.__ModuleLoader__.load({
 		}
 		/** 页面样式。作为 <style> 元素渲染在组件里，卸载即移除，不写 document.head。 */
 		const SRC_CSS = [
-			".rfx-page{display:flex;flex-direction:column;height:100%;box-sizing:border-box;padding:0 clamp(24px,4vw,48px);color:var(--dsw-alias-label-primary,#111)}",
+			".rfx-page{display:flex;flex-direction:column;flex:1;min-height:0;height:100%;box-sizing:border-box;padding:0 clamp(24px,4vw,48px);color:var(--dsw-alias-label-primary,#111)}",
 			".rfx-inner{display:flex;flex-direction:column;flex:1;min-height:0;width:100%;max-width:960px;margin:0 auto}",
 			".rfx-head{flex:none;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:calc(var(--dsh-frame-top-clearance,48px) + 4px) 0 16px;border-bottom:1px solid var(--dsw-alias-border-l1,#eee)}",
 			".rfx-title{margin:0;font-size:18px;font-weight:600;line-height:1.3}",

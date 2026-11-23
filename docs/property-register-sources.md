@@ -11,17 +11,24 @@
 | P5 | 源名不含斜杠、不以上级目录开头、且必须对应已存在的 `.sh`，否则拒绝且不写文件 | Chief | `sources.mjs: setPaused` | 单进程 | 不建模（输入校验，由纯函数守门测试覆盖） | P5 变体（去掉名字与存在性校验）；命令 `node tests/sources-invariants.mjs` | 0 | 未做 | 守住（单写进程） | 0e5e1ac |
 | P6 | 目录里没有 `manifest.json` 时，列表仍覆盖全部源（不依赖发现层） | Chief | `sources.mjs: scanSources` | 单进程 | 不建模（数据形状问题，由纯函数守门测试覆盖） | P6 变体（无 manifest 就返回空）；命令 `node tests/sources-invariants.mjs` | 0 | 未做 | 守住（单写进程） | 0e5e1ac |
 | P7 | `pause` 落 commit(name,true)、`resume` 落 commit(name,false)，未知 op 不写盘 | Chief | `sources.mjs: respondToOp` | 单进程 | 不建模（动作映射，由纯函数守门测试覆盖） | P7 变体（方向写反）；命令 `node tests/sources-invariants.mjs` | 0 | 未做 | 守住（单写进程） | 0e5e1ac |
-| P8 | 客户端把入口注册进 `sidebar.footer.action`，且面板请求恒为 `POST api/reflex`、`credentials: same-origin`、body 含 `op` | Chief | `client.js: apply / reflexCall` | 单进程、仅 bundle 形状 | 不建模（接线形状，由假宿主冒烟覆盖） | 反证：把 `reflexCall` 的 `credentials` 去掉 → `tests/check-sources-panel.mjs` 断言失败；命令 `node tests/check-sources-panel.mjs` | 0 | 未做（需要 DSH 重启后在 GUI 里看） | 守住（bundle 形状） | 0e5e1ac |
+| P8 | 客户端把**页面**注册进 `main`（keyed，key=`reflex-sources`）且**入口**注册进 `sidebar.panellist`，两者 id 相同；请求恒为 `POST api/reflex`、`credentials: same-origin`、body 含 `op` | Chief | `client.js: apply / reflexCall / SRC_PANEL_ID` | 单进程、仅 bundle 形状 | 不建模（接线形状，由假宿主冒烟覆盖） | 反证：把 panellist 的 `id` 改成别的 → CASES[2] 红；把 `credentials` 去掉 → CASES[3] 红；命令 `node tests/check-sources-panel.mjs` | 0 | 未做（需要刷新页面后在 GUI 里点开看） | 守住（bundle 形状） | f522d22 |
 | P9 | 宿主注册的路由恒为 `/api/…` 形状，且与客户端请求地址指向同一端点（只差前导斜杠） | Chief | `sources.mjs: SOURCE_ROUTE`、`client.js: SRC_ROUTE` | 单进程 | 不建模（跨文件一致性，由静态断言覆盖） | P9 变体（客户端地址改成 `api/other`）；命令 `node tests/sources-invariants.mjs` | 0 | 未做 | 守住（两文件一致） | 0e5e1ac |
 
 ## 未覆盖 / 下一步
 
-- **S4（真实日志）未做**：`api/reflex` 的调用只能等插件以新代码加载后产生日志；当前运行中的 DSH 仍是 npm 安装的 0.5.1 副本（`node_modules/dsh-reflex` 不是软链）。所以全表最高记 L2，不写 L3。
+- **S4（真实日志）未做**：路由已注册（`dsh-reflex.log` 有 `sources route registered: POST /api/reflex`），
+  但面板真正发起请求只能在页面刷新后由浏览器触发。宿主 `/api` 通道先验会话 cookie，命令行探针一律 401
+  （不存在的路径同样 401，所以 401 不能当「路由存在」的证据，负对照已作废）。全表最高仍记 L2。
 - **并发写者**：面板与终端同时改同一标记时以文件为准，未做锁，也不打算做（单用户工具）。
-- **命名空间**：`api/reflex` 与 ds-bot 的 `api/bot` 同机制；若将来有第二个插件用同名路径，`registerFetchRoute` 会抛「already registered」——已由该实现自身挡住，不需要我们守。
+- **命名空间**：`api/reflex` 与 ds-bot 的 `api/bot` 同机制；若将来有第二个插件用同名路径，`registerFetchRoute`
+  会抛「already registered」——已由该实现自身挡住，不需要我们守。
+- **主列页与旧弹层的差异**：弹层锚在侧栏底部、宽度被侧栏挤到 560px，十行源要横向缩，点到别处就消失；
+  整页占主列，表格按 960px 上限排版。窄屏（<768px）下表格不折行，靠横向滚动，未做卡片化降级。
 
 ## 收口三句话
 
 1. **这条性质是什么**：数据源的开关状态只有一处真相——磁盘上的 `<name>.paused` 文件；面板只是它的视图。
-2. **哪条命令能重跑**：`node tests/sources-invariants.mjs`（7 条破坏变体，基座 7 条测试）与 `node tests/check-sources-panel.mjs`（4 条接线断言），从干净 shell 一次跑完即 exit 0。
-3. **覆盖到哪个 commit、哪里没覆盖**：`0e5e1ac`；未覆盖的是运行期（S4 日志）与 390px 窄屏下的弹层几何——都要等 DSH 以新 bundle 重启后在真实界面看。
+2. **哪条命令能重跑**：`node tests/sources-invariants.mjs`（8 条破坏变体；P8 的接线由下面那条冒烟单独覆盖）、
+   `node tests/check-sources-panel.mjs`（5 条接线断言，含「入口 id == 主列 key」），从干净 shell 一次跑完即 exit 0。
+3. **覆盖到哪个 commit、哪里没覆盖**：见各行的 sync commit；未覆盖的是运行期（S4 日志，要刷新页面点开一次）
+   与窄屏下的表格几何。
