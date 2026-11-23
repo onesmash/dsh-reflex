@@ -34,6 +34,21 @@ const ANSWER_KEY = 'q'
 export function normalizeUrl(raw) {
   const base = String(raw ?? '').trim().replace(/\/+$/, '')
   if (!base) throw new Error('jev base URL is empty')
+  // 模板没替换的占位符（https://[workspace-id]…）拼出来只是字符串，不是合法 URL；
+  // 留到发请求时才炸会变成「Failed to parse URL」的裸错误，离配置很远。先验 URL 本身。
+  try {
+    new URL(base)
+  } catch {
+    throw new Error(`jev base URL 不是合法 URL：${raw}（检查是否残留模板占位符）`)
+  }
+  // 已经写到 .../v1 再补一段就是 .../v1/v1/systemone。2026-11-23 实测该 URL 返回 HTTP 404，
+  // 报错落在 L1 日志里、离配置很远，排查要绕一大圈。直接拒绝并给出改法（fail closed）。
+  if (/\/v1$/i.test(base)) {
+    throw new Error(
+      `jev base URL 多了一段版本路径：${base} —— 只写到路径前缀（如 …/compatible-mode），` +
+      '或直接给完整端点（…/v1/systemone）',
+    )
+  }
   return /\/systemone$/i.test(base) ? base : `${base}/v1/systemone`
 }
 

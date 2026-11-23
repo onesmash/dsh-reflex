@@ -131,6 +131,35 @@ test('URL：已以 /systemone 结尾时不再重复拼接', async () => {
   assert.equal(sink.url, 'https://x.test/compatible-mode/v1/systemone')
 })
 
+test('URL：只写到 .../v1（少 /systemone）时明确拒绝，不发请求', async () => {
+  // 2026-11-23 实测：这种写法会被补成 .../v1/v1/systemone → HTTP 404，
+  // 而报错出现在 L1 日志里、离配置很远。归一化这一层就该拒绝并说清怎么改。
+  const sink = {}
+  const fetchImpl = fakeFetch({ status: 200, json: okBody({ yes: 1, no: 0 }, 'yes') }, sink)
+  await assert.rejects(
+    () => scoreBatch([row()], { baseUrl: 'https://x.test/compatible-mode/v1', model: 'm', fetchImpl }),
+    /v1.*systemone|多了一段版本路径/i,
+  )
+  assert.equal(sink.url, undefined, '拒绝时不许发出任何请求')
+})
+
+test('URL：模板占位符（[workspace-id]）明确拒绝，不发请求', async () => {
+  const sink = {}
+  const fetchImpl = fakeFetch({ status: 200, json: okBody({ yes: 1, no: 0 }, 'yes') }, sink)
+  await assert.rejects(
+    () => scoreBatch([row()], { baseUrl: 'https://[workspace-id].cn-beijing.maas.aliyuncs.com/compatible-mode/v1', model: 'm', fetchImpl }),
+    /合法|invalid|workspace-id/i,
+  )
+  assert.equal(sink.url, undefined, '拒绝时不许发出任何请求')
+})
+
+test('URL：路径前缀 .../compatible-mode 补成 canonical（与裸 host 同类）', async () => {
+  const sink = {}
+  const fetchImpl = fakeFetch({ status: 200, json: okBody({ yes: 1, no: 0 }, 'yes') }, sink)
+  await scoreBatch([row()], { baseUrl: 'https://x.test/compatible-mode', model: 'm', fetchImpl })
+  assert.equal(sink.url, 'https://x.test/compatible-mode/v1/systemone')
+})
+
 // ---------------------------------------------------------------- 批量语义
 
 test('批量：部分失败时保留成功行并回调 onError', async () => {
