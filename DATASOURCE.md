@@ -193,6 +193,40 @@ exit 0
 校准用现成工具链（不必自研）：`shadow_replay.py --target <name>` 全量回放 →
 `calibration.py` 工作点换算与阈值拟合 → 阈值写回 target。
 
+## 5.0 界面新增（三段式：give / when / trigger）
+
+侧栏 **Trigger** 页右上角「＋ 添加数据源」把 §1–§4 那五件事压成三句话，生成的文件全部是可读的普通
+shell 与 JSON —— 界面只是脚手架，事后照旧可以直接改脚本（改完落盘即生效，不用重启）。
+
+| 段 | 界面上填什么 | 落到哪 |
+|---|---|---|
+| **GIVE** | 名称、一句话用途、采集命令（stdout 每行一个 JSON 对象） | `collectors/<name>.sh`、`<name>.schema.json` |
+| **WHEN** | 采集间隔（1 min ~ 6 h） | `collectors/<name>.env.json` 的 `intervalMs`（`timeoutMs` 固定 120s） |
+| **TRIGGER** | 任何新条目 / 命中关键词 / 语义判据（影子）/ 只采集 | `targets/<name>.sh`、`targets/<name>.env.json`；选「只采集」就一个都不生成 |
+
+**生成的采集器替你守了三条契约**（对应 §4.1 的三个坑）：
+
+- 首跑只建水位：第一次跑只发一条 `<name>-scan` 汇总，不把存量当新事件叫醒
+- 行级去重：按整行内容的 `sha256[:16]` 记水位，`$REFLEX_HOME/seen-<name>.json` 原子替换；水位上限 20000 键
+- 失败要显式：命令没输出 / 输出的行没有一行是合法 JSON 对象 → 非 0 退出（记 `L0 <name> failed`），
+  绝不把"拿不到数据"伪装成本轮无新数据
+- 采集命令在**子 shell** 里跑：命令里的 `exit` / `cd` / `set` 不会把采集器本身带走
+
+**生成的 target 里约定**：`<name>-scan` 是保留 metric，任何触发方式都先把它剔掉（否则每轮都叫醒）；
+`all` 模式把每条数据行原样变成条目，`match` 模式按 `raw` 的文本过滤，`semantic` 模式只写影子分数
+（`shadow/<name>-<date>.jsonl`），攒够样本按 §6.6 拟合阈值后，把 `targets/<name>.sh` 改成确定性叫醒即可。
+
+**界面这一层的硬门**（都有破坏变体守着，见 `docs/property-register-sources.md` P10–P18）：
+
+- 名称必须是 `^[a-z0-9][a-z0-9._-]*$`，且不能是内置源（disk/cpu）
+- 已存在的 `<name>.sh` 一律拒绝覆盖，界面报「已存在」
+- 写盘前逐个 `bash -n`；任何一个脚本语法错就整批不落盘（不留半成品、不留 `.tmp` 残渣）
+- 「试跑」只统计不写文件：15s 超时、输出上限 256KB、返回「几行 / 几行合法 / 前 3 行」
+
+> 这条链路 2026-11-23 起有三级证据：纯函数与生成脚本的行为（`tests/create-source.test.mjs`）、
+> 路由到磁盘再真跑一遍采集器与 target（`tests/create-source-route.mjs`）、界面渲染与接线
+> （`tests/check-sources-panel.mjs`）。
+
 ## 5. 启用（配置层，不改代码）
 
 在 `~/.dsh/profiles/desktop/cordis.patch.yml`：

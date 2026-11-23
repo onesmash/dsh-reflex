@@ -8,17 +8,27 @@
 // 共存: 独立 cordis 插件, patch: cordis.patch.yml -> insert: { id: dsh-reflex }.
 //   不修改原版 ds-bot 任何代码; 通过 ctx.get('schedule') + 读 bot state.json 定位目标会话。
 
-import { join, dirname } from 'node:path'
+import { join, dirname, basename } from 'node:path'
 import { readFileSync, existsSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync, statSync, cpSync, chmodSync, renameSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { execFile, spawn } from 'node:child_process'
+import { execFile, spawn, spawnSync } from 'node:child_process'
 import Schema from '@deepseek-ai/schemastery'
 // 决策后端适配器: jev/jevlocal 走 SystemOne HTTP 端点。
 // v0.3.18 原版把 run_score.sh 写死在 semifScoreBatch 里，内置 target(disk)
 // 因此完全绕过 backend 配置；且 tools/semif-adapt.py 未随包发布。
 // 本文件由本机补丁加入，升级 dsh-reflex 后需重新应用（见 REFLEX-PATCH.md）。
 import { scoreBatch as jevScoreBatch, writeShadow as jevWriteShadow } from './jev-adapter.mjs'
-import { scanSources, setPaused, respondToOp, SOURCE_ROUTE } from './sources.mjs'
+import {
+  scanSources,
+  setPaused,
+  respondToOp,
+  createSource,
+  parseNewSource,
+  planSourceFiles,
+  summarizeProbe,
+  NEW_SOURCE_LIMITS,
+  SOURCE_ROUTE,
+} from './sources.mjs'
 import { promisify, format } from 'node:util'
 import { randomUUID, createHash } from 'node:crypto'
 import { loadavg } from 'node:os'
@@ -1509,12 +1519,90 @@ function install(rt, ctx, cfg) {
     const declared = new Set(cfg.l0.sources ?? [])
     return builtinNames().map((name) => ({ name, builtin: true, enabled: declared.has(name) }))
   }
+  // ---------- 新增数据源：三段式 (give / when / trigger) ----------
+  // 界面上的三段 → 落盘 5 个文件（清单见 sources.mjs 的 planSourceFiles）。这一层只做三件事：
+  // 把请求交给纯校验/渲染层、用 `bash -n` 按住语法、把路径翻成界面能读的相对路径。
+  // 语义（水位、去重、判定）全在生成的脚本里 —— 生成物必须是能被人打开读懂的普通 shell。
+  const PROBE_TIMEOUT_MS = 15_000
+  const PROBE_MAX_STDOUT = 256 * 1024
+
+  /** 写盘前跑一次 `bash -n`：采集命令语法错不该等到第一次采集才炸。 */
+  function syntaxGuard(name) {
+    return (path, content) => {
+      const tmp = join(process.env.TMPDIR || '/tmp', `reflex-syntax-${process.pid}-${name}-${Date.now()}.sh`)
+      try {
+        writeFileSync(tmp, content, { encoding: 'utf8', mode: 0o600 })
+        const r = spawnSync('/bin/bash', ['-n', tmp], { encoding: 'utf8' })
+        if (r.status !== 0) {
+          const why = String(r.stderr || '').trim().split('\n').slice(0, 3).join(' / ')
+          throw new Error(`生成脚本语法不通过（多半是采集命令本身写错了）：${why}`)
+        }
+      } finally {
+        try { unlinkSync(tmp) } catch { /* 尽力清理，失败不影响判定 */ }
+      }
+    }
+  }
+
+  function createSourceFromRequest(body) {
+    const spec = parseNewSource(body, { collectorsDir, targetsDir, builtins: builtinNames() })
+    const result = createSource({ collectorsDir, targetsDir }, spec, { check: syntaxGuard(spec.name) })
+    const rel = result.created.map((p) => basename(dirname(p)) + '/' + basename(p))
+    log(`sources: created [${rel.join(', ')}] (trigger=${spec.trigger.mode})`)
+    return {
+      created: rel,
+      files: planSourceFiles(spec).map((f) => f.dir + '/' + f.file),
+      name: spec.name,
+      intervalMs: spec.intervalMs,
+      trigger: spec.trigger,
+    }
+  }
+
+  /** 试跑：跑一次采集命令，把 stdout 翻成「几行 / 几行合法 / 前几行」。不写任何文件。 */
+  function probeCommand(body) {
+    const cmd = String(body?.cmd ?? '').replace(/\r\n/g, '\n').trim()
+    if (!cmd) return Promise.reject(new Error('采集命令不能为空'))
+    if (cmd.length > NEW_SOURCE_LIMITS.cmdMax) {
+      return Promise.reject(new Error(`采集命令太长：${cmd.length} 字符（上限 ${NEW_SOURCE_LIMITS.cmdMax}）`))
+    }
+    return new Promise((resolve, reject) => {
+      const started = Date.now()
+      let out = ''
+      let err = ''
+      let timedOut = false
+      let child
+      try {
+        child = spawnImpl('/bin/bash', ['-c', cmd], { env: scriptEnv({}) })
+      } catch (e) {
+        reject(new Error(`起不来子进程：${e.message}`))
+        return
+      }
+      const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL') }, PROBE_TIMEOUT_MS)
+      child.stdout.on('data', (d) => { if (out.length < PROBE_MAX_STDOUT) out += d })
+      child.stderr.on('data', (d) => { if (err.length < 8192) err += d })
+      child.on('error', (e) => { clearTimeout(timer); reject(new Error(`命令执行失败：${e.message}`)) })
+      child.on('close', (code) => {
+        clearTimeout(timer)
+        resolve({
+          ...summarizeProbe(out),
+          cmd,
+          code,
+          timedOut,
+          ms: Date.now() - started,
+          stderrTail: err.trim().split('\n').filter(Boolean).slice(-1)[0] ?? '',
+        })
+      })
+    })
+  }
+
   async function reflexRoute(op, body) {
-    return respondToOp(op, body, {
+    // probe 恒返回 Promise（起子进程不能阻塞宿主的事件循环），await 一次两种形态都收。
+    return await respondToOp(op, body, {
       list: () => ({ sources: sourceRows(), builtin: builtinRows(), scannedAt: Date.now() }),
       commit: (name, paused) => setPaused(collectorsDir, name, paused, { builtins: builtinNames() }),
       refresh: () => refreshDiscovery(),
       log,
+      create: (payload) => createSourceFromRequest(payload),
+      probe: (payload) => probeCommand(payload),
     })
   }
   try {

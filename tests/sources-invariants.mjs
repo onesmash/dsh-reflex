@@ -24,14 +24,21 @@ const REPO = join(HERE, '..')
 const NODE = process.env.NODE_BIN || process.execPath
 const MODULE = join(REPO, 'sources.mjs')
 const TEST = join(REPO, 'sources.test.mjs')
+// P10–P14 是「新增数据源（三段式）」的性质，守门测试在另一个文件里；两条都要跑，
+// 否则新性质在这份核对器里等于没登记。
+const TEST_NEW_SOURCE = join(REPO, 'tests', 'create-source.test.mjs')
 
 function undecided(why) {
   console.error(`未判定：${why}`)
   process.exit(2)
 }
 
-function runTests(cwd) {
-  const r = spawnSync(NODE, ['--test', 'sources.test.mjs'], { cwd, encoding: 'utf8' })
+// 两类核对器：node --test 的守门测试，和 bundle 冒烟（客户端接线/文案只能在那里验）。
+function runTests(cwd, kind) {
+  const args = kind === 'panel'
+    ? ['tests/check-sources-panel.mjs']
+    : ['--test', 'sources.test.mjs', 'tests/create-source.test.mjs']
+  const r = spawnSync(NODE, args, { cwd, encoding: 'utf8' })
   return { rc: r.status, out: `${r.stdout || ''}${r.stderr || ''}` }
 }
 
@@ -83,6 +90,86 @@ const MUTATIONS = [
     to: 'const SRC_ROUTE = "api/other"',
   },
   {
+    name: 'P10 去重失效（已知水位不再跳过）',
+    prop: 'P10',
+    from: '    if key in known:\n        continue',
+    to: '    if False:\n        continue',
+  },
+  {
+    name: 'P10 首跑不建水位（把存量也发出去）',
+    prop: 'P10',
+    from: 'if seeded:\n    for t in fresh:',
+    to: 'if True:\n    for t in fresh:',
+  },
+  {
+    name: 'P11 间隔写死（不读用户选的）',
+    prop: 'P11',
+    from: 'return JSON.stringify({ intervalMs: spec.intervalMs, timeoutMs: 120_000, env: {} }, null, 2)',
+    to: 'return JSON.stringify({ intervalMs: 900000, timeoutMs: 120_000, env: {} }, null, 2)',
+  },
+  {
+    name: 'P12 scan 汇总行被当成数据',
+    prop: 'P12',
+    from: '    if not isinstance(rec, dict) or rec.get("metric") == SCAN:\n        continue\n    scanned += 1',
+    to: '    if not isinstance(rec, dict):\n        continue\n    scanned += 1',
+  },
+  {
+    name: 'P12 关键词不过滤（不命中也叫）',
+    prop: 'P12',
+    from: '    if KEYWORDS and not any(k in text for k in KEYWORDS):\n        continue',
+    to: '    if False:\n        continue',
+  },
+  {
+    name: 'P13 名字校验去掉（越界名可写盘）',
+    prop: 'P13',
+    from: '  if (!NAME.test(name)) {',
+    to: '  if (false) {',
+  },
+  {
+    name: 'P13 覆盖守卫去掉（重名会盖掉旧源）',
+    prop: 'P13',
+    from: '    if (existsSync(path)) throw new Error(`已存在：${item.dir}/${item.file}（不覆盖已有数据源）`)',
+    to: '    if (false) throw new Error(`已存在：${item.dir}/${item.file}（不覆盖已有数据源）`)',
+  },
+  {
+    name: 'P14 试跑摘要把每一行都算成合法',
+    prop: 'P14',
+    from: 'return { lines: lines.length, valid, bad: lines.length - valid, sample: lines.slice(0, Math.max(0, limit)) }',
+    to: 'return { lines: lines.length, valid: lines.length, bad: 0, sample: lines.slice(0, Math.max(0, limit)) }',
+  },
+  {
+    name: 'P15 请求体的 op 写错',
+    prop: 'P15',
+    file: 'client.js',
+    runner: 'panel',
+    from: '\t\t\t\top: "create",',
+    to: '\t\t\t\top: "add",',
+  },
+  {
+    name: 'P16 本地校验漏掉采集命令',
+    prop: 'P16',
+    file: 'client.js',
+    runner: 'panel',
+    from: 'if (!String(f.cmd || "").trim()) return "addNeedCmd"',
+    to: 'if (false) return "addNeedCmd"',
+  },
+  {
+    name: 'P17 英文兜底缺一条文案',
+    prop: 'P17',
+    file: 'client.js',
+    runner: 'panel',
+    from: '\t\t\taddProbeRc: "Exit code {code} (non-zero is recorded as failed; append || true when empty is normal)"',
+    to: '\t\t\taddProbeRcX: "Exit code {code} (non-zero is recorded as failed; append || true when empty is normal)"',
+  },
+  {
+    name: 'P18 条件字段不再跟模式走（all 模式也显示关键词框）',
+    prop: 'P18',
+    file: 'client.js',
+    runner: 'panel',
+    from: '\t\t\t\t\tmode === "match" ? field("rfx-keywords"',
+    to: '\t\t\t\t\ttrue ? field("rfx-keywords"',
+  },
+  {
     name: 'P6 没有 manifest 就返回空',
     prop: 'P6',
     from: 'const names = entries.filter(',
@@ -101,7 +188,7 @@ function applyMutations(dir, mutation) {
   return null
 }
 
-for (const [label, path] of [['模块', MODULE], ['测试', TEST]]) {
+for (const [label, path] of [['模块', MODULE], ['测试', TEST], ['三段式测试', TEST_NEW_SOURCE]]) {
   try { readFileSync(path) } catch { undecided(`找不到${label} ${path}`) }
 }
 
@@ -127,13 +214,15 @@ try {
     cpSync(REPO, dir, { recursive: true, filter: (src) => !src.includes('node_modules') && !src.includes('.git') })
     const failure = applyMutations(dir, mutation)
     if (failure) { misses.push(`${mutation.name}：${failure}`); console.log(`ERROR ${mutation.name}：${failure}`); continue }
-    const r = runTests(dir)
+    const r = runTests(dir, mutation.runner)
     if (r.rc === 0) {
       misses.push(`${mutation.name}：改坏了仍全绿`)
       console.log(`MISS  ${mutation.name} —— 改坏了还是全绿，这条性质没人守`)
       continue
     }
-    if (r.out.includes(`✖ ${mutation.prop}`)) {
+    // node --test 用 ✖ 前缀报失败名；bundle 冒烟用 FAIL。
+    const marker = mutation.runner === 'panel' ? `FAIL ${mutation.prop}` : `✖ ${mutation.prop}`
+    if (r.out.includes(marker)) {
       caught += 1
       console.log(`CAUGHT ${mutation.name}`)
     } else {

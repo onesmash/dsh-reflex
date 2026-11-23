@@ -60,7 +60,53 @@ window.__ModuleLoader__.load({
 			srcEmpty: "collectors 目录还没有脚本：把 <name>.sh 放进去即启用。",
 			srcLoadFail: "读取失败",
 			srcRetry: "重试",
-			srcFollowing: "跟随全局"
+			srcFollowing: "跟随全局",
+			srcAdd: "添加数据源",
+			srcAddBack: "返回列表",
+			addDesc: "三段式：给什么 → 多久 → 什么时候叫醒。填完点创建，脚本落盘即生效。",
+			addGive: "给什么",
+			addGiveHint: "一条命令，它的输出就是数据：每行一个 JSON 对象。去重、首跑建水位、失败标记都由这一层包好。",
+			addName: "名称",
+			addNameHint: "会变成文件名与 target 标签：小写字母/数字开头，可含 . _ -",
+			addAbout: "一句话用途",
+			addAboutHint: "选填。写进脚本头与 schema，方便以后自己看懂。",
+			addCmd: "采集命令",
+			addCmdHint: "例：curl -s https://example.com/api | jq -c '.[]'。可用 $REFLEX_HOME 定位状态文件。",
+			addProbe: "试跑",
+			addProbing: "试跑中…",
+			addProbeLines: "输出 {lines} 行，其中 {valid} 行是合法 JSON",
+			addProbeEmpty: "命令没有输出（退出 0 + 空输出 = 本轮无新数据）",
+			addProbeTimeout: "跑了 15 秒还没结束，已被杀掉",
+			addProbeRc: "退出码 {code}（非 0 会被记成 failed，没找到数据请接 || true）",
+			addProbeStderr: "stderr 末行：",
+			addWhen: "多久",
+			addWhenHint: "采集间隔。落盘即生效（热发现）：不用改 profile，也不用重启。",
+			addTrigger: "什么时候叫醒我",
+			addTriggerHint: "决定要不要生成 targets/<name>.sh。不命中就一个字都不输出。",
+			addModeAll: "任何新条目",
+			addModeAllHint: "每有一条新数据就叫醒。源本身只产出值得看的东西时选这个。",
+			addModeMatch: "命中关键词",
+			addModeMatchHint: "内容里出现任意一个关键词才叫。适合盯人名、公司名、事件词。",
+			addModeSemantic: "语义判据（先影子）",
+			addModeSemanticHint: "写一句判据，本地模型逐条打分。先只记账不叫醒，攒够样本再拟合阈值。",
+			addModeOff: "只采集，不叫醒",
+			addModeOffHint: "只进 L0 事实层，留给 L2 自己查。",
+			addKeywords: "关键词",
+			addKeywordsHint: "逗号 / 顿号 / 换行分隔，命中任意一个即可",
+			addCriteria: "判据",
+			addCriteriaHint: "一句话。措辞一变分数会整体位移，所以先影子。",
+			addPreview: "将要做的事",
+			addFiles: "会写 collectors/{name}.sh 与两个配置；触发方式不是「只采集」时再写 targets/{name}.sh 与它的配置。",
+			addCreate: "创建",
+			addCreating: "创建中…",
+			addCancel: "取消",
+			addNeedName: "先给这个源起个名字",
+			addNeedCmd: "还没有采集命令",
+			addNeedKeywords: "「命中关键词」至少写一个词",
+			addNeedCriteria: "「语义判据」需要一句话",
+			addNeedReload: "宿主里的插件还是旧版（不认识 create）：重启 DSH 之后这个入口才能真的写盘。",
+			createdOk: "已创建 {name}：开始采集，首跑只建水位（不发存量）。",
+			srcNew: "新"
 		};
 
 		const en = {
@@ -112,7 +158,53 @@ window.__ModuleLoader__.load({
 			srcEmpty: "No scripts in collectors yet — drop a <name>.sh there to enable one.",
 			srcLoadFail: "Read failed",
 			srcRetry: "Retry",
-			srcFollowing: "Follows global"
+			srcFollowing: "Follows global",
+			srcAdd: "Add data source",
+			srcAddBack: "Back to list",
+			addDesc: "Three stages: what it gives, how often, when to wake you. Create writes the scripts; they apply straight from disk.",
+			addGive: "What it gives",
+			addGiveHint: "One command; its output is the data, one JSON object per line. Dedup, first-run watermark and failure marking are handled here.",
+			addName: "Name",
+			addNameHint: "Becomes the file name and the target tag: lowercase letter or digit first, then . _ -",
+			addAbout: "One-line purpose",
+			addAboutHint: "Optional. Written into the script header and the schema.",
+			addCmd: "Collect command",
+			addCmdHint: "e.g. curl -s https://example.com/api | jq -c '.[]'. $REFLEX_HOME points at the state directory.",
+			addProbe: "Try it",
+			addProbing: "Running…",
+			addProbeLines: "{lines} lines, {valid} of them valid JSON",
+			addProbeEmpty: "The command printed nothing (exit 0 + empty output = nothing new this round)",
+			addProbeTimeout: "Still running after 15s, so it was killed",
+			addProbeRc: "Exit code {code} (non-zero is recorded as failed; append || true when empty is normal)",
+			addProbeStderr: "Last stderr line: ",
+			addWhen: "How often",
+			addWhenHint: "Collection interval. Applies from disk (hot discovery): no profile edit, no restart.",
+			addTrigger: "When to wake you",
+			addTriggerHint: "Decides whether targets/<name>.sh is written. No hit means no output at all.",
+			addModeAll: "Any new item",
+			addModeAllHint: "Wake on every new fact. Use it when the source only emits things worth seeing.",
+			addModeMatch: "Keyword hit",
+			addModeMatchHint: "Wake only when the content contains one of the keywords.",
+			addModeSemantic: "Semantic criterion (shadow first)",
+			addModeSemanticHint: "One criterion; the local model scores each item. Shadow mode only records — fit a threshold later.",
+			addModeOff: "Collect only",
+			addModeOffHint: "Facts land in L0 for L2 to look up; nothing wakes.",
+			addKeywords: "Keywords",
+			addKeywordsHint: "Separated by commas or newlines; any hit wakes",
+			addCriteria: "Criterion",
+			addCriteriaHint: "One sentence. Wording shifts scores, so shadow first.",
+			addPreview: "What will happen",
+			addFiles: "Writes collectors/{name}.sh plus two config files; unless trigger is collect-only, also targets/{name}.sh and its config.",
+			addCreate: "Create",
+			addCreating: "Creating…",
+			addCancel: "Cancel",
+			addNeedName: "Give this source a name first",
+			addNeedCmd: "No collect command yet",
+			addNeedKeywords: "Keyword mode needs at least one keyword",
+			addNeedCriteria: "Semantic mode needs one sentence",
+			addNeedReload: "The loaded plugin is older than this page (it does not know create). Restart DSH, then this button writes files.",
+			createdOk: "Created {name}: collecting now; the first run only builds the watermark (no backlog).",
+			srcNew: "new"
 		};
 
 		function formLabels(t) {
@@ -381,7 +473,53 @@ window.__ModuleLoader__.load({
 			srcBuiltinHint: "Controlled by the profile's l0.sources; reload DSH after changing them.",
 			srcBuiltinAct: "Profile-controlled",
 			srcEmpty: "No scripts in collectors yet — drop a <name>.sh there to enable one.",
-			srcLoadFail: "Read failed", srcRetry: "Retry", srcFollowing: "Follows global"
+			srcLoadFail: "Read failed", srcRetry: "Retry", srcFollowing: "Follows global",
+srcAdd: "Add data source",
+srcAddBack: "Back to list",
+addDesc: "Three stages: what it gives, how often, when to wake you. Create writes the scripts; they apply straight from disk.",
+addGive: "What it gives",
+addGiveHint: "One command; its output is the data, one JSON object per line. Dedup, first-run watermark and failure marking are handled here.",
+addName: "Name",
+addNameHint: "Becomes the file name and the target tag: lowercase letter or digit first, then . _ -",
+addAbout: "One-line purpose",
+addAboutHint: "Optional. Written into the script header and the schema.",
+addCmd: "Collect command",
+addCmdHint: "e.g. curl -s https://example.com/api | jq -c '.[]'. $REFLEX_HOME points at the state directory.",
+addProbe: "Try it",
+addProbing: "Running…",
+addProbeLines: "{lines} lines, {valid} of them valid JSON",
+addProbeEmpty: "The command printed nothing (exit 0 + empty output = nothing new this round)",
+addProbeTimeout: "Still running after 15s, so it was killed",
+			addProbeRc: "Exit code {code} (non-zero is recorded as failed; append || true when empty is normal)",
+addProbeStderr: "Last stderr line: ",
+addWhen: "How often",
+addWhenHint: "Collection interval. Applies from disk (hot discovery): no profile edit, no restart.",
+addTrigger: "When to wake you",
+addTriggerHint: "Decides whether targets/<name>.sh is written. No hit means no output at all.",
+addModeAll: "Any new item",
+addModeAllHint: "Wake on every new fact. Use it when the source only emits things worth seeing.",
+addModeMatch: "Keyword hit",
+addModeMatchHint: "Wake only when the content contains one of the keywords.",
+addModeSemantic: "Semantic criterion (shadow first)",
+addModeSemanticHint: "One criterion; the local model scores each item. Shadow mode only records — fit a threshold later.",
+addModeOff: "Collect only",
+addModeOffHint: "Facts land in L0 for L2 to look up; nothing wakes.",
+addKeywords: "Keywords",
+addKeywordsHint: "Separated by commas or newlines; any hit wakes",
+addCriteria: "Criterion",
+addCriteriaHint: "One sentence. Wording shifts scores, so shadow first.",
+addPreview: "What will happen",
+addFiles: "Writes collectors/{name}.sh plus two config files; unless trigger is collect-only, also targets/{name}.sh and its config.",
+addCreate: "Create",
+addCreating: "Creating…",
+addCancel: "Cancel",
+addNeedName: "Give this source a name first",
+addNeedCmd: "No collect command yet",
+addNeedKeywords: "Keyword mode needs at least one keyword",
+addNeedCriteria: "Semantic mode needs one sentence",
+			addNeedReload: "The loaded plugin is older than this page (it does not know create). Restart DSH, then this button writes files.",
+createdOk: "Created {name}: collecting now; the first run only builds the watermark (no backlog).",
+srcNew: "new"
 		};
 		/** 取一条文案：当前语言没有就回退英文，再没有才回 key。 */
 		function srcText(t, key) {
@@ -410,13 +548,251 @@ window.__ModuleLoader__.load({
 			".rfx-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.06);color:#c0392b;font-size:13px}",
 			".rfx-sec{margin-top:30px}",
 			".rfx-secTitle{margin:0;font-size:13px;font-weight:600}",
-			".rfx-secHint{margin:3px 0 4px;font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280)}"
+			".rfx-secHint{margin:3px 0 4px;font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280)}",
+			".rfx-headActions{display:flex;align-items:center;gap:8px;flex:none}",
+			".rfx-btnPrimary{border-color:var(--dsw-alias-brand-primary,#4d6bfe);color:var(--dsw-alias-brand-primary,#4d6bfe)}",
+			".rfx-btnPrimary:hover:not(:disabled){background:var(--dsw-alias-brand-primary,#4d6bfe);color:#fff}",
+			".rfx-step{margin-top:26px;padding-top:18px;border-top:1px solid var(--dsw-alias-border-l1,#eee)}",
+			".rfx-stepHead{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}",
+			".rfx-stepNo{flex:none;width:22px;height:22px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#ddd);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280)}",
+			".rfx-stepTitle{margin:0;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}",
+			".rfx-stepEn{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.08em;color:var(--dsw-alias-label-secondary,#9ca3af);font-weight:500}",
+			".rfx-stepHint{margin:4px 0 0;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary,#6b7280)}",
+			".rfx-field{margin:12px 0}",
+			".rfx-label{display:block;font-size:12.5px;font-weight:600;margin-bottom:5px}",
+			".rfx-note{margin:4px 0 6px;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary,#6b7280)}",
+			".rfx-input,.rfx-textarea,.rfx-select{box-sizing:border-box;width:100%;font:inherit;font-size:13px;padding:7px 10px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--dsw-alias-border-l2,#e5e5e5);background:var(--dsw-alias-bg-layer-1,transparent);color:inherit}",
+			".rfx-textarea{resize:vertical;line-height:1.5}",
+			".rfx-select{width:auto;min-width:120px}",
+			".rfx-cmdRow{display:flex;align-items:flex-start;gap:8px}",
+			".rfx-cmdRow .rfx-textarea{flex:1}",
+			".rfx-radios{display:flex;flex-direction:column;gap:2px;margin:6px 0 4px}",
+			".rfx-radio{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:var(--dsw-radius-sm,8px);cursor:pointer}",
+			".rfx-radio:hover{background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.08))}",
+			".rfx-radio input{margin-top:3px;flex:none}",
+			".rfx-radioBody{display:flex;flex-direction:column;gap:2px}",
+			".rfx-radioLabel{font-size:13px}",
+			".rfx-radioHint{font-size:12px;line-height:1.45;color:var(--dsw-alias-label-secondary,#6b7280)}",
+			".rfx-ok{margin:10px 0;padding:8px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(47,133,90,.35);background:rgba(47,133,90,.06);color:#2f855a;font-size:12.5px}",
+			".rfx-bad{margin:10px 0;padding:8px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(192,112,43,.35);background:rgba(192,112,43,.06);color:#b0651f;font-size:12.5px}",
+			".rfx-pre{margin:8px 0 0;padding:8px 10px;border-radius:var(--dsw-radius-sm,8px);background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.08));font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.5;overflow:auto;max-height:160px;white-space:pre-wrap;word-break:break-all}",
+			".rfx-preview{margin-top:26px;padding:14px 16px;border-radius:var(--dsw-radius-md,10px);border:1px solid var(--dsw-alias-border-l1,#eee);background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.05))}",
+			".rfx-previewRow{display:flex;gap:12px;padding:5px 0;font-size:12.5px;align-items:baseline}",
+			".rfx-previewKey{flex:none;width:64px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;letter-spacing:.08em;color:var(--dsw-alias-label-secondary,#9ca3af)}",
+			".rfx-previewVal{flex:1;min-width:0;word-break:break-all}",
+			".rfx-actions{display:flex;align-items:center;gap:10px;margin:22px 0 40px}",
+			".rfx-nameRow{display:inline-flex;align-items:center;gap:8px}",
+			".rfx-chip{font-size:10.5px;padding:1px 6px;border-radius:999px;background:rgba(47,133,90,.12);color:#2f855a}",
 		].join("\n");
+		/** 关键词切分：半角/全角逗号、分号、顿号、换行都算分隔符 —— 用户不该被标点卡住。 */
+		function splitKeywords(text) {
+			return String(text || "")
+				.split(/[,，;；、\n]+/)
+				.map((one) => one.trim())
+				.filter(Boolean);
+		}
+		/**
+		 * 表单 → 请求体。纯函数：界面到底发了什么，可以被测试直接调一次看到。
+		 * 三段式的字段一一对应 give / when / trigger。
+		 */
+		function newSourceBody(form) {
+			const f = form || {};
+			const mode = f.mode || "all";
+			const trigger = mode === "match"
+				? { mode: mode, keywords: splitKeywords(f.keywords) }
+				: mode === "semantic"
+					? { mode: mode, criteria: String(f.criteria || "").trim() }
+					: { mode: mode };
+			return {
+				op: "create",
+				name: String(f.name || "").trim(),
+				about: String(f.about || "").trim(),
+				cmd: String(f.cmd || "").trim(),
+				intervalMs: Number(f.intervalMs) || 900000,
+				trigger: trigger
+			};
+		}
+		/**
+		 * 本地只挡「还没填完」，格式合法性交给宿主（错了它给准话）。
+		 * 两处各守各的，不写第二份正则 —— 否则两边一改就互相打脸。
+		 * @returns {string} 缺的那一项对应的文案 key；空串 = 可以提交
+		 */
+		function formBlocker(form) {
+			const f = form || {};
+			if (!String(f.name || "").trim()) return "addNeedName";
+			if (!String(f.cmd || "").trim()) return "addNeedCmd";
+			if ((f.mode || "all") === "match" && splitKeywords(f.keywords).length === 0) return "addNeedKeywords";
+			if ((f.mode || "all") === "semantic" && !String(f.criteria || "").trim()) return "addNeedCriteria";
+			return "";
+		}
+		/** 采集间隔可选值（ms）。默认 15 分钟：外部服务不会被打爆，人也不用等太久。 */
+		const INTERVAL_CHOICES = [60000, 300000, 900000, 1800000, 3600000, 21600000];
+		const EMPTY_FORM = { name: "", about: "", cmd: "", intervalMs: 900000, mode: "all", keywords: "", criteria: "" };
+		function emptyForm() { return { ...EMPTY_FORM }; }
+		/**
+		 * 三段式表单本体（展示型组件）：状态与请求都留在 SourcesPage，这里只负责画。
+		 * 为什么单独拆出来：界面改动最怕"静态检查全绿、一渲染就白屏"，
+		 * 拆成纯展示组件之后可以在测试里真的渲染一次，把三段文案与条件字段都验到。
+		 */
+		function NewSourceForm(props) {
+			const form = props.form || EMPTY_FORM;
+			const probe = props.probe || { phase: "idle", data: null, error: "" };
+			const saveState = props.saveState || { phase: "idle", error: "", name: "" };
+			const tr = typeof props.tr === "function" ? props.tr : (k) => k;
+			const onField = typeof props.onField === "function" ? props.onField : () => () => {};
+			const onMode = typeof props.onMode === "function" ? props.onMode : () => () => {};
+			const mode = form.mode || "all";
+			const field = (id, label, hint, control) => react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
+				react_jsx_runtime.jsx("label", { className: "rfx-label", htmlFor: id, children: label }, "l"),
+				hint ? react_jsx_runtime.jsx("p", { className: "rfx-note", children: hint }, "h") : null,
+				control
+			] }, id);
+			const stepHead = (en, no, title, hint) => react_jsx_runtime.jsxs("div", { className: "rfx-stepHead", children: [
+				react_jsx_runtime.jsx("span", { className: "rfx-stepNo", children: String(no) }, "n"),
+				react_jsx_runtime.jsxs("div", { children: [
+					react_jsx_runtime.jsxs("h2", { className: "rfx-stepTitle", children: [
+						react_jsx_runtime.jsx("span", { className: "rfx-stepEn", children: en }, "e"),
+						title
+					] }),
+					hint ? react_jsx_runtime.jsx("p", { className: "rfx-stepHint", children: hint }) : null
+				] }, "b")
+			] });
+			const modeOption = (value, label, hint) => react_jsx_runtime.jsxs("label", { className: "rfx-radio", children: [
+				react_jsx_runtime.jsx("input", {
+					type: "radio", name: "rfx-trigger", value: value,
+					checked: mode === value,
+					onChange: onMode(value)
+				}, "i"),
+				react_jsx_runtime.jsxs("span", { className: "rfx-radioBody", children: [
+					react_jsx_runtime.jsx("span", { className: "rfx-radioLabel", children: label }, "l"),
+					react_jsx_runtime.jsx("span", { className: "rfx-radioHint", children: hint }, "h")
+				] }, "b")
+			] }, value);
+			const previewRow = (label, value) => react_jsx_runtime.jsxs("div", { className: "rfx-previewRow", children: [
+				react_jsx_runtime.jsx("span", { className: "rfx-previewKey", children: label }),
+				react_jsx_runtime.jsx("span", { className: "rfx-previewVal", children: value })
+			] }, label);
+			const firstLine = String(form.cmd || "").trim().split("\n")[0] || tr("addCmd");
+			const intervalLabel = everyLabel(Number(form.intervalMs) || 900000, tr);
+			const triggerText = mode === "match"
+				? tr("addModeMatch") + " · " + (splitKeywords(form.keywords).join(" / ") || "—")
+				: mode === "semantic"
+					? tr("addModeSemantic") + " · " + (String(form.criteria || "").trim() || "—")
+					: mode === "off" ? tr("addModeOff") : tr("addModeAll");
+			// 零输出是「本轮没数据」，不算坏；非 0 退出与"有行但不合法"才是要去修的
+			const probeBad = probe.phase === "ok" && probe.data
+				&& ((probe.data.lines > 0 && probe.data.valid !== probe.data.lines) || probe.data.code !== 0);
+			const probeNode = probe.phase === "running"
+				? react_jsx_runtime.jsx("p", { className: "rfx-note", children: tr("addProbing") })
+				: probe.phase === "error"
+					? react_jsx_runtime.jsx("div", { className: "rfx-error", children: probe.error })
+					: probe.phase === "ok" && probe.data
+						? react_jsx_runtime.jsxs("div", { className: probeBad ? "rfx-bad" : "rfx-ok", children: [
+							react_jsx_runtime.jsx("div", { children: probe.data.lines === 0
+								? tr("addProbeEmpty")
+								: tr("addProbeLines")
+									.replace("{lines}", String(probe.data.lines))
+									.replace("{valid}", String(probe.data.valid)) }),
+							probe.data.timedOut ? react_jsx_runtime.jsx("div", { children: tr("addProbeTimeout") }) : null,
+							!probe.data.timedOut && probe.data.code !== 0
+								? react_jsx_runtime.jsx("div", { children: tr("addProbeRc").replace("{code}", String(probe.data.code)) })
+								: null,
+							probe.data.stderrTail ? react_jsx_runtime.jsx("div", { className: "rfx-mono", children: tr("addProbeStderr") + probe.data.stderrTail }) : null,
+							probe.data.sample && probe.data.sample.length
+								? react_jsx_runtime.jsx("pre", { className: "rfx-pre", children: probe.data.sample.join("\n") })
+								: null
+						] })
+						: null;
+			return react_jsx_runtime.jsxs("div", { className: "rfx-body", children: [
+				react_jsx_runtime.jsxs("section", { className: "rfx-step", children: [
+					stepHead("GIVE", 1, tr("addGive"), tr("addGiveHint")),
+					field("rfx-name", tr("addName"), tr("addNameHint"),
+						react_jsx_runtime.jsx("input", {
+							id: "rfx-name", className: "rfx-input rfx-mono", value: form.name,
+							placeholder: "x-timeline", onChange: onField("name")
+						})),
+					field("rfx-about", tr("addAbout"), tr("addAboutHint"),
+						react_jsx_runtime.jsx("input", {
+							id: "rfx-about", className: "rfx-input", value: form.about,
+							onChange: onField("about")
+						})),
+					field("rfx-cmd", tr("addCmd"), tr("addCmdHint"),
+						react_jsx_runtime.jsxs("div", { className: "rfx-cmdRow", children: [
+							react_jsx_runtime.jsx("textarea", {
+								id: "rfx-cmd", className: "rfx-textarea rfx-mono", rows: 4, spellCheck: false,
+								value: form.cmd, onChange: onField("cmd")
+							}),
+							react_jsx_runtime.jsx("button", {
+								type: "button", className: "rfx-btn", disabled: probe.phase === "running",
+								onClick: () => { if (typeof props.onProbe === "function") props.onProbe() },
+								children: probe.phase === "running" ? tr("addProbing") : tr("addProbe")
+							})
+						] })),
+					probeNode
+				] }),
+				react_jsx_runtime.jsxs("section", { className: "rfx-step", children: [
+					stepHead("WHEN", 2, tr("addWhen"), tr("addWhenHint")),
+					field("rfx-interval", tr("addWhen"), "",
+						react_jsx_runtime.jsx("select", {
+							id: "rfx-interval", className: "rfx-select", value: String(form.intervalMs),
+							onChange: onField("intervalMs"),
+							children: INTERVAL_CHOICES.map((ms) => react_jsx_runtime.jsx("option", {
+								value: String(ms), children: everyLabel(ms, tr)
+							}, String(ms)))
+						}))
+				] }),
+				react_jsx_runtime.jsxs("section", { className: "rfx-step", children: [
+					stepHead("TRIGGER", 3, tr("addTrigger"), tr("addTriggerHint")),
+					react_jsx_runtime.jsxs("div", { className: "rfx-radios", children: [
+						modeOption("all", tr("addModeAll"), tr("addModeAllHint")),
+						modeOption("match", tr("addModeMatch"), tr("addModeMatchHint")),
+						modeOption("semantic", tr("addModeSemantic"), tr("addModeSemanticHint")),
+						modeOption("off", tr("addModeOff"), tr("addModeOffHint"))
+					] }),
+					mode === "match" ? field("rfx-keywords", tr("addKeywords"), tr("addKeywordsHint"),
+						react_jsx_runtime.jsx("input", {
+							id: "rfx-keywords", className: "rfx-input", value: form.keywords,
+							placeholder: "裁员, 仲裁, 昇腾", onChange: onField("keywords")
+						})) : null,
+					mode === "semantic" ? field("rfx-criteria", tr("addCriteria"), tr("addCriteriaHint"),
+						react_jsx_runtime.jsx("input", {
+							id: "rfx-criteria", className: "rfx-input", value: form.criteria,
+							onChange: onField("criteria")
+						})) : null
+				] }),
+				react_jsx_runtime.jsxs("section", { className: "rfx-preview", children: [
+					react_jsx_runtime.jsx("h2", { className: "rfx-secTitle", children: tr("addPreview") }),
+					previewRow("GIVE", firstLine),
+					previewRow("WHEN", intervalLabel),
+					previewRow("TRIGGER", triggerText),
+					react_jsx_runtime.jsx("p", { className: "rfx-note", children: tr("addFiles").replace("{name}", String(form.name || "").trim() || "<name>") })
+				] }),
+				saveState.phase === "error" ? react_jsx_runtime.jsx("div", { className: "rfx-error", children: saveState.error }) : null,
+				react_jsx_runtime.jsxs("div", { className: "rfx-actions", children: [
+					react_jsx_runtime.jsx("button", {
+						type: "button", className: "rfx-btn rfx-btnPrimary", disabled: saveState.phase === "running",
+						onClick: () => { if (typeof props.onSubmit === "function") props.onSubmit() },
+						children: saveState.phase === "running" ? tr("addCreating") : tr("addCreate")
+					}),
+					react_jsx_runtime.jsx("button", {
+						type: "button", className: "rfx-btn",
+						onClick: () => { if (typeof props.onCancel === "function") props.onCancel() },
+						children: tr("addCancel")
+					})
+				] })
+			] });
+		}
+
+
 		function SourcesPage(props) {
 			const t = typeof props.t === "function" ? props.t : (k) => k;
 			const tr = (k) => srcText(t, k);
 			const [view, setView] = react.useState({ phase: "loading", data: null, error: "" });
 			const [busy, setBusy] = react.useState("");
+			const [adding, setAdding] = react.useState(false);
+			const [form, setForm] = react.useState(EMPTY_FORM);
+			const [probe, setProbe] = react.useState({ phase: "idle", data: null, error: "" });
+			const [saveState, setSaveState] = react.useState({ phase: "idle", error: "", name: "" });
 			const load = react.useCallback(async () => {
 				setView((prev) => ({ phase: prev.data ? "ready" : "loading", data: prev.data, error: "" }));
 				try {
@@ -434,6 +810,53 @@ window.__ModuleLoader__.load({
 					setView((prev) => ({ ...prev, error: e && e.message ? e.message : String(e) }));
 				} finally { setBusy(""); }
 			};
+			const setField = (key) => (event) => {
+				const value = event && event.target ? event.target.value : "";
+				setForm((prev) => ({ ...prev, [key]: value }));
+			};
+			const pickMode = (mode) => () => setForm((prev) => ({ ...prev, mode: mode }));
+			const openAdd = () => {
+				setForm(emptyForm());
+				setProbe({ phase: "idle", data: null, error: "" });
+				setSaveState({ phase: "idle", error: "", name: "" });
+				setAdding(true);
+			};
+			const closeAdd = () => {
+				setAdding(false);
+				setSaveState({ phase: "idle", error: "", name: "" });
+			};
+			const runProbe = async () => {
+				if (!String(form.cmd || "").trim()) {
+					setProbe({ phase: "error", data: null, error: tr("addNeedCmd") });
+					return;
+				}
+				setProbe({ phase: "running", data: null, error: "" });
+				try {
+					setProbe({ phase: "ok", data: await reflexCall("probe", { cmd: form.cmd }), error: "" });
+				} catch (e) {
+					setProbe({ phase: "error", data: null, error: e && e.message ? e.message : String(e) });
+				}
+			};
+			const submit = async () => {
+				const blocker = formBlocker(form);
+				if (blocker) { setSaveState({ phase: "error", error: tr(blocker), name: "" }); return; }
+				setSaveState({ phase: "running", error: "", name: "" });
+				try {
+					const body = await reflexCall("create", newSourceBody(form));
+					setView({ phase: "ready", data: body, error: "" });
+					setAdding(false);
+					setForm(emptyForm());
+					setProbe({ phase: "idle", data: null, error: "" });
+					setSaveState({ phase: "ok", error: "", name: body && body.name ? body.name : "" });
+				} catch (e) {
+					const why = e && e.message ? e.message : String(e);
+					// 宿主还是旧版插件时会回 "unknown op: create"：这句话对人没用，换成该做的事
+					const hint = /unknown op/.test(why) ? tr("addNeedReload") : why;
+					setSaveState({ phase: "error", error: hint, name: "" });
+				}
+			};
+
+			// ---------- 列表 ----------
 			const data = view.data;
 			const rows = (data && data.sources) || [];
 			const builtin = (data && data.builtin) || [];
@@ -441,10 +864,16 @@ window.__ModuleLoader__.load({
 			const summary = tr("srcSummary")
 				.replace("{n}", String(rows.length - pausedCount))
 				.replace("{m}", String(pausedCount));
+			const stateOfRow = (row) => stateOf(row, tr);
 			const rowNode = (r) => {
-				const st = stateOf(r, tr);
+				const st = stateOfRow(r);
 				return react_jsx_runtime.jsxs("tr", { children: [
-					react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsx("span", { className: "rfx-name", children: r.name }) }, "n"),
+					react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsxs("span", { className: "rfx-nameRow", children: [
+						react_jsx_runtime.jsx("span", { className: "rfx-name", children: r.name }),
+						saveState.phase === "ok" && saveState.name === r.name
+							? react_jsx_runtime.jsx("span", { className: "rfx-chip", children: tr("srcNew") })
+							: null
+					] }) }, "n"),
 					react_jsx_runtime.jsx("td", { className: "rfx-td rfx-muted", children: everyLabel(r.intervalMs, tr) }, "e"),
 					react_jsx_runtime.jsx("td", { className: "rfx-td rfx-num", children: String(r.factsToday || 0) }, "t"),
 					react_jsx_runtime.jsx("td", { className: "rfx-td rfx-num rfx-muted", children: clockLabel(r.lastFactAt) }, "l"),
@@ -459,6 +888,32 @@ window.__ModuleLoader__.load({
 					}) }, "a")
 				] }, r.name);
 			};
+
+			// ---------- 三段式（添加） ----------
+			const addPage = () => react_jsx_runtime.jsxs("div", { className: "rfx-page", children: [
+				react_jsx_runtime.jsx("style", { children: SRC_CSS }, "css"),
+				react_jsx_runtime.jsxs("div", { className: "rfx-inner", children: [
+					react_jsx_runtime.jsxs("header", { className: "rfx-head", children: [
+						react_jsx_runtime.jsxs("div", { children: [
+							react_jsx_runtime.jsx("h1", { className: "rfx-title", children: tr("srcTitle") }),
+							react_jsx_runtime.jsx("p", { className: "rfx-desc", children: tr("addDesc") })
+						] }),
+						react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: closeAdd, children: tr("srcAddBack") })
+					] }),
+					NewSourceForm({
+						form: form,
+						probe: probe,
+						saveState: saveState,
+						tr: tr,
+						onField: setField,
+						onMode: pickMode,
+						onProbe: () => void runProbe(),
+						onSubmit: () => void submit(),
+						onCancel: closeAdd
+					})
+				] })
+			] });
+			if (adding) return addPage();
 			return react_jsx_runtime.jsxs("div", { className: "rfx-page", children: [
 				react_jsx_runtime.jsx("style", { children: SRC_CSS }, "css"),
 				react_jsx_runtime.jsxs("div", { className: "rfx-inner", children: [
@@ -467,9 +922,15 @@ window.__ModuleLoader__.load({
 							react_jsx_runtime.jsx("h1", { className: "rfx-title", children: tr("srcTitle") }),
 							react_jsx_runtime.jsx("p", { className: "rfx-desc", children: tr("srcDesc") })
 						] }),
-						react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: () => void load(), children: tr("srcRefresh") })
+						react_jsx_runtime.jsxs("div", { className: "rfx-headActions", children: [
+							react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: () => void load(), children: tr("srcRefresh") }),
+							react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn rfx-btnPrimary", onClick: openAdd, children: "＋ " + tr("srcAdd") })
+						] })
 					] }),
 					react_jsx_runtime.jsxs("div", { className: "rfx-body", children: [
+						saveState.phase === "ok" && saveState.name
+							? react_jsx_runtime.jsx("div", { className: "rfx-ok", children: tr("createdOk").replace("{name}", saveState.name) })
+							: null,
 						react_jsx_runtime.jsx("div", { className: "rfx-bar", children: data ? summary : tr("srcLoading") }),
 						view.error ? react_jsx_runtime.jsxs("div", { className: "rfx-error", children: [
 							react_jsx_runtime.jsx("span", { children: tr("srcLoadFail") + "：" + view.error }),
@@ -568,6 +1029,10 @@ window.__ModuleLoader__.load({
 		exports.reflexCall = reflexCall;
 		exports.SourcesPage = SourcesPage;
 		exports.TriggerIcon = TriggerIcon;
+		exports.newSourceBody = newSourceBody;
+		exports.splitKeywords = splitKeywords;
+		exports.formBlocker = formBlocker;
+		exports.NewSourceForm = NewSourceForm;
 		exports.apply = apply;
 		exports.inject = inject;
 		return module.exports;

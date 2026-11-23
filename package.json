@@ -46,7 +46,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "test:sources": "node --test sources.test.mjs",
-    "check:sources": "node tests/sources-invariants.mjs && node tests/check-sources-panel.mjs"
+    "test:sources": "node --test sources.test.mjs tests/create-source.test.mjs",
+    "check:sources": "node tests/sources-invariants.mjs && node tests/check-sources-panel.mjs && node tests/create-source-route.mjs && node tests/check-client-bundle.mjs"
   }
 }

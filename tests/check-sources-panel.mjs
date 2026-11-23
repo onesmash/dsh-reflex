@@ -14,7 +14,17 @@ import vm from 'node:vm'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FILE = join(HERE, '..', 'client.js')
-const CASES = ['加载器收下', 'apply 注册主列页与侧栏入口', '入口 id 与主列 key 一致', '请求打到 api/reflex', '失败原因可显示']
+const CASES = [
+  '加载器收下',
+  'apply 注册主列页与侧栏入口',
+  '入口 id 与主列 key 一致',
+  '请求打到 api/reflex',
+  '失败原因可显示',
+  'P15 三段式表单拼出正确的请求体',
+  'P16 表单缺项时说清缺哪一项',
+  'P17 界面用到的文案三处词典都齐',
+  'P18 三段式表单能真的渲染出来',
+]
 
 let code
 try { code = readFileSync(FILE, 'utf8') } catch { console.error(`未判定：读不到 ${FILE}`); process.exit(2) }
@@ -113,6 +123,106 @@ checkStack(CASES[2], () => {
   assert(typeof navText === 'string' && navText.length > 0, `panellist 的 label() 没有返回可显示文字：${String(navText)}`)
 })
 
+
+// ⑤ 三段式表单 → 请求体：名称/命令 trim、间隔转数字、关键词按全角/半角逗号切分
+checkStack(CASES[5], () => {
+  const body = mod.newSourceBody({
+    name: ' x-timeline ', about: ' 盯推文 ', cmd: ' printf \'{"a":1}\\n\' ', intervalMs: '1800000',
+    mode: 'match', keywords: '裁员, 仲裁，昇腾', criteria: '',
+  })
+  assert(body.op === 'create', `op 不对：${body.op}`)
+  assert(body.name === 'x-timeline', `name 没 trim：${JSON.stringify(body.name)}`)
+  assert(body.cmd === 'printf \'{"a":1}\\n\'', `cmd 没 trim：${JSON.stringify(body.cmd)}`)
+  assert(body.intervalMs === 1800000, `intervalMs 不是数字：${JSON.stringify(body.intervalMs)}`)
+  assert(JSON.stringify(body.trigger) === JSON.stringify({ mode: 'match', keywords: ['裁员', '仲裁', '昇腾'] }),
+    `关键词切分不对：${JSON.stringify(body.trigger)}`)
+  const sem = mod.newSourceBody({ name: 'a', cmd: 'echo 1', mode: 'semantic', criteria: ' 值得处理吗 ' })
+  assert(JSON.stringify(sem.trigger) === JSON.stringify({ mode: 'semantic', criteria: '值得处理吗' }),
+    `语义判据不对：${JSON.stringify(sem.trigger)}`)
+  const off = mod.newSourceBody({ name: 'a', cmd: 'echo 1', mode: 'off' })
+  assert(JSON.stringify(off.trigger) === JSON.stringify({ mode: 'off' }), 'off 模式不该带多余字段')
+  assert(off.intervalMs === 900000, '没给间隔时要用默认值')
+})
+
+// ⑥ 本地只挡"没填完"：拦下来的那一项要能被翻成一句人话
+checkStack(CASES[6], () => {
+  assert(mod.formBlocker({}) === 'addNeedName', '空表单应报缺名字')
+  assert(mod.formBlocker({ name: 'a' }) === 'addNeedCmd', '只填名字应报缺命令')
+  assert(mod.formBlocker({ name: 'a', cmd: 'echo 1', mode: 'match', keywords: ' , ， ' }) === 'addNeedKeywords',
+    '关键词模式只有标点应报缺关键词')
+  assert(mod.formBlocker({ name: 'a', cmd: 'echo 1', mode: 'semantic', criteria: ' ' }) === 'addNeedCriteria',
+    '语义模式缺判据应报缺判据')
+  assert(mod.formBlocker({ name: 'a', cmd: 'echo 1', mode: 'all' }) === '', '填完了不该再拦')
+})
+
+// ⑦ 文案完整性：界面上 tr() 用到的每个 key，zh / en / 英文兜底三处都要有。
+//    少一处不会报错，只会让切换语言的人看到 "addProbeRc" 这种字样 —— 静态看不出来，只能这么抓。
+checkStack(CASES[7], () => {
+  const src = readFileSync(FILE, 'utf8')
+  const used = [...src.matchAll(/\btr\(["']([a-zA-Z][\w.]*)["']\)/g)].map((m) => m[1])
+  assert(used.length >= 20, `没抓到 tr() 调用（候选 ${used.length} 条），这个检查等于没跑`)
+  const blockOf = (name) => {
+    const start = src.indexOf(name)
+    const end = src.indexOf('};', start)
+    assert(start > 0 && end > start, `找不到词典块 ${name}`)
+    return src.slice(start, end)
+  }
+  const pools = { zh: blockOf('const zh = {'), en: blockOf('const en = {'), fallback: blockOf('const SRC_FALLBACK = {') }
+  const miss = []
+  for (const key of new Set(used)) {
+    for (const [name, block] of Object.entries(pools)) {
+      if (!new RegExp('\\b' + key + ':').test(block)) miss.push(name + ':' + key)
+    }
+  }
+  assert(miss.length === 0, `这些 key 缺翻译：${miss.join(', ')}`)
+})
+
+// ⑧ 真的渲染一次：把 jsx 对象走一遍，不出异常、三段都在、条件字段跟着模式变。
+//    "能通过语法检查"和"渲染出来不是白屏"是两件事 —— 后者只能这么验。
+checkStack(CASES[8], () => {
+  const textOf = (node) => {
+    if (node == null || node === false) return ''
+    if (typeof node === 'string' || typeof node === 'number') return String(node) + ' '
+    if (Array.isArray(node)) return node.map(textOf).join('')
+    const props = node.props || {}
+    const extra = [props.id, props.placeholder, props.value].filter((v) => typeof v === 'string' && v).join(' ')
+    if (typeof node.type === 'function') return extra + ' ' + textOf(node.type(props))
+    const kids = 'children' in props ? textOf(props.children) : ''
+    return extra + ' ' + kids
+  }
+  const tr = (key) => (key === 'addProbeLines' ? '{lines} lines / {valid} valid' : key)
+  const base = {
+    form: { name: 'x', about: '', cmd: 'echo 1', intervalMs: 900000, mode: 'all', keywords: '', criteria: '' },
+    probe: { phase: 'idle', data: null, error: '' },
+    saveState: { phase: 'idle', error: '', name: '' },
+    tr,
+  }
+  const plain = textOf(mod.NewSourceForm({ ...base }))
+  assert(plain.includes('GIVE') && plain.includes('WHEN') && plain.includes('TRIGGER'),
+    `三段标签没渲染齐：${plain.slice(0, 160)}`)
+  assert(plain.includes('addCreate') && plain.includes('addCancel'), '创建/取消按钮没渲染出来')
+  assert(/rfx-name/.test(plain) && /rfx-cmd/.test(plain) && /rfx-interval/.test(plain), '三个必填控件没渲染出来')
+  assert(!/rfx-keywords/.test(plain) && !/rfx-criteria/.test(plain), 'all 模式不该出现关键词/判据输入框')
+
+  const match = textOf(mod.NewSourceForm({ ...base, form: { ...base.form, mode: 'match' } }))
+  assert(/rfx-keywords/.test(match) && match.includes('裁员, 仲裁, 昇腾'), 'match 模式的关键词输入框没出现')
+  const semantic = textOf(mod.NewSourceForm({ ...base, form: { ...base.form, mode: 'semantic' } }))
+  assert(/rfx-criteria/.test(semantic), 'semantic 模式的判据输入框没出现')
+
+  const probed = textOf(mod.NewSourceForm({
+    ...base,
+    probe: { phase: 'ok', data: { lines: 3, valid: 1, bad: 2, sample: ['{"a":1}'], code: 0, timedOut: false, stderrTail: '' } },
+  }))
+  assert(/3 lines \/ 1 valid/.test(probed), `试跑结果没显示行数/合法行数：${probed.slice(-200)}`)
+  const bad = textOf(mod.NewSourceForm({
+    ...base,
+    probe: { phase: 'ok', data: { lines: 1, valid: 1, bad: 0, sample: [], code: 2, timedOut: false, stderrTail: 'boom' } },
+  }))
+  assert(/addProbeRc/.test(bad) && bad.includes('boom'), '非 0 退出与 stderr 末行没显示出来')
+
+  const failed = textOf(mod.NewSourceForm({ ...base, saveState: { phase: 'error', error: '已存在：x.sh', name: '' } }))
+  assert(failed.includes('已存在：x.sh'), '创建失败的原因没渲染到表单上')
+})
 
 const runAsync = async () => {
   // ③ 请求形状
