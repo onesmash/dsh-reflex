@@ -67,7 +67,16 @@ window.__ModuleLoader__.load({
 			addGive: "采什么",
 			addGiveHint: "一条命令，它的输出就是数据：每行一个 JSON 对象。去重、首跑建水位、失败标记都由这一层包好。",
 			addName: "名称",
-			addNameHint: "会变成文件名与 target 标签：小写字母/数字开头，可含 . _ -",
+			addNameHint: "会变成 collectors/<name>.sh 的文件名，也是 targets 里的源名。",
+			addNameRule: "a-z 0-9 . _ -",
+			addOptional: "选填",
+			addInterval: "采集间隔",
+			addProbeHint: "15 秒超时 · 只读输出，不写盘",
+			addWritesTitle: "会写入",
+			addTriggerLegend: "叫醒条件",
+			unitMin: "分钟",
+			unitHour: "小时",
+			unitSec: "秒",
 			addAbout: "一句话用途",
 			addAboutHint: "选填。写进脚本头与 schema，方便以后自己看懂。",
 			addCmd: "采集命令",
@@ -165,7 +174,16 @@ window.__ModuleLoader__.load({
 			addGive: "What it feeds",
 			addGiveHint: "One command; its output is the data, one JSON object per line. Dedup, first-run watermark and failure marking are handled here.",
 			addName: "Name",
-			addNameHint: "Becomes the file name and the target tag: lowercase letter or digit first, then . _ -",
+			addNameHint: "Becomes the file name collectors/<name>.sh and the source name in targets.",
+			addNameRule: "a-z 0-9 . _ -",
+			addOptional: "optional",
+			addInterval: "Interval",
+			addProbeHint: "15s timeout · reads output, writes nothing",
+			addWritesTitle: "Writes",
+			addTriggerLegend: "Wake condition",
+			unitMin: "min",
+			unitHour: "h",
+			unitSec: "s",
 			addAbout: "One-line purpose",
 			addAboutHint: "Optional. Written into the script header and the schema.",
 			addCmd: "Collect command",
@@ -425,10 +443,11 @@ window.__ModuleLoader__.load({
 			return body;
 		}
 		function everyLabel(ms, t) {
-			if (!Number.isFinite(ms) || ms <= 0) return t("srcFollowing");
-			if (ms % 3600000 === 0) return ms / 3600000 + " h";
-			if (ms % 60000 === 0) return ms / 60000 + " min";
-			return Math.round(ms / 1000) + " s";
+			const tr = typeof t === "function" ? t : (k) => k;
+			if (!Number.isFinite(ms) || ms <= 0) return tr("srcFollowing");
+			if (ms % 3600000 === 0) return ms / 3600000 + " " + tr("unitHour");
+			if (ms % 60000 === 0) return ms / 60000 + " " + tr("unitMin");
+			return Math.round(ms / 1000) + " " + tr("unitSec");
 		}
 		function clockLabel(ts) {
 			if (!Number.isFinite(ts) || ts <= 0) return "—";
@@ -480,7 +499,16 @@ addDesc: "Three stages: feed, every, wake. Create writes the scripts; they apply
 addGive: "What it feeds",
 addGiveHint: "One command; its output is the data, one JSON object per line. Dedup, first-run watermark and failure marking are handled here.",
 addName: "Name",
-addNameHint: "Becomes the file name and the target tag: lowercase letter or digit first, then . _ -",
+addNameHint: "Becomes the file name collectors/<name>.sh and the source name in targets.",
+addNameRule: "a-z 0-9 . _ -",
+addOptional: "optional",
+addInterval: "Interval",
+addProbeHint: "15s timeout · reads output, writes nothing",
+addWritesTitle: "Writes",
+addTriggerLegend: "Wake condition",
+unitMin: "min",
+unitHour: "h",
+unitSec: "s",
 addAbout: "One-line purpose",
 addAboutHint: "Optional. Written into the script header and the schema.",
 addCmd: "Collect command",
@@ -527,63 +555,105 @@ srcNew: "new"
 			return !value || value === key ? (SRC_FALLBACK[key] || key) : value;
 		}
 		/** 页面样式。作为 <style> 元素渲染在组件里，卸载即移除，不写 document.head。 */
-		const SRC_CSS = [
-			".rfx-page{display:flex;flex-direction:column;flex:1;min-height:0;height:100%;box-sizing:border-box;padding:0 clamp(24px,4vw,48px);color:var(--dsw-alias-label-primary,#111)}",
-			".rfx-inner{display:flex;flex-direction:column;flex:1;min-height:0;width:100%;max-width:960px;margin:0 auto}",
-			".rfx-head{flex:none;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:calc(var(--dsh-frame-top-clearance,48px) + 4px) 0 16px;border-bottom:1px solid var(--dsw-alias-border-l1,#eee)}",
-			".rfx-title{margin:0;font-size:18px;font-weight:600;line-height:1.3}",
-			".rfx-desc{margin:5px 0 0;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-secondary,#6b7280)}",
-			".rfx-body{flex:1;min-height:0;overflow:auto;padding:0 0 40px}",
-			".rfx-bar{display:flex;align-items:center;gap:10px;padding:12px 0 6px;font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280)}",
-			".rfx-table{width:100%;border-collapse:collapse;font-size:13px}",
-			".rfx-th{text-align:left;font-weight:600;color:var(--dsw-alias-label-secondary,#6b7280);padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,#e5e5e5);white-space:nowrap}",
-			".rfx-td{padding:11px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,#f0f0f0);vertical-align:middle}",
-			".rfx-name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}",
-			".rfx-muted{color:var(--dsw-alias-label-secondary,#9ca3af)}",
-			".rfx-num{font-variant-numeric:tabular-nums}",
-			".rfx-dot{display:inline-block;width:7px;height:7px;border-radius:999px;margin-right:6px;vertical-align:1px}",
-			".rfx-btn{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,#e5e5e5);background:transparent;color:inherit;border-radius:var(--dsw-radius-sm,8px);padding:4px 12px;min-height:28px;font:inherit;font-size:12px;cursor:pointer}",
-			".rfx-btn:disabled{opacity:.5;cursor:default}",
-			".rfx-btn:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.12))}",
-			".rfx-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.06);color:#c0392b;font-size:13px}",
-			".rfx-sec{margin-top:30px}",
-			".rfx-secTitle{margin:0;font-size:13px;font-weight:600}",
-			".rfx-secHint{margin:3px 0 4px;font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280)}",
-			".rfx-headActions{display:flex;align-items:center;gap:8px;flex:none}",
-			".rfx-btnPrimary{border-color:var(--dsw-alias-brand-primary,#4d6bfe);color:var(--dsw-alias-brand-primary,#4d6bfe)}",
-			".rfx-btnPrimary:hover:not(:disabled){background:var(--dsw-alias-brand-primary,#4d6bfe);color:#fff}",
-			".rfx-step{margin-top:26px;padding-top:18px;border-top:1px solid var(--dsw-alias-border-l1,#eee)}",
-			".rfx-stepHead{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}",
-			".rfx-stepNo{flex:none;width:22px;height:22px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#ddd);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280)}",
-			".rfx-stepTitle{margin:0;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}",
-			".rfx-stepEn{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.08em;color:var(--dsw-alias-label-secondary,#9ca3af);font-weight:500}",
-			".rfx-stepHint{margin:4px 0 0;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary,#6b7280)}",
-			".rfx-field{margin:12px 0}",
-			".rfx-label{display:block;font-size:12.5px;font-weight:600;margin-bottom:5px}",
-			".rfx-note{margin:4px 0 6px;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary,#6b7280)}",
-			".rfx-input,.rfx-textarea,.rfx-select{box-sizing:border-box;width:100%;font:inherit;font-size:13px;padding:7px 10px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--dsw-alias-border-l2,#e5e5e5);background:var(--dsw-alias-bg-layer-1,transparent);color:inherit}",
-			".rfx-textarea{resize:vertical;line-height:1.5}",
-			".rfx-select{width:auto;min-width:120px}",
-			".rfx-cmdRow{display:flex;align-items:flex-start;gap:8px}",
-			".rfx-cmdRow .rfx-textarea{flex:1}",
-			".rfx-radios{display:flex;flex-direction:column;gap:2px;margin:6px 0 4px}",
-			".rfx-radio{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:var(--dsw-radius-sm,8px);cursor:pointer}",
-			".rfx-radio:hover{background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.08))}",
-			".rfx-radio input{margin-top:3px;flex:none}",
-			".rfx-radioBody{display:flex;flex-direction:column;gap:2px}",
-			".rfx-radioLabel{font-size:13px}",
-			".rfx-radioHint{font-size:12px;line-height:1.45;color:var(--dsw-alias-label-secondary,#6b7280)}",
-			".rfx-ok{margin:10px 0;padding:8px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(47,133,90,.35);background:rgba(47,133,90,.06);color:#2f855a;font-size:12.5px}",
-			".rfx-bad{margin:10px 0;padding:8px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(192,112,43,.35);background:rgba(192,112,43,.06);color:#b0651f;font-size:12.5px}",
-			".rfx-pre{margin:8px 0 0;padding:8px 10px;border-radius:var(--dsw-radius-sm,8px);background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.08));font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.5;overflow:auto;max-height:160px;white-space:pre-wrap;word-break:break-all}",
-			".rfx-preview{margin-top:26px;padding:14px 16px;border-radius:var(--dsw-radius-md,10px);border:1px solid var(--dsw-alias-border-l1,#eee);background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.05))}",
-			".rfx-previewRow{display:flex;gap:12px;padding:5px 0;font-size:12.5px;align-items:baseline}",
-			".rfx-previewKey{flex:none;width:64px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;letter-spacing:.08em;color:var(--dsw-alias-label-secondary,#9ca3af)}",
-			".rfx-previewVal{flex:1;min-width:0;word-break:break-all}",
-			".rfx-actions{display:flex;align-items:center;gap:10px;margin:22px 0 40px}",
-			".rfx-nameRow{display:inline-flex;align-items:center;gap:8px}",
-			".rfx-chip{font-size:10.5px;padding:1px 6px;border-radius:999px;background:rgba(47,133,90,.12);color:#2f855a}",
-		].join("\n");
+		const SRC_CSS = `
+.rfx-page{--rfx-line:var(--dsw-alias-border-l1,#ececec);--rfx-line2:var(--dsw-alias-border-l2,#dedede);--rfx-ink2:var(--dsw-alias-label-secondary,#6b7280);--rfx-ink3:var(--dsw-alias-label-tertiary,#9ca3af);--rfx-brand:var(--dsw-alias-brand-primary,#4d6bfe);--rfx-panel:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.06));--rfx-card:var(--dsw-alias-bg-layer-1,transparent);display:flex;flex-direction:column;flex:1;min-height:0;height:100%;box-sizing:border-box;padding:0 clamp(20px,3.2vw,40px);color:var(--dsw-alias-label-primary,#111);container-type:inline-size}
+.rfx-inner{display:flex;flex-direction:column;flex:1;min-height:0;width:100%;max-width:1080px;margin:0 auto}
+.rfx-head{flex:none;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:calc(var(--dsh-frame-top-clearance,44px) + 4px) 0 14px;border-bottom:1px solid var(--rfx-line)}
+.rfx-title{margin:0;font-size:18px;font-weight:600;line-height:1.3;text-wrap:balance}
+.rfx-desc{margin:5px 0 0;font-size:12.5px;line-height:1.55;color:var(--rfx-ink2);text-wrap:pretty}
+.rfx-headActions{display:flex;align-items:center;gap:8px;flex:none}
+.rfx-body{flex:1;min-height:0;overflow:auto;padding:0 0 8px;scroll-padding-bottom:76px}
+.rfx-formBody{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;padding:0}.rfx-form{accent-color:var(--rfx-brand)}.rfx-form{flex:1;min-height:0;overflow:auto;display:block;scroll-padding-bottom:12px}
+.rfx-grid{display:grid;grid-template-columns:minmax(0,1fr) 292px;column-gap:34px;align-items:start;padding-top:6px}
+.rfx-formCol{min-width:0}
+.rfx-step{padding:22px 0 4px}
+.rfx-step+.rfx-step{border-top:1px solid var(--rfx-line);margin-top:6px}
+.rfx-stepHead{display:flex;align-items:flex-start;gap:10px;margin-bottom:14px}
+.rfx-stepNo{flex:none;width:24px;height:24px;border-radius:7px;border:1px solid var(--rfx-line2);background:var(--rfx-card);display:flex;align-items:center;justify-content:center;font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--rfx-ink3);transition:color 140ms ease,border-color 140ms ease,background-color 140ms ease}
+.rfx-stepNo--done{color:var(--rfx-brand);border-color:color-mix(in srgb,var(--rfx-brand) 45%,transparent);background:color-mix(in srgb,var(--rfx-brand) 9%,transparent)}
+.rfx-stepText{min-width:0}
+.rfx-stepTitle{margin:1px 0 0;font-size:14px;font-weight:600;line-height:1.4;display:flex;align-items:baseline;gap:8px;text-wrap:balance}
+.rfx-stepEn{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:.1em;color:var(--rfx-ink2);font-weight:500}
+.rfx-stepHint{margin:4px 0 0;font-size:12px;line-height:1.55;color:var(--rfx-ink2);text-wrap:pretty}
+.rfx-field{margin:0 0 14px}
+.rfx-labelRow{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px}
+.rfx-label{display:inline-flex;align-items:baseline;gap:4px;font-size:12.5px;font-weight:600;cursor:default}
+.rfx-req{color:var(--rfx-brand);font-weight:600}
+.rfx-opt{font-weight:400;font-size:11.5px;color:var(--rfx-ink2)}
+.rfx-rule{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;color:var(--rfx-ink2);white-space:nowrap}
+.rfx-hint{margin:6px 0 0;font-size:11.5px;line-height:1.55;color:var(--rfx-ink2);text-wrap:pretty}
+.rfx-hintInline{margin:0}
+.rfx-input,.rfx-textarea,.rfx-select{box-sizing:border-box;width:100%;font:inherit;font-size:13px;padding:8px 10px;min-height:36px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--rfx-line2);background:var(--rfx-card);color:inherit;transition:border-color 140ms ease,box-shadow 140ms ease}
+.rfx-input::placeholder,.rfx-textarea::placeholder{color:var(--rfx-ink3)}
+.rfx-textarea{resize:vertical;line-height:1.55;min-height:92px}
+.rfx-select{width:auto;min-width:132px;padding-right:8px}
+.rfx-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.rfx-form :where(input,textarea,select):focus-visible{outline:none;border-color:var(--rfx-brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--rfx-brand) 16%,transparent)}
+.rfx-cmdBar{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+.rfx-btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;flex:none;border:1px solid var(--rfx-line2);background:var(--rfx-card);color:inherit;border-radius:var(--dsw-radius-sm,8px);padding:0 12px;min-height:32px;font:inherit;font-size:12.5px;cursor:pointer;transition:background-color 140ms ease,border-color 140ms ease,transform 120ms ease,color 140ms ease}
+.rfx-btn:hover:not(:disabled){background:var(--rfx-panel);border-color:var(--rfx-ink3)}
+.rfx-btn:active:not(:disabled){transform:translateY(1px)}
+.rfx-btn:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--rfx-brand) 22%,transparent)}
+.rfx-btn:disabled{opacity:.5;cursor:default}
+.rfx-btnPrimary{border-color:var(--rfx-brand);background:var(--rfx-brand);color:#fff}
+.rfx-btnPrimary:hover:not(:disabled){background:color-mix(in srgb,var(--rfx-brand) 88%,#000);border-color:color-mix(in srgb,var(--rfx-brand) 88%,#000);color:#fff}
+.rfx-btnQuiet{border-color:transparent;background:var(--rfx-panel);color:var(--rfx-ink2)}
+.rfx-btnQuiet:hover:not(:disabled){color:var(--dsw-alias-label-primary,#111);border-color:var(--rfx-line2)}
+.rfx-modes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0;padding:0;border:0}
+.rfx-modeCard{position:relative;display:flex;align-items:flex-start;gap:9px;box-sizing:border-box;min-height:58px;padding:10px 11px;border:1px solid var(--rfx-line2);border-radius:var(--dsw-radius-md,10px);background:var(--rfx-card);cursor:pointer;transition:border-color 140ms ease,background-color 140ms ease}
+.rfx-modeCard:hover{border-color:var(--rfx-ink3)}
+.rfx-modeCard:has(input:checked){border-color:var(--rfx-brand);background:color-mix(in srgb,var(--rfx-brand) 5%,transparent)}
+.rfx-modeCard:has(input:focus-visible){outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--rfx-brand) 18%,transparent)}
+.rfx-modeBody{display:flex;flex-direction:column;gap:3px;min-width:0}
+.rfx-modeLabel{font-size:12.5px;font-weight:600;line-height:1.45}
+.rfx-modeHint{font-size:11.5px;line-height:1.5;color:var(--rfx-ink2);text-wrap:pretty}
+.rfx-sr{position:absolute;clip-path:inset(50%);overflow:hidden;width:1px;height:1px;margin:-1px;padding:0;border:0;white-space:nowrap}
+.rfx-sum{position:sticky;top:10px;margin-top:22px;padding:14px;border:1px solid var(--rfx-line);border-radius:var(--dsw-radius-md,10px);background:var(--rfx-panel)}
+.rfx-sumTitle{margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:.02em;text-wrap:balance}
+.rfx-sumRow{display:grid;grid-template-columns:52px minmax(0,1fr);gap:8px;padding:6px 0;border-top:1px solid color-mix(in srgb,var(--rfx-line) 70%,transparent)}
+.rfx-sumRow:first-of-type{border-top:0;padding-top:0}
+.rfx-sumKey{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;letter-spacing:.09em;color:var(--rfx-ink2);padding-top:2px}
+.rfx-sumVal{margin:0;font-size:12px;line-height:1.5;word-break:break-word}
+.rfx-sumVal--mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rfx-sumWrites{margin-top:10px;padding-top:10px;border-top:1px solid color-mix(in srgb,var(--rfx-line) 70%,transparent)}
+.rfx-sumSub{margin:0;font-size:11px;font-weight:600;color:var(--rfx-ink2)}
+.rfx-probe{display:flex;flex-direction:column;gap:6px;margin-top:10px;padding:9px 10px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--rfx-line2);background:var(--rfx-card);font-size:12px;line-height:1.5}
+.rfx-probe--ok{border-color:color-mix(in srgb,#2f855a 40%,transparent);background:color-mix(in srgb,#2f855a 6%,transparent)}
+.rfx-probe--bad{border-color:color-mix(in srgb,#b0651f 45%,transparent);background:color-mix(in srgb,#b0651f 7%,transparent)}
+.rfx-probeHead{display:flex;align-items:baseline;gap:8px}
+.rfx-probeMark{flex:none;width:16px;height:16px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:#fff;background:#2f855a;align-self:center}
+.rfx-probe--bad .rfx-probeMark{background:#b0651f}
+.rfx-probeText{flex:1;min-width:0}
+.rfx-probeRc{flex:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;color:var(--rfx-ink2)}
+.rfx-pre{margin:2px 0 0;padding:8px 9px;border-radius:6px;background:var(--rfx-panel);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.5;overflow:auto;max-height:150px;white-space:pre-wrap;word-break:break-all}
+.rfx-saveMsg{flex:1;min-width:0;font-size:12px;line-height:1.45;color:#b0392b}
+.rfx-saveMsg:empty{min-height:0}
+
+.rfx-barActions{flex:none;display:flex;align-items:center;justify-content:flex-end;gap:12px;margin:0 -4px;padding:10px 4px 12px;border-top:1px solid var(--rfx-line);background:var(--dsw-alias-bg-layer-1,#fff)}
+.rfx-barBtns{display:flex;align-items:center;gap:8px;flex:none}
+.rfx-btnPrimary.rfx-btn{min-width:84px}
+.rfx-bar{display:flex;align-items:center;gap:10px;padding:12px 0 4px;font-size:12px;color:var(--rfx-ink2)}
+.rfx-table{width:100%;border-collapse:collapse;font-size:13px}
+.rfx-th{text-align:left;font-weight:600;color:var(--rfx-ink2);padding:8px 10px;border-bottom:1px solid var(--rfx-line2);white-space:nowrap}
+.rfx-td{padding:11px 10px;border-bottom:1px solid var(--rfx-line);vertical-align:middle}
+.rfx-name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.rfx-muted{color:var(--rfx-ink3)}
+.rfx-num{font-variant-numeric:tabular-nums}
+.rfx-dot{display:inline-block;width:7px;height:7px;border-radius:999px;margin-right:6px;vertical-align:1px}
+.rfx-nameRow{display:inline-flex;align-items:center;gap:8px}
+.rfx-chip{font-size:10.5px;padding:1px 6px;border-radius:999px;background:color-mix(in srgb,#2f855a 12%,transparent);color:#2f855a}
+.rfx-sec{margin-top:30px}
+.rfx-secTitle{margin:0;font-size:13px;font-weight:600}
+.rfx-secHint{margin:3px 0 4px;font-size:12px;color:var(--rfx-ink2)}
+.rfx-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.06);color:#c0392b;font-size:13px}
+.rfx-ok{margin:10px 0;padding:9px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(47,133,90,.35);background:rgba(47,133,90,.06);color:#2f855a;font-size:12.5px}
+
+@container (max-width:900px){.rfx-grid{grid-template-columns:minmax(0,1fr)}.rfx-sum{position:static;margin-top:8px;order:2}.rfx-barActions{order:3}}
+@container (max-width:560px){.rfx-modes{grid-template-columns:1fr}.rfx-barActions{flex-wrap:wrap}.rfx-barBtns{width:100%}.rfx-barBtns .rfx-btn{flex:1}}
+@media (max-width:640px){.rfx-grid{grid-template-columns:minmax(0,1fr)}.rfx-sum{position:static;margin-top:10px}.rfx-modes{grid-template-columns:1fr}.rfx-barActions{flex-wrap:wrap}.rfx-barBtns{width:100%}.rfx-barBtns .rfx-btn{flex:1}}
+@media (pointer:coarse){.rfx-btn{min-height:44px}.rfx-modeCard{min-height:64px}.rfx-input,.rfx-textarea,.rfx-select{min-height:44px}}
+@media (prefers-reduced-motion:reduce){.rfx-page *{transition:none!important;animation:none!important}}
+`;
 		/** 关键词切分：半角/全角逗号、分号、顿号、换行都算分隔符 —— 用户不该被标点卡住。 */
 		function splitKeywords(text) {
 			return String(text || "")
@@ -641,38 +711,12 @@ srcNew: "new"
 			const tr = typeof props.tr === "function" ? props.tr : (k) => k;
 			const onField = typeof props.onField === "function" ? props.onField : () => () => {};
 			const onMode = typeof props.onMode === "function" ? props.onMode : () => () => {};
+			const onSubmit = typeof props.onSubmit === "function" ? props.onSubmit : () => {};
+			const onCancel = typeof props.onCancel === "function" ? props.onCancel : () => {};
+			const onProbe = typeof props.onProbe === "function" ? props.onProbe : () => {};
 			const mode = form.mode || "all";
-			const field = (id, label, hint, control) => react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
-				react_jsx_runtime.jsx("label", { className: "rfx-label", htmlFor: id, children: label }, "l"),
-				hint ? react_jsx_runtime.jsx("p", { className: "rfx-note", children: hint }, "h") : null,
-				control
-			] }, id);
-			const stepHead = (en, no, title, hint) => react_jsx_runtime.jsxs("div", { className: "rfx-stepHead", children: [
-				react_jsx_runtime.jsx("span", { className: "rfx-stepNo", children: String(no) }, "n"),
-				react_jsx_runtime.jsxs("div", { children: [
-					react_jsx_runtime.jsxs("h2", { className: "rfx-stepTitle", children: [
-						react_jsx_runtime.jsx("span", { className: "rfx-stepEn", children: en }, "e"),
-						title
-					] }),
-					hint ? react_jsx_runtime.jsx("p", { className: "rfx-stepHint", children: hint }) : null
-				] }, "b")
-			] });
-			const modeOption = (value, label, hint) => react_jsx_runtime.jsxs("label", { className: "rfx-radio", children: [
-				react_jsx_runtime.jsx("input", {
-					type: "radio", name: "rfx-trigger", value: value,
-					checked: mode === value,
-					onChange: onMode(value)
-				}, "i"),
-				react_jsx_runtime.jsxs("span", { className: "rfx-radioBody", children: [
-					react_jsx_runtime.jsx("span", { className: "rfx-radioLabel", children: label }, "l"),
-					react_jsx_runtime.jsx("span", { className: "rfx-radioHint", children: hint }, "h")
-				] }, "b")
-			] }, value);
-			const previewRow = (label, value) => react_jsx_runtime.jsxs("div", { className: "rfx-previewRow", children: [
-				react_jsx_runtime.jsx("span", { className: "rfx-previewKey", children: label }),
-				react_jsx_runtime.jsx("span", { className: "rfx-previewVal", children: value })
-			] }, label);
-			const firstLine = String(form.cmd || "").trim().split("\n")[0] || tr("addCmd");
+			const name = String(form.name || "").trim();
+			const firstLine = String(form.cmd || "").trim().split("\n")[0] || "—";
 			const intervalLabel = everyLabel(Number(form.intervalMs) || 900000, tr);
 			const triggerText = mode === "match"
 				? tr("addModeMatch") + " · " + (splitKeywords(form.keywords).join(" / ") || "—")
@@ -682,107 +726,208 @@ srcNew: "new"
 			// 零输出是「本轮没数据」，不算坏；非 0 退出与"有行但不合法"才是要去修的
 			const probeBad = probe.phase === "ok" && probe.data
 				&& ((probe.data.lines > 0 && probe.data.valid !== probe.data.lines) || probe.data.code !== 0);
-			const probeNode = probe.phase === "running"
-				? react_jsx_runtime.jsx("p", { className: "rfx-note", children: tr("addProbing") })
-				: probe.phase === "error"
-					? react_jsx_runtime.jsx("div", { className: "rfx-error", children: probe.error })
-					: probe.phase === "ok" && probe.data
-						? react_jsx_runtime.jsxs("div", { className: probeBad ? "rfx-bad" : "rfx-ok", children: [
-							react_jsx_runtime.jsx("div", { children: probe.data.lines === 0
-								? tr("addProbeEmpty")
-								: tr("addProbeLines")
-									.replace("{lines}", String(probe.data.lines))
-									.replace("{valid}", String(probe.data.valid)) }),
-							probe.data.timedOut ? react_jsx_runtime.jsx("div", { children: tr("addProbeTimeout") }) : null,
-							!probe.data.timedOut && probe.data.code !== 0
-								? react_jsx_runtime.jsx("div", { children: tr("addProbeRc").replace("{code}", String(probe.data.code)) })
-								: null,
-							probe.data.stderrTail ? react_jsx_runtime.jsx("div", { className: "rfx-mono", children: tr("addProbeStderr") + probe.data.stderrTail }) : null,
-							probe.data.sample && probe.data.sample.length
-								? react_jsx_runtime.jsx("pre", { className: "rfx-pre", children: probe.data.sample.join("\n") })
-								: null
-						] })
-						: null;
-			return react_jsx_runtime.jsxs("div", { className: "rfx-body", children: [
-				react_jsx_runtime.jsxs("section", { className: "rfx-step", children: [
-					stepHead("FEED", 1, tr("addGive"), tr("addGiveHint")),
-					field("rfx-name", tr("addName"), tr("addNameHint"),
-						react_jsx_runtime.jsx("input", {
-							id: "rfx-name", className: "rfx-input rfx-mono", value: form.name,
-							placeholder: "x-timeline", onChange: onField("name")
-						})),
-					field("rfx-about", tr("addAbout"), tr("addAboutHint"),
-						react_jsx_runtime.jsx("input", {
-							id: "rfx-about", className: "rfx-input", value: form.about,
-							onChange: onField("about")
-						})),
-					field("rfx-cmd", tr("addCmd"), tr("addCmdHint"),
-						react_jsx_runtime.jsxs("div", { className: "rfx-cmdRow", children: [
-							react_jsx_runtime.jsx("textarea", {
-								id: "rfx-cmd", className: "rfx-textarea rfx-mono", rows: 4, spellCheck: false,
-								value: form.cmd, onChange: onField("cmd")
-							}),
-							react_jsx_runtime.jsx("button", {
-								type: "button", className: "rfx-btn", disabled: probe.phase === "running",
-								onClick: () => { if (typeof props.onProbe === "function") props.onProbe() },
-								children: probe.phase === "running" ? tr("addProbing") : tr("addProbe")
-							})
-						] })),
-					probeNode
-				] }),
-				react_jsx_runtime.jsxs("section", { className: "rfx-step", children: [
-					stepHead("EVERY", 2, tr("addWhen"), tr("addWhenHint")),
-					field("rfx-interval", tr("addWhen"), "",
-						react_jsx_runtime.jsx("select", {
-							id: "rfx-interval", className: "rfx-select", value: String(form.intervalMs),
-							onChange: onField("intervalMs"),
-							children: INTERVAL_CHOICES.map((ms) => react_jsx_runtime.jsx("option", {
-								value: String(ms), children: everyLabel(ms, tr)
-							}, String(ms)))
-						}))
-				] }),
-				react_jsx_runtime.jsxs("section", { className: "rfx-step", children: [
-					stepHead("TRIGGER", 3, tr("addTrigger"), tr("addTriggerHint")),
-					react_jsx_runtime.jsxs("div", { className: "rfx-radios", children: [
-						modeOption("all", tr("addModeAll"), tr("addModeAllHint")),
-						modeOption("match", tr("addModeMatch"), tr("addModeMatchHint")),
-						modeOption("semantic", tr("addModeSemantic"), tr("addModeSemanticHint")),
-						modeOption("off", tr("addModeOff"), tr("addModeOffHint"))
+			const stepHead = (id, no, en, title, hint, done) => react_jsx_runtime.jsxs("header", { className: "rfx-stepHead", children: [
+				react_jsx_runtime.jsx("span", {
+					className: done ? "rfx-stepNo rfx-stepNo--done" : "rfx-stepNo",
+					"aria-hidden": "true", children: String(no)
+				}, "n"),
+				react_jsx_runtime.jsxs("div", { className: "rfx-stepText", children: [
+					react_jsx_runtime.jsxs("h2", { className: "rfx-stepTitle", id: id, children: [
+						react_jsx_runtime.jsx("span", { className: "rfx-stepEn", children: en }, "e"),
+						title
 					] }),
-					mode === "match" ? field("rfx-keywords", tr("addKeywords"), tr("addKeywordsHint"),
-						react_jsx_runtime.jsx("input", {
-							id: "rfx-keywords", className: "rfx-input", value: form.keywords,
-							placeholder: "裁员, 仲裁, 昇腾", onChange: onField("keywords")
-						})) : null,
-					mode === "semantic" ? field("rfx-criteria", tr("addCriteria"), tr("addCriteriaHint"),
-						react_jsx_runtime.jsx("input", {
-							id: "rfx-criteria", className: "rfx-input", value: form.criteria,
-							onChange: onField("criteria")
-						})) : null
-				] }),
-				react_jsx_runtime.jsxs("section", { className: "rfx-preview", children: [
-					react_jsx_runtime.jsx("h2", { className: "rfx-secTitle", children: tr("addPreview") }),
-					previewRow("FEED", firstLine),
-					previewRow("EVERY", intervalLabel),
-					previewRow("TRIGGER", triggerText),
-					react_jsx_runtime.jsx("p", { className: "rfx-note", children: tr("addFiles").split("{name}").join(String(form.name || "").trim() || "<name>") })
-				] }),
-				saveState.phase === "error" ? react_jsx_runtime.jsx("div", { className: "rfx-error", children: saveState.error }) : null,
-				react_jsx_runtime.jsxs("div", { className: "rfx-actions", children: [
-					react_jsx_runtime.jsx("button", {
-						type: "button", className: "rfx-btn rfx-btnPrimary", disabled: saveState.phase === "running",
-						onClick: () => { if (typeof props.onSubmit === "function") props.onSubmit() },
-						children: saveState.phase === "running" ? tr("addCreating") : tr("addCreate")
-					}),
-					react_jsx_runtime.jsx("button", {
-						type: "button", className: "rfx-btn",
-						onClick: () => { if (typeof props.onCancel === "function") props.onCancel() },
-						children: tr("addCancel")
-					})
-				] })
+					react_jsx_runtime.jsx("p", { className: "rfx-stepHint", children: hint })
+				] }, "t")
 			] });
+			const required = react_jsx_runtime.jsx("span", { className: "rfx-req", "aria-hidden": "true", children: "*" }, "r");
+			const modeOption = (value, label, hint) => react_jsx_runtime.jsxs("label", { className: "rfx-modeCard", children: [
+				react_jsx_runtime.jsx("input", {
+					type: "radio", name: "rfx-trigger", value: value,
+					checked: mode === value,
+					onChange: onMode(value)
+				}, "i"),
+				react_jsx_runtime.jsxs("span", { className: "rfx-modeBody", children: [
+					react_jsx_runtime.jsx("span", { className: "rfx-modeLabel", children: label }, "l"),
+					react_jsx_runtime.jsx("span", { className: "rfx-modeHint", children: hint }, "h")
+				] }, "b")
+			] }, value);
+			const probeNode = () => {
+				if (probe.phase === "running") return react_jsx_runtime.jsx("p", { className: "rfx-hint", role: "status", children: tr("addProbing") }, "run");
+				if (probe.phase === "error") return react_jsx_runtime.jsxs("div", { className: "rfx-probe rfx-probe--bad", role: "status", children: [
+					react_jsx_runtime.jsx("span", { className: "rfx-probeMark", "aria-hidden": "true", children: "!" }, "m"),
+					react_jsx_runtime.jsx("span", { children: probe.error }, "t")
+				] }, "err");
+				if (probe.phase !== "ok" || !probe.data) return null;
+				const d = probe.data;
+				const verdict = Number(d.lines) === 0
+					? tr("addProbeEmpty")
+					: tr("addProbeLines").replace("{lines}", String(d.lines)).replace("{valid}", String(d.valid));
+				return react_jsx_runtime.jsxs("div", { className: "rfx-probe " + (probeBad ? "rfx-probe--bad" : "rfx-probe--ok"), role: "status", children: [
+					react_jsx_runtime.jsxs("div", { className: "rfx-probeHead", children: [
+						react_jsx_runtime.jsx("span", { className: "rfx-probeMark", "aria-hidden": "true", children: probeBad ? "!" : "✓" }, "m"),
+						react_jsx_runtime.jsx("span", { className: "rfx-probeText", children: verdict }, "t"),
+						react_jsx_runtime.jsx("span", { className: "rfx-probeRc", children: "exit " + String(d.code) }, "c")
+					] }),
+					d.timedOut ? react_jsx_runtime.jsx("p", { className: "rfx-hint", children: tr("addProbeTimeout") }, "to") : null,
+					!d.timedOut && Number(d.code) !== 0 ? react_jsx_runtime.jsx("p", { className: "rfx-hint", children: tr("addProbeRc").replace("{code}", String(d.code)) }, "rc") : null,
+					d.stderrTail ? react_jsx_runtime.jsx("p", { className: "rfx-hint rfx-mono", children: tr("addProbeStderr") + d.stderrTail }, "se") : null,
+					d.sample && d.sample.length ? react_jsx_runtime.jsx("pre", { className: "rfx-pre", children: d.sample.join("\n") }, "s") : null
+				] }, "ok");
+			};
+			const filesText = tr("addFiles").split("{name}").join(name || "<name>");
+			return react_jsx_runtime.jsxs("div", { className: "rfx-body rfx-formBody", children: [
+				react_jsx_runtime.jsxs("form", {
+					id: "rfx-add-source", className: "rfx-form", noValidate: true,
+					onSubmit: (event) => { if (event && typeof event.preventDefault === "function") event.preventDefault(); onSubmit() },
+					children: [
+						react_jsx_runtime.jsxs("div", { className: "rfx-grid", children: [
+							react_jsx_runtime.jsxs("div", { className: "rfx-formCol", children: [
+								react_jsx_runtime.jsxs("section", { className: "rfx-step", "aria-labelledby": "rfx-step-feed", children: [
+									stepHead("rfx-step-feed", 1, "FEED", tr("addGive"), tr("addGiveHint"), Boolean(name && String(form.cmd || "").trim())),
+									react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
+										react_jsx_runtime.jsxs("div", { className: "rfx-labelRow", children: [
+											react_jsx_runtime.jsxs("label", { className: "rfx-label", htmlFor: "rfx-name", children: [tr("addName"), required] }, "l"),
+											react_jsx_runtime.jsx("span", { className: "rfx-rule", children: tr("addNameRule") }, "r")
+										] }),
+										react_jsx_runtime.jsx("input", {
+											id: "rfx-name", className: "rfx-input rfx-mono", value: form.name, required: true,
+											placeholder: "x-timeline", autoComplete: "off", spellCheck: false,
+											autoCapitalize: "none", autoCorrect: "off", "aria-describedby": "rfx-name-hint",
+											onChange: onField("name")
+										}, "i"),
+										react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-name-hint", children: tr("addNameHint") }, "h")
+									] }),
+									react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
+										react_jsx_runtime.jsxs("label", { className: "rfx-label", htmlFor: "rfx-about", children: [
+											tr("addAbout"),
+											react_jsx_runtime.jsx("span", { className: "rfx-opt", children: tr("addOptional") }, "o")
+										] }),
+										react_jsx_runtime.jsx("input", {
+											id: "rfx-about", className: "rfx-input", value: form.about, autoComplete: "off",
+											"aria-describedby": "rfx-about-hint", onChange: onField("about")
+										}, "i"),
+										react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-about-hint", children: tr("addAboutHint") }, "h")
+									] }),
+									react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
+										react_jsx_runtime.jsxs("label", { className: "rfx-label", htmlFor: "rfx-cmd", children: [tr("addCmd"), required] }),
+										react_jsx_runtime.jsx("textarea", {
+											id: "rfx-cmd", className: "rfx-textarea rfx-mono", rows: 4, spellCheck: false,
+											required: true, value: form.cmd, "aria-describedby": "rfx-cmd-hint rfx-probe-hint",
+											onChange: onField("cmd")
+										}, "i"),
+										react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-cmd-hint", children: tr("addCmdHint") }, "h"),
+										react_jsx_runtime.jsxs("div", { className: "rfx-cmdBar", children: [
+											react_jsx_runtime.jsx("button", {
+												type: "button", className: "rfx-btn rfx-btnQuiet", disabled: probe.phase === "running",
+												onClick: onProbe, "aria-describedby": "rfx-probe-hint",
+												children: probe.phase === "running" ? tr("addProbing") : tr("addProbe")
+											}, "p"),
+											react_jsx_runtime.jsx("span", { className: "rfx-hint rfx-hintInline", id: "rfx-probe-hint", children: tr("addProbeHint") }, "h")
+										] }),
+										probeNode()
+									] })
+								] }),
+								react_jsx_runtime.jsxs("section", { className: "rfx-step", "aria-labelledby": "rfx-step-every", children: [
+									stepHead("rfx-step-every", 2, "EVERY", tr("addWhen"), tr("addWhenHint"), true),
+									react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
+										react_jsx_runtime.jsx("label", { className: "rfx-label", htmlFor: "rfx-interval", children: tr("addInterval") }, "l"),
+										react_jsx_runtime.jsx("select", {
+											id: "rfx-interval", className: "rfx-select", value: String(form.intervalMs),
+											onChange: onField("intervalMs"),
+											children: INTERVAL_CHOICES.map((ms) => react_jsx_runtime.jsx("option", {
+												value: String(ms), children: everyLabel(ms, tr)
+											}, String(ms)))
+										}, "s")
+									] })
+								] }),
+								react_jsx_runtime.jsxs("section", { className: "rfx-step", "aria-labelledby": "rfx-step-trigger", children: [
+									stepHead("rfx-step-trigger", 3, "TRIGGER", tr("addTrigger"), tr("addTriggerHint"), true),
+									react_jsx_runtime.jsxs("fieldset", { className: "rfx-modes", children: [
+										react_jsx_runtime.jsx("legend", { className: "rfx-sr", children: tr("addTriggerLegend") }, "lg"),
+										modeOption("all", tr("addModeAll"), tr("addModeAllHint")),
+										modeOption("match", tr("addModeMatch"), tr("addModeMatchHint")),
+										modeOption("semantic", tr("addModeSemantic"), tr("addModeSemanticHint")),
+										modeOption("off", tr("addModeOff"), tr("addModeOffHint"))
+									] }),
+									mode === "match" ? react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
+										react_jsx_runtime.jsxs("label", { className: "rfx-label", htmlFor: "rfx-keywords", children: [tr("addKeywords"), required] }, "l"),
+										react_jsx_runtime.jsx("input", {
+											id: "rfx-keywords", className: "rfx-input", value: form.keywords,
+											placeholder: "裁员, 仲裁, 昇腾", "aria-describedby": "rfx-keywords-hint",
+											onChange: onField("keywords")
+										}, "i"),
+										react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-keywords-hint", children: tr("addKeywordsHint") }, "h")
+									] }) : null,
+									mode === "semantic" ? react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
+										react_jsx_runtime.jsxs("label", { className: "rfx-label", htmlFor: "rfx-criteria", children: [tr("addCriteria"), required] }, "l"),
+										react_jsx_runtime.jsx("input", {
+											id: "rfx-criteria", className: "rfx-input", value: form.criteria,
+											"aria-describedby": "rfx-criteria-hint", onChange: onField("criteria")
+										}, "i"),
+										react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-criteria-hint", children: tr("addCriteriaHint") }, "h")
+									] }) : null
+								] })
+							] }),
+							react_jsx_runtime.jsxs("aside", { className: "rfx-sum", "aria-labelledby": "rfx-sum-title", children: [
+								react_jsx_runtime.jsx("h2", { className: "rfx-sumTitle", id: "rfx-sum-title", children: tr("addPreview") }, "t"),
+								react_jsx_runtime.jsxs("div", { className: "rfx-sumRow", children: [
+									react_jsx_runtime.jsx("span", { className: "rfx-sumKey", children: "FEED" }, "k"),
+									react_jsx_runtime.jsx("p", { className: "rfx-sumVal rfx-sumVal--mono", title: firstLine, children: firstLine }, "v")
+								] }, "feed"),
+								react_jsx_runtime.jsxs("div", { className: "rfx-sumRow", children: [
+									react_jsx_runtime.jsx("span", { className: "rfx-sumKey", children: "EVERY" }, "k"),
+									react_jsx_runtime.jsx("p", { className: "rfx-sumVal", children: intervalLabel }, "v")
+								] }, "every"),
+								react_jsx_runtime.jsxs("div", { className: "rfx-sumRow", children: [
+									react_jsx_runtime.jsx("span", { className: "rfx-sumKey", children: "TRIGGER" }, "k"),
+									react_jsx_runtime.jsx("p", { className: "rfx-sumVal", children: triggerText }, "v")
+								] }, "trigger"),
+								react_jsx_runtime.jsxs("div", { className: "rfx-sumWrites", children: [
+									react_jsx_runtime.jsx("h3", { className: "rfx-sumSub", children: tr("addWritesTitle") }, "t"),
+									react_jsx_runtime.jsx("p", { className: "rfx-hint", children: filesText }, "p")
+								] }, "writes")
+							] })
+						] })
+					]
+				}, "form"),
+				react_jsx_runtime.jsxs("div", { className: "rfx-barActions", children: [
+					react_jsx_runtime.jsx("div", {
+						className: "rfx-saveMsg", role: "status", "aria-live": "polite",
+						children: saveState.phase === "error" ? saveState.error : ""
+					}, "msg"),
+					react_jsx_runtime.jsxs("div", { className: "rfx-barBtns", children: [
+						react_jsx_runtime.jsx("button", {
+							type: "button", className: "rfx-btn", onClick: onCancel,
+							children: tr("addCancel")
+						}, "c"),
+						react_jsx_runtime.jsx("button", {
+							type: "submit", form: "rfx-add-source", className: "rfx-btn rfx-btnPrimary",
+							disabled: saveState.phase === "running",
+							children: saveState.phase === "running" ? tr("addCreating") : tr("addCreate")
+						}, "s")
+					] }, "b")
+				] }, "bar")
+			] }, "body");
 		}
 
+		/** 整页：标题 + 返回 + 表单。拆出来是为了能单独渲染成静态页面做视觉核对（tests/render-add-source.mjs）。 */
+		function AddSourcePage(props) {
+			const tr = typeof props.tr === "function" ? props.tr : (k) => k;
+			const onBack = typeof props.onBack === "function" ? props.onBack : () => {};
+			return react_jsx_runtime.jsxs("div", { className: "rfx-page", children: [
+				react_jsx_runtime.jsx("style", { children: SRC_CSS }, "css"),
+				react_jsx_runtime.jsxs("div", { className: "rfx-inner", children: [
+					react_jsx_runtime.jsxs("header", { className: "rfx-head", children: [
+						react_jsx_runtime.jsxs("div", { children: [
+							react_jsx_runtime.jsx("h1", { className: "rfx-title", children: tr("srcTitle") }, "t"),
+							react_jsx_runtime.jsx("p", { className: "rfx-desc", children: tr("addDesc") }, "d")
+						] }, "h"),
+						react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: onBack, children: tr("srcAddBack") }, "b")
+					] }),
+					NewSourceForm(props)
+				] })
+			] }, "page");
+		}
 
 		function SourcesPage(props) {
 			const t = typeof props.t === "function" ? props.t : (k) => k;
@@ -839,7 +984,14 @@ srcNew: "new"
 			};
 			const submit = async () => {
 				const blocker = formBlocker(form);
-				if (blocker) { setSaveState({ phase: "error", error: tr(blocker), name: "" }); return; }
+				if (blocker) {
+					const fieldId = { addNeedName: "rfx-name", addNeedCmd: "rfx-cmd", addNeedKeywords: "rfx-keywords", addNeedCriteria: "rfx-criteria" }[blocker];
+					const el = fieldId && typeof document !== "undefined" && typeof document.getElementById === "function"
+						? document.getElementById(fieldId) : null;
+					if (el && typeof el.focus === "function") el.focus();
+					setSaveState({ phase: "error", error: tr(blocker), name: "" });
+					return;
+				}
 				setSaveState({ phase: "running", error: "", name: "" });
 				try {
 					const body = await reflexCall("create", newSourceBody(form));
@@ -890,30 +1042,15 @@ srcNew: "new"
 			};
 
 			// ---------- 三段式（添加） ----------
-			const addPage = () => react_jsx_runtime.jsxs("div", { className: "rfx-page", children: [
-				react_jsx_runtime.jsx("style", { children: SRC_CSS }, "css"),
-				react_jsx_runtime.jsxs("div", { className: "rfx-inner", children: [
-					react_jsx_runtime.jsxs("header", { className: "rfx-head", children: [
-						react_jsx_runtime.jsxs("div", { children: [
-							react_jsx_runtime.jsx("h1", { className: "rfx-title", children: tr("srcTitle") }),
-							react_jsx_runtime.jsx("p", { className: "rfx-desc", children: tr("addDesc") })
-						] }),
-						react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: closeAdd, children: tr("srcAddBack") })
-					] }),
-					NewSourceForm({
-						form: form,
-						probe: probe,
-						saveState: saveState,
-						tr: tr,
-						onField: setField,
-						onMode: pickMode,
-						onProbe: () => void runProbe(),
-						onSubmit: () => void submit(),
-						onCancel: closeAdd
-					})
-				] })
-			] });
-			if (adding) return addPage();
+			if (adding) return AddSourcePage({
+				form, probe, saveState, tr,
+				onField: setField,
+				onMode: pickMode,
+				onProbe: () => void runProbe(),
+				onSubmit: () => void submit(),
+				onCancel: closeAdd,
+				onBack: closeAdd
+			});
 			return react_jsx_runtime.jsxs("div", { className: "rfx-page", children: [
 				react_jsx_runtime.jsx("style", { children: SRC_CSS }, "css"),
 				react_jsx_runtime.jsxs("div", { className: "rfx-inner", children: [
@@ -1033,6 +1170,10 @@ srcNew: "new"
 		exports.splitKeywords = splitKeywords;
 		exports.formBlocker = formBlocker;
 		exports.NewSourceForm = NewSourceForm;
+		exports.AddSourcePage = AddSourcePage;
+		exports.SRC_CSS = SRC_CSS;
+		exports.zh = zh;
+		exports.en = en;
 		exports.apply = apply;
 		exports.inject = inject;
 		return module.exports;

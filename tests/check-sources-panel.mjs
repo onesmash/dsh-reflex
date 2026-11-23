@@ -185,7 +185,7 @@ checkStack(CASES[8], () => {
     if (typeof node === 'string' || typeof node === 'number') return String(node) + ' '
     if (Array.isArray(node)) return node.map(textOf).join('')
     const props = node.props || {}
-    const extra = [props.id, props.placeholder, props.value].filter((v) => typeof v === 'string' && v).join(' ')
+    const extra = [props.id, props.placeholder, props.value, props.className].filter((v) => typeof v === 'string' && v).join(' ')
     if (typeof node.type === 'function') return extra + ' ' + textOf(node.type(props))
     const kids = 'children' in props ? textOf(props.children) : ''
     return extra + ' ' + kids
@@ -227,6 +227,38 @@ checkStack(CASES[8], () => {
   // {name} 出现两次（collectors/ 与 targets/），只替换第一处会让界面上留着 "{name}" 字样
   assert(!/\{name\}/.test(plain), `占位符没替换干净：${(plain.match(/[^ ]*\{name\}[^ ]*/) || [''])[0]}`)
   assert(plain.includes('collectors/x.sh') && plain.includes('targets/x.sh'), '预览里没写出将会生成的文件名')
+
+  // 版面：表单 + 右侧「将要发生什么」+ 常驻操作条；三段各只出现一次标签（之前 EVERY 的段标题与字段标签重复）
+  assert(/rfx-form/.test(plain), '表单根节点没渲染出来')
+  assert(/rfx-sum/.test(plain), '「将要发生什么」摘要面板没渲染出来')
+  assert(/rfx-barActions/.test(plain), '常驻操作条没渲染出来（创建按钮要随时可见）')
+  const modeCards = (plain.match(/rfx-modeCard/g) || []).length
+  assert(modeCards === 4, `四张触发方式卡片没渲染齐：${modeCards}`)
+  const whenLabels = (plain.match(/addWhen(?![A-Za-z])/g) || []).length
+  assert(whenLabels === 1, `EVERY 段的「多久采一次」出现了 ${whenLabels} 次（段标题与字段标签重复）`)
+  assert(/addNameRule/.test(plain), '名字的允许字符没写在字段旁（只能靠提交后才报错）')
+  assert(/addProbeHint/.test(plain), '试跑的代价（15 秒超时 / 不写盘）没写在按钮旁')
+  assert(/addWritesTitle/.test(plain), '摘要里没有「会写入哪些文件」')
+
+  // 操作条必须与滚动区分开：塞回表单里就会被 .rfx-form 的 overflow 裁掉，跟着内容一起滚走
+  const root = mod.NewSourceForm(base)
+  assert(/rfx-formBody/.test(root.props.className || ''), '表单根节点缺少 rfx-formBody')
+  const kids = root.props.children || []
+  assert(Array.isArray(kids) && kids.length === 2, `滚动区与操作条没有分成两块（children=${kids.length}）`)
+  assert(kids[0] && /rfx-form/.test(kids[0].props.className || ''), '第一块不是表单')
+  assert(kids[1] && /rfx-barActions/.test(kids[1].props.className || ''), '第二块不是常驻操作条')
+  const barText = textOf(kids[1])
+  assert(barText.includes('addCreate') && barText.includes('addCancel'), '操作条里没有创建/取消')
+  const submitBtns = []
+  const walk = (n) => {
+    if (!n || typeof n !== 'object') return
+    if (Array.isArray(n)) { n.forEach(walk); return }
+    const p = n.props || {}
+    if (p.type === 'submit') submitBtns.push(p)
+    if ('children' in p) walk(p.children)
+  }
+  walk(kids[1])
+  assert(submitBtns.length === 1 && submitBtns[0].form === 'rfx-add-source', '创建按钮没有用 form 属性挂到表单上（回车/点击都提交不了）')
 
   const failed = textOf(mod.NewSourceForm({ ...base, saveState: { phase: 'error', error: '已存在：x.sh', name: '' } }))
   assert(failed.includes('已存在：x.sh'), '创建失败的原因没渲染到表单上')

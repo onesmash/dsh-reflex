@@ -172,8 +172,8 @@ const MUTATIONS = [
     prop: 'P18',
     file: 'client.js',
     runner: 'panel',
-    from: '\t\t\t\t\tmode === "match" ? field("rfx-keywords"',
-    to: '\t\t\t\t\ttrue ? field("rfx-keywords"',
+    from: 'mode === "match" ? react_jsx_runtime.jsxs("div", { className: "rfx-field"',
+    to: 'true ? react_jsx_runtime.jsxs("div", { className: "rfx-field"',
   },
   {
     name: 'P6 没有 manifest 就返回空',
