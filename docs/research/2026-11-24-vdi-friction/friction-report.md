@@ -172,7 +172,9 @@ P10–P18 的破坏变体都是「改生成器 / 改接线 / 删一条词典」�
 - **N2 没有把 `--strict` 改成默认**：那会把「守住没写范围」这类风格提示也变成门，假警报会淹没真问题。改成「证据类硬告警默认失败、风格类仍靠 `--strict`」——同一目标，不动另一批判据。
 - **N6 没有另开一张「不建模」表**：N1 的新规则不允许第二张表（否则无法区分「截断」与「第二张表」）。改成「同列但词汇封闭 + 必须写谁覆盖」，机器能查，表也只有一张。
 
-验证时顺手抓到的第 11 条（同类，已一并修）：`examples/view-window` 的冒烟命令第二次跑必然 `exit 2`——`statechart` 只肯写空目录，而 README 没写要先清。README 已加 `rm -rf out outbug` 并说明原因。
+验证时顺手抓到的第 11 条（同类，已一并修）：`examples/view-window` 的冒烟命令第二次跑必然 `exit 2`——`statechart` 只肯写空目录，而 README 没写要先清。README 已加 `rm -rf out outbug` 并说明原因（次日随 runner 落地删除，见第 12 条）。
+
+第 12 条来自次日的 test-skill 触发评估（2026-11-24 00:36）：一个子进程照 `examples/liveness/README.md` 在技能树里跑 TLC，`unfair.cfg` 的违规轨迹 `Liveness_TTrace_*` 当场写穿了 test-skill 冻结的树哈希（`25a6d1e8` → `aa012229`，实测复现）。这违反技能自己的 toolchain 第 4 条「别在仓库里跑」。**修法**：两个例子各带自清 runner（`examples/liveness/run.sh`、`examples/view-window/run.sh`）——模型拷进临时目录跑、`--out` 也落在那里，退出码 0/1/2 三态；README、SKILL.md 冒烟段与 toolchain 第 4 条同步指向 runner；树内历史残留（`states/`、5 组 TTrace、`Liveness.st`、`out/`/`outbug/`）全部清除。**验证**：RED（照旧文档在树里跑 → 树哈希漂移）→ GREEN（两个 runner + 干净环境复跑，树哈希前后一致）；check-paths / check-portability / check-register / log-check 四例全部维持原判定。
 
 修复后的整体验收（真实退出码）：
 
