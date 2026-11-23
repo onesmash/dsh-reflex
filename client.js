@@ -395,7 +395,7 @@ window.__ModuleLoader__.load({
 						react_jsx_runtime.jsx("button", { type: "button", style: S.action, onClick: () => setOpen(false), children: SRC_LABELS.close })
 					] }),
 					error ? react_jsx_runtime.jsxs("p", { style: S.error, children: [SRC_LABELS.loadFail + "：" + error, " ", react_jsx_runtime.jsx("button", { type: "button", style: S.action, onClick: () => void load(), children: SRC_LABELS.retry })] }) : null,
-					rows.length === 0 ? react_jsx_runtime.jsx("p", { style: S.muted, children: SRC_LABELS.empty }) : react_jsx_runtime.jsxs("table", { style: S.table, children: [
+					rows.length === 0 && !error ? react_jsx_runtime.jsx("p", { style: S.muted, children: SRC_LABELS.empty }) : error ? null : react_jsx_runtime.jsxs("table", { style: S.table, children: [
 						react_jsx_runtime.jsx("thead", { children: react_jsx_runtime.jsxs("tr", { children: [
 							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colName }),
 							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colEvery }),
