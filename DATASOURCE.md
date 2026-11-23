@@ -195,13 +195,14 @@ exit 0
 
 ## 5.0 界面新增（三段式：give / when / trigger）
 
-侧栏 **Trigger** 页右上角「＋ 添加数据源」把 §1–§4 那五件事压成三句话，生成的文件全部是可读的普通
+侧栏 **Trigger** 页右上角「＋ 添加数据源」把 §1–§4 那五件事压成三句话
+（三段徽标 **FEED / EVERY / TRIGGER**，连起来就是 `feed X, every 15m, trigger when Y`），生成的文件全部是可读的普通
 shell 与 JSON —— 界面只是脚手架，事后照旧可以直接改脚本（改完落盘即生效，不用重启）。
 
 | 段 | 界面上填什么 | 落到哪 |
 |---|---|---|
-| **GIVE** | 名称、一句话用途、采集命令（stdout 每行一个 JSON 对象） | `collectors/<name>.sh`、`<name>.schema.json` |
-| **WHEN** | 采集间隔（1 min ~ 6 h） | `collectors/<name>.env.json` 的 `intervalMs`（`timeoutMs` 固定 120s） |
+| **FEED** | 名称、一句话用途、采集命令（stdout 每行一个 JSON 对象） | `collectors/<name>.sh`、`<name>.schema.json` |
+| **EVERY** | 采集间隔（1 min ~ 6 h） | `collectors/<name>.env.json` 的 `intervalMs`（`timeoutMs` 固定 120s） |
 | **TRIGGER** | 任何新条目 / 命中关键词 / 语义判据（影子）/ 只采集 | `targets/<name>.sh`、`targets/<name>.env.json`；选「只采集」就一个都不生成 |
 
 **生成的采集器替你守了三条契约**（对应 §4.1 的三个坑）：

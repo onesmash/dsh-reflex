@@ -190,7 +190,10 @@ checkStack(CASES[8], () => {
     const kids = 'children' in props ? textOf(props.children) : ''
     return extra + ' ' + kids
   }
-  const tr = (key) => (key === 'addProbeLines' ? '{lines} lines / {valid} valid' : key)
+  // tr 直接返回 key 就能核对"哪一段渲染出来了"；带插值的两条给模板，用来验替换
+  const tr = (key) => (key === 'addProbeLines' ? '{lines} lines / {valid} valid'
+    : key === 'addFiles' ? 'collectors/{name}.sh and targets/{name}.sh'
+      : key)
   const base = {
     form: { name: 'x', about: '', cmd: 'echo 1', intervalMs: 900000, mode: 'all', keywords: '', criteria: '' },
     probe: { phase: 'idle', data: null, error: '' },
@@ -198,8 +201,9 @@ checkStack(CASES[8], () => {
     tr,
   }
   const plain = textOf(mod.NewSourceForm({ ...base }))
-  assert(plain.includes('GIVE') && plain.includes('WHEN') && plain.includes('TRIGGER'),
+  assert(plain.includes('FEED') && plain.includes('EVERY') && plain.includes('TRIGGER'),
     `三段标签没渲染齐：${plain.slice(0, 160)}`)
+  assert(!/GIVE|WHEN|WAKE/.test(plain), '旧标签还留在页面上（改了一半）')
   assert(plain.includes('addCreate') && plain.includes('addCancel'), '创建/取消按钮没渲染出来')
   assert(/rfx-name/.test(plain) && /rfx-cmd/.test(plain) && /rfx-interval/.test(plain), '三个必填控件没渲染出来')
   assert(!/rfx-keywords/.test(plain) && !/rfx-criteria/.test(plain), 'all 模式不该出现关键词/判据输入框')
@@ -219,6 +223,10 @@ checkStack(CASES[8], () => {
     probe: { phase: 'ok', data: { lines: 1, valid: 1, bad: 0, sample: [], code: 2, timedOut: false, stderrTail: 'boom' } },
   }))
   assert(/addProbeRc/.test(bad) && bad.includes('boom'), '非 0 退出与 stderr 末行没显示出来')
+
+  // {name} 出现两次（collectors/ 与 targets/），只替换第一处会让界面上留着 "{name}" 字样
+  assert(!/\{name\}/.test(plain), `占位符没替换干净：${(plain.match(/[^ ]*\{name\}[^ ]*/) || [''])[0]}`)
+  assert(plain.includes('collectors/x.sh') && plain.includes('targets/x.sh'), '预览里没写出将会生成的文件名')
 
   const failed = textOf(mod.NewSourceForm({ ...base, saveState: { phase: 'error', error: '已存在：x.sh', name: '' } }))
   assert(failed.includes('已存在：x.sh'), '创建失败的原因没渲染到表单上')
