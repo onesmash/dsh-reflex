@@ -1,0 +1,17 @@
+{
+  "skill": "research-nex",
+  "run_id": "2026-11-23-add-source-ui",
+  "next_actions": [
+    {
+      "action": "补查 Airflow / Huginn / Node-RED 三家的段名，确认 FEED 是否真的没有先例",
+      "cost": "Flash",
+      "owner": "Chief"
+    },
+    {
+      "action": "把 HA config flow 正文抓一次（换 sections URL），把 C4 提到 A 级证据",
+      "cost": "Flash",
+      "owner": "Chief"
+    }
+  ],
+  "stop_reason": "Flash 阈值已满足（source_class_count ≥ 2、citation_support_rate ≥ 0.8），继续查的边际收益低"
+}

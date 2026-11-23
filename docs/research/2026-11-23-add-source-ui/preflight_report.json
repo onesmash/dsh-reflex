@@ -1,0 +1,19 @@
+{
+  "skill": "research-nex",
+  "run_id": "2026-11-23-add-source-ui",
+  "tools": {
+    "web_search": "ok",
+    "web_fetch": "ok (HA 页面正文被导航截断)"
+  },
+  "sources_fetched": [
+    "S1",
+    "S3"
+  ],
+  "sources_snippet_only": [
+    "S2",
+    "S4"
+  ],
+  "blocked": [],
+  "undecided": [],
+  "notes": "4 个来源、2 个来源类别（官方产品文档 / 官方贡献者文档）"
+}

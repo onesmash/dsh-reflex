@@ -1,0 +1,99 @@
+{
+  "skill": "research-nex",
+  "version": "7.1.0",
+  "generated_at": "2026-11-23T23:55:00+08:00",
+  "mode": "Flash",
+  "target": "dsh-reflex Trigger 页「添加数据源」三段式的交互与命名是否有行业先例",
+  "statement_count": 7,
+  "statements": [
+    {
+      "statement_id": "C1",
+      "claim_text": "Zapier 把一条自动化拆成 trigger 与 action 两段构建块（trigger 发起、action 执行）",
+      "section_anchor": "结论 1",
+      "support_state": "supported",
+      "supporting_source_ids": [
+        "S1"
+      ],
+      "contradicting_source_ids": [],
+      "claim_type": "empirical",
+      "notes": "\"Every Zap has two building blocks: Trigger / Action\""
+    },
+    {
+      "statement_id": "C2",
+      "claim_text": "IFTTT 的 Applet 由 Trigger 与 Action 组成（If This Then That）",
+      "section_anchor": "结论 1",
+      "support_state": "supported",
+      "supporting_source_ids": [
+        "S2"
+      ],
+      "contradicting_source_ids": [],
+      "claim_type": "empirical",
+      "notes": "\"At its most basic, an Applet includes a Trigger and one Action\""
+    },
+    {
+      "statement_id": "C3",
+      "claim_text": "轮询型集成的\"多久看一次\"是独立参数，n8n 直接把它命名为 Every X（Every Hour/Day/Week/Month）",
+      "section_anchor": "结论 2",
+      "support_state": "supported",
+      "supporting_source_ids": [
+        "S3"
+      ],
+      "contradicting_source_ids": [],
+      "claim_type": "empirical",
+      "notes": "\"Every X mode: Enter the Value … how often to trigger the poll\""
+    },
+    {
+      "statement_id": "C4",
+      "claim_text": "成熟工具在真正创建之前要求先测/先校验：Zapier 的 Build → Test → Publish，Home Assistant 的 config flow 在 config entry 存在之前完成校验",
+      "section_anchor": "结论 3",
+      "support_state": "supported",
+      "supporting_source_ids": [
+        "S1",
+        "S4"
+      ],
+      "contradicting_source_ids": [],
+      "claim_type": "empirical",
+      "notes": "Zapier: \"Test each step … then publish\"；HA 关键句取自同 URL 的检索摘要（正文抓取被截断）"
+    },
+    {
+      "statement_id": "C5",
+      "claim_text": "Zapier 明确\"发布之后才处理新数据\"，等同于\"首跑不倒历史\"这一约定",
+      "section_anchor": "结论 4",
+      "support_state": "supported",
+      "supporting_source_ids": [
+        "S1"
+      ],
+      "contradicting_source_ids": [],
+      "claim_type": "empirical",
+      "notes": "\"Your Zap will only process new data created after it's published.\""
+    },
+    {
+      "statement_id": "C6",
+      "claim_text": "四家工具里没有把\"数据来源\"这一段叫作 feed 的用法；FEED 是本插件自造的命名",
+      "section_anchor": "结论 5",
+      "support_state": "inconclusive",
+      "supporting_source_ids": [],
+      "contradicting_source_ids": [
+        "S1",
+        "S2",
+        "S3"
+      ],
+      "claim_type": "empirical",
+      "notes": "四份官方文档里都没有出现 feed 作为\"数据源\"段名的用法；这是\"没找到\"，不是\"不存在\""
+    },
+    {
+      "statement_id": "C7",
+      "claim_text": "把\"加一个数据源\"压成 来源 / 节奏 / 触发 三段，与上述工具的 trigger + action + poll cadence 结构同构",
+      "section_anchor": "结论 6",
+      "support_state": "partially_supported",
+      "supporting_source_ids": [
+        "S1",
+        "S2",
+        "S3"
+      ],
+      "contradicting_source_ids": [],
+      "claim_type": "normative",
+      "notes": "结构对应而非字面对应；这是设计判断，不是可直接核验的事实"
+    }
+  ]
+}

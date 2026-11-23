@@ -1,0 +1,100 @@
+{
+  "skill": "research-nex",
+  "mode": "Flash",
+  "generated_at": "2026-11-23T23:55:00+08:00",
+  "target": "dsh-reflex Trigger 页「添加数据源」三段式的交互与命名是否有行业先例",
+  "claim_evidence_map": [
+    {
+      "claim_id": "C1",
+      "claim": "Zapier = trigger + action",
+      "evidence": [
+        {
+          "source_id": "S1",
+          "locator": "Triggers and actions"
+        }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "C2",
+      "claim": "IFTTT = Trigger + Action",
+      "evidence": [
+        {
+          "source_id": "S2",
+          "locator": "Creating Applets"
+        }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "C3",
+      "claim": "n8n 用 Every X 命名轮询间隔",
+      "evidence": [
+        {
+          "source_id": "S3",
+          "locator": "Every X mode"
+        }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "C4",
+      "claim": "先测/先校验再创建（Zapier Build→Test→Publish；HA config flow）",
+      "evidence": [
+        {
+          "source_id": "S1",
+          "locator": "How to build and run a Zap"
+        },
+        {
+          "source_id": "S4",
+          "locator": "Config flow intro"
+        }
+      ],
+      "grade": "B",
+      "status": "supported"
+    },
+    {
+      "claim_id": "C5",
+      "claim": "发布后只处理新数据（= 首跑建水位）",
+      "evidence": [
+        {
+          "source_id": "S1",
+          "locator": "How to build and run a Zap"
+        }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "C6",
+      "claim": "feed 不是这四家的段名用法",
+      "evidence": [],
+      "grade": "E",
+      "status": "inconclusive"
+    },
+    {
+      "claim_id": "C7",
+      "claim": "三段式与 trigger+action+poll 结构同构",
+      "evidence": [
+        {
+          "source_id": "S1"
+        },
+        {
+          "source_id": "S2"
+        },
+        {
+          "source_id": "S3"
+        }
+      ],
+      "grade": "B",
+      "status": "partially_supported"
+    }
+  ],
+  "open_gaps": [
+    "FEED 的行业先例没找到（四家都没这个段名）；要继续就得换一组工具（Airflow/Huginn/Node-RED）再查",
+    "HA config flow 的关键句只有检索摘要级证据（页面正文抓取被截断）"
+  ]
+}

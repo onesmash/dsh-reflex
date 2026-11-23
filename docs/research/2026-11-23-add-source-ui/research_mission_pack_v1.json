@@ -1,0 +1,24 @@
+{
+  "skill": "research-nex",
+  "run_id": "2026-11-23-add-source-ui",
+  "mode": "Flash",
+  "profile": "technical-detail",
+  "delivery_medium": "repo docs",
+  "objective": "dsh-reflex Trigger 页「添加数据源」三段式的交互与命名是否有行业先例",
+  "question_tree": [
+    "主流工具把加源切成几段、叫什么",
+    "节奏是不是独立参数",
+    "创建前要不要先测",
+    "存量怎么处理"
+  ],
+  "claim_targets": [
+    "C1",
+    "C2",
+    "C3",
+    "C4",
+    "C5",
+    "C6",
+    "C7"
+  ],
+  "persistence": "durable (repo docs, committed)"
+}

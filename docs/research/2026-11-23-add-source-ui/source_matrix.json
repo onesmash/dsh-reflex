@@ -1,0 +1,46 @@
+{
+  "skill": "research-nex",
+  "mode": "Flash",
+  "generated_at": "2026-11-23T23:55:00+08:00",
+  "target": "dsh-reflex Trigger 页「添加数据源」三段式的交互与命名是否有行业先例",
+  "source_class_count": 2,
+  "sources": [
+    {
+      "source_id": "S1",
+      "title": "What is a Zap?",
+      "publisher": "Zapier Help Center",
+      "url": "https://help.zapier.com/hc/en-us/articles/8496309697421-What-is-a-Zap",
+      "kind": "official product docs",
+      "grade": "A",
+      "fetched_at": "2026-11-23T23:55:00+08:00"
+    },
+    {
+      "source_id": "S2",
+      "title": "How do I create Applets?",
+      "publisher": "IFTTT Help Center",
+      "url": "https://help.ifttt.com/hc/en-us/articles/37244134754459-How-do-I-create-Applets",
+      "kind": "official product docs",
+      "grade": "A",
+      "fetched_at": "2026-11-23T23:55:00+08:00"
+    },
+    {
+      "source_id": "S3",
+      "title": "Poll mode options (Every X / Every Hour …)",
+      "publisher": "n8n Docs",
+      "url": "https://raw.githubusercontent.com/n8n-io/n8n-docs/be6702d26245396df6b2fcfeb6394576a7ce3326/_snippets/integrations/builtin/poll-modes.md",
+      "kind": "official docs source (repo markdown)",
+      "grade": "A",
+      "fetched_at": "2026-11-23T23:55:00+08:00"
+    },
+    {
+      "source_id": "S4",
+      "title": "Config flow",
+      "publisher": "Home Assistant Contributors",
+      "url": "https://contributors.home-assistant.io/core/integrations/config-flow/",
+      "kind": "official contributor docs",
+      "grade": "B",
+      "fetched_at": "2026-11-23T23:55:00+08:00",
+      "note": "页面正文抓取被导航截断；关键句来自同一 URL 的检索摘要，按 B 计并标 partially_supported"
+    }
+  ]
+}

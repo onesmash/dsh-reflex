@@ -1,0 +1,22 @@
+{
+  "skill": "research-nex",
+  "run_id": "2026-11-23-add-source-ui",
+  "terminal_state": "degraded_completed",
+  "claim_level": "L2_manual_reconstruction",
+  "metrics": {
+    "citation_support_rate": 0.857,
+    "unsupported_claim_rate": 0.0,
+    "statement_support_coverage": 1.0,
+    "source_class_count": 2
+  },
+  "downgrade": {
+    "failure_mode": "insufficient_or_conflicting_evidence",
+    "impact": "C6（FEED 无先例）只能是 inconclusive，C7 只能是 partially_supported",
+    "recovery_used": "把结论拆成 supported / inconclusive / normative 三类分别标注",
+    "remaining_risk": "换一组工具（Airflow/Huginn/Node-RED）可能找到 feed 的用法"
+  },
+  "open_gaps": [
+    "FEED 的行业先例没找到（四家都没这个段名）；要继续就得换一组工具（Airflow/Huginn/Node-RED）再查",
+    "HA config flow 的关键句只有检索摘要级证据（页面正文抓取被截断）"
+  ]
+}
