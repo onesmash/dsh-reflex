@@ -217,6 +217,11 @@ shell 与 JSON —— 界面只是脚手架，事后照旧可以直接改脚本�
 `all` 模式把每条数据行原样变成条目，`match` 模式按 `raw` 的文本过滤，`semantic` 模式只写影子分数
 （`shadow/<name>-<date>.jsonl`），攒够样本按 §6.6 拟合阈值后，把 `targets/<name>.sh` 改成确定性叫醒即可。
 
+**版面**：宽面板两栏——左边三段表单，右边「将要发生的事」实时摘要（三段值 + 会写入哪些文件）；
+容器窄于 900px 折成一列，操作条（取消 / 创建）固定在可视区底部：它挂在表单**外面**、用 `form`
+属性关联，所以滚动时不会跟着内容走丢（P18 有一条结构断言守着这件事）。提交被拦下时焦点落到缺的
+那一格，错误用 `role=status` 播报；试跑代价（15s 超时、只读不写盘）写在按钮旁边。
+
 **界面这一层的硬门**（都有破坏变体守着，见 `docs/property-register-sources.md` P10–P18）：
 
 - 名称必须是 `^[a-z0-9][a-z0-9._-]*$`，且不能是内置源（disk/cpu）
@@ -231,7 +236,8 @@ shell 与 JSON —— 界面只是脚手架，事后照旧可以直接改脚本�
 
 > 这条链路 2026-11-23 起有三级证据：纯函数与生成脚本的行为（`tests/create-source.test.mjs`）、
 > 路由到磁盘再真跑一遍采集器与 target（`tests/create-source-route.mjs`）、界面渲染与接线
-> （`tests/check-sources-panel.mjs`）。
+> （`tests/check-sources-panel.mjs`）；版面另有静态渲染核对（`tests/render-add-source.mjs`，
+> 生成 1440 / 900 / 390 三个宽度的页面交给人眼和 headless Chrome 看）。
 
 ## 5. 启用（配置层，不改代码）
 
