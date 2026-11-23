@@ -107,6 +107,10 @@ checkStack(CASES[2], () => {
   assert(page.definition.key === nav.definition.id,
     `id 不一致：main key=${page.definition.key} / panellist id=${nav.definition.id}`)
   assert(typeof nav.definition.label === 'function', 'panellist 缺 label，侧栏没有可显示的文字')
+  // 只检查"是函数"不够：label 在侧栏启动时就会被求值，闭包里引用错变量
+  // 会直接让 renderer 启动失败（P0）。这里真的调一次。
+  const navText = nav.definition.label()
+  assert(typeof navText === 'string' && navText.length > 0, `panellist 的 label() 没有返回可显示文字：${String(navText)}`)
 })
 
 

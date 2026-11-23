@@ -549,7 +549,7 @@ window.__ModuleLoader__.load({
 				name: "sidebar.panellist",
 				id: SRC_PANEL_ID,
 				order: 10,
-				label: () => tr("srcNav"),
+				label: () => srcText(t, "srcNav"),
 				locale: NS
 			}, TriggerIcon)), "dsh-reflex: trigger nav");
 			ctx.effect(() => ctx.configForms.whileServed([ROW_NS], (served) => {
