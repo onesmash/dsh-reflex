@@ -43,7 +43,17 @@ P13 的语法检查测试、P10 的采集器行为测试都不经过这个窗口
 读成人话：**点了创建以后，第一个落盘的就是采集器。这时源已经"可见"，但它的判定脚本还没落盘；
 此刻进程被杀，半成品就永久留在盘上。**
 
-`chart-current.mmd` 是同一张图（`chart-fixed.mmd` 是修好之后的样子，没有 breaks 标记）。
+`chart-current.mmd` 是同一张图；`chart-fixed.mmd` 是修好之后的样子（没有 breaks 标记），
+状态名按「采集器在不在」写（`source invisible` → `source visible`），不按「落盘了几个」写——
+按落盘数命名会在另一套顺序里说错话，2026-11-24 的审计就是这么抓到旧版 fixed 图标的。
+
+图也进机器核对（手画的图不会自动跟着模型改）：
+
+```sh
+node docs/verification/create-source/check-chart.mjs chart-fixed.mmd config,target,collector
+# exit 0；它会查「说 visible 时采集器是否真的已落盘」「主线落地顺序是否等于参数」
+# exit 1 = 图与模型矛盾；2 = 读不到/解析不出/参数不合法
+```
 
 ## 桥接（模型的话 ↔ 代码的哪一行）
 
@@ -75,6 +85,7 @@ bash docs/verification/create-source/check.sh
 #   PASS Atomic：现顺序被违反、修法顺序守住 —— 与代码里的落盘顺序一致
 #   退出码 0 / 1（结论与预期不符）/ 2（找不到 Java 或 tla2tools.jar，未判定）
 
+node docs/verification/create-source/check-chart.mjs docs/verification/create-source/chart-fixed.mmd config,target,collector
 node --test tests/create-source.test.mjs     # 含 P19 崩溃重放
 node tests/sources-invariants.mjs            # P19 的破坏变体：把提交点挪回最前必须报红
 ```

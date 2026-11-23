@@ -15,7 +15,11 @@
     "source_class_count": 3,
     "machine_rerun_cases": 8,
     "machine_rerun_exit": 0,
-    "findings": { "P1": 2, "P2": 5, "P3": 3 }
+    "findings": {
+      "P1": 2,
+      "P2": 5,
+      "P3": 3
+    }
   },
   "downgrade": {
     "failure_mode": "non_verifiable_statement_class (normative)",
@@ -27,5 +31,28 @@
     "「先画图让人确认」是否真的发生在建模之前，提交历史无法判定（模型与图同一提交，两个模板都没有这个字段）",
     "本次未重跑登记表 19 行声称的命令；「那些 0 仍然成立」不在本报告结论里"
   ],
-  "notes": "validator 输出：PASS statement_support_matrix.json / PASS unsupported_statement_register.json / FACT citation_accuracy=0.9048 effective_citations=10 network_unavailable=True / exit=0。其中 network_unavailable=True 是本轮已知的硬编码常量（上一轮已作为 research-nex 摩擦上报），本运行完全未使用网络，该字段不构成降级理由。"
+  "notes": "validator 输出：PASS statement_support_matrix.json / PASS unsupported_statement_register.json / FACT citation_accuracy=0.9048 effective_citations=10 network_unavailable=True / exit=0。其中 network_unavailable=True 是本轮已知的硬编码常量（上一轮已作为 research-nex 摩擦上报），本运行完全未使用网络，该字段不构成降级理由。 修复后的复跑：bash evidence/rerun.sh → exit 0（十条观测与预期一致）。",
+  "remediation": {
+    "status": "applied",
+    "findings_total": 10,
+    "findings_closed": 9,
+    "findings_partial": [
+      {
+        "id": "N3",
+        "why": "收据位已加进模板，但「人确认」没有可机器强制的痕迹"
+      }
+    ],
+    "extra_findings_found_while_verifying": [
+      {
+        "id": "N11",
+        "what": "examples/view-window 冒烟第二次跑必然 exit 2（statechart 只写空目录，README 没说要先清）",
+        "fix": "README 加 rm -rf out outbug 与原因"
+      }
+    ],
+    "evidence": [
+      "evidence/rerun.txt（十条观测）",
+      "evidence/register-negative.txt（T0 绿，T1–T4 红）",
+      "evidence/chart-check.txt（旧图红/新图绿/错顺序红）"
+    ]
+  }
 }

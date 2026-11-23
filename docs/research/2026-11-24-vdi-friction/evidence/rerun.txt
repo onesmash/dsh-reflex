@@ -2,12 +2,39 @@
 repo   = /Users/xuhui/SourceCode/dsh-reflex
 skill  = /Users/xuhui/.agents/skills/verifying-design-invariants
 v23.11.0
-== E1 全表：rows=19 verdict=OK rc=0（预期 19 / OK / 0）
-== E2 表内空行：rows=9（应读 9）verdict=OK rc=0 errors 为空=1（预期 9 / OK / 0 / 1）
-== E3 假证据路径（文档命令）：verdict=OK rc=0 不存在告警数=1（预期 OK / 0 / 1）
-== E4 假证据路径 + --strict：rc=1（预期 1）
-== E5 没跑过的命令 + 退出码 0：verdict=OK rc=0（预期 OK / 0）
-== E6 悬空小标题：旧称出现 3 次，标题叫「四项要求」的 0 个，check-paths rc=0（预期 >0 / 0 / 0）
-== E7 2f49ffd 里的运行残留：states/*.st 26 个，TTrace 4 个（预期 26 / 4）
-== E8 非 ASCII 标签的记录：0 份 md 提到（预期 0）
-== 结论：八条观测与预期一致
+== E1 全表
+   ok verdict=OK
+   ok rows=19
+   ok rc=0
+== E2 表内空行（应报错，而不是读 9 行还 OK）
+   ok verdict=FAIL
+   ok rc=1
+   ok truncated=1
+== E3 证据文件不存在（硬告警，默认即失败）
+   ok verdict=FAIL
+   ok rc=1
+   ok hard=1
+== E4 假证据路径 + --strict
+   ok rc=1
+== E5 没跑过的命令 + 退出码 0
+   ok verdict=FAIL
+   ok rc=1
+== E6 旧称清零 + 指路检查
+   ok refs=0
+   ok paths_verdict=OK
+   ok rc=0
+== E7 运行残留（历史 26/4，现跟踪 0）
+   ok historical_states=26
+   ok historical_trace=4
+   ok tracked_now=0
+== E8 Mermaid 非 ASCII 的记载
+   ok files=1
+== E9 旧 fixed 图（应 FAIL）
+   ok verdict=FAIL
+   ok rc=1
+   ok fixed_verdict=OK
+   ok fixed_rc=0
+== E10 悬空指路（应 FAIL）
+   ok verdict=FAIL
+   ok rc=1
+== 结论：十条观测与预期一致

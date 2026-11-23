@@ -149,3 +149,41 @@ P10–P18 的破坏变体都是「改生成器 / 改接线 / 删一条词典」�
 | 6 | lint：运行产物不入库；`四项`→`六条`；补 Mermaid 非 ASCII 一条；S3③ 改类判据 | 各自一条机器可跑的检查，加进 `check-paths`/CI |
 
 第 1、2 条建议先做：它们是本次唯一两条「机器门会给出假绿」的问题，其余都是记录与措辞层面的缺口。
+
+## 处置记录（2026-11-24 00:20–00:40，已落地）
+
+十条全部处置；其中 N3 只加了收据位、没有强制——「人确认」这件事本身没法机器化。
+
+| # | 处置 | 证据（可重跑） |
+|---|---|---|
+| N1 | `check-register.mjs`：空行/散文之后再遇表格行即 ERROR，exit 1，消息写明中断行号 | `bash evidence/register-negative.sh` → T1 FAIL；`bash evidence/rerun.sh` → E2 FAIL |
+| N2 | 三类证据类 WARN 升级为**硬告警**（引用文件不存在 / URL / 代码文件名无目录前缀），默认即失败；文档写清「不执行命令；`--strict` 只管风格类 WARN」 | 复跑 E3/E5 FAIL、E1 仍 OK；SKILL.md 与脚本头注释口径一致 |
+| N3 | `verification-record.md` A 分区加「图确认：图文件 / 确认人 / 日期 / 先图后模型」；`stations.md` S1 证据形态与常见假通过补两条 | 无强制（人确认不可机器化）；收据位见模板 |
+| N4 | 重画 `chart-fixed.mmd`（按「采集器在不在」命名）；新增 `check-chart.mjs` 对表 | 旧图存证 `evidence/chart-fixed-before-fix.mmd` 仍 FAIL；新图 OK；错顺序负对照 FAIL |
+| N5 | S0 出口改「基线 commit」；`sync commit` 明确为 S5 填；模板同步 | `SKILL.md:26`、`stations.md:14`、模板:22 三处不再矛盾 |
+| N6 | 等级列词汇封闭：只许 `L1/L2/L3` 或 `不建模：<理由>；由<谁>覆盖`；登记表 19 行按此重排，P19 记 `L2` | 复跑 E1 OK；T2（写 L4）FAIL、T3（不建模无覆盖）FAIL |
+| N7 | `.gitignore` 加 `docs/**/states/`、`docs/**/*_TTrace_*`；取消跟踪 34 个文件（磁盘保留） | 复跑 E7 → tracked_now=0 |
+| N8 | 三处旧称清零（pilot-findings 加术语说明段）；`check-paths.mjs` 新增「见下「…」」指路检查（含 0 候选时标 UNCHECKED） | 复跑 E6 refs=0；E10 在副本上造悬空指路 → FAIL |
+| N9 | S3③ 改成类判据：函数 `return undefined` / 生成器空输出 / 接线不注册 / 词典删一条，判据是「失效了必红」 | 模板与 stations 同步 |
+| N10 | `toolchain.md` 第五条硬约束（ASCII 标签）+ `check-chart.mjs` 把非 ASCII 标签判 FAIL | 复跑 E8 → 1 份 md 记载；图检查内建 |
+
+两处与原文不同的选择，理由如下：
+
+- **N2 没有把 `--strict` 改成默认**：那会把「守住没写范围」这类风格提示也变成门，假警报会淹没真问题。改成「证据类硬告警默认失败、风格类仍靠 `--strict`」——同一目标，不动另一批判据。
+- **N6 没有另开一张「不建模」表**：N1 的新规则不允许第二张表（否则无法区分「截断」与「第二张表」）。改成「同列但词汇封闭 + 必须写谁覆盖」，机器能查，表也只有一张。
+
+验证时顺手抓到的第 11 条（同类，已一并修）：`examples/view-window` 的冒烟命令第二次跑必然 `exit 2`——`statechart` 只肯写空目录，而 README 没写要先清。README 已加 `rm -rf out outbug` 并说明原因。
+
+修复后的整体验收（真实退出码）：
+
+```
+node scripts/check-paths.mjs        → 0（candidates 14 / anchorsChecked 1）
+node scripts/check-portability.mjs  → 0（docs 11 / 0 error / 0 warning）
+examples/view-window 绿/红           → 0 / 1
+examples/liveness 公平/抽掉 WF       → 0 / 13
+examples/log-check 四例              → 0 / 1 / 1 / 2
+check-register.mjs 本表              → 0（19 行）
+evidence/register-negative.sh       → 0（T0 绿，T1–T4 全红）
+evidence/rerun.sh                   → 0（十条观测与预期一致）
+check-chart.mjs 旧图/新图/错顺序     → 1 / 0 / 1
+```

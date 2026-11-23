@@ -1,0 +1,44 @@
+== 旧图（审计时的 chart-fixed，从 64f6e75 取出）
+{
+  "file": "/Users/xuhui/SourceCode/dsh-reflex/docs/research/2026-11-24-vdi-friction/evidence/chart-fixed-before-fix.mmd",
+  "verdict": "FAIL",
+  "states": 10,
+  "mainPath": [
+    "config",
+    "target",
+    "collector"
+  ],
+  "errors": [
+    "s2「visible source after 1/3 files」说 visible，但按边推它到达时采集器还没落盘（已落盘：config）",
+    "s4「visible source after 2/3 files」说 visible，但按边推它到达时采集器还没落盘（已落盘：config/target）"
+  ]
+}
+exit=1
+== 修后（chart-fixed 现在）
+{
+  "file": "/Users/xuhui/SourceCode/dsh-reflex/docs/verification/create-source/chart-fixed.mmd",
+  "verdict": "OK",
+  "states": 10,
+  "mainPath": [
+    "config",
+    "target",
+    "collector"
+  ],
+  "errors": []
+}
+exit=0
+== 负对照：拿 current 的顺序查 fixed
+{
+  "file": "/Users/xuhui/SourceCode/dsh-reflex/docs/verification/create-source/chart-fixed.mmd",
+  "verdict": "FAIL",
+  "states": 10,
+  "mainPath": [
+    "config",
+    "target",
+    "collector"
+  ],
+  "errors": [
+    "主线的落地顺序是 [config → target → collector]，期望 [collector → config → target]"
+  ]
+}
+exit=1

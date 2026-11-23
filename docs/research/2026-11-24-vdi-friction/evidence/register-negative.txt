@@ -1,0 +1,15 @@
+T0 baseline              exit=0 verdict=OK     errors=0 hard=0 warn=0
+    ok T0 baseline => OK
+T1 空行截断                  exit=1 verdict=FAIL   errors=1 hard=0 warn=0
+    E: 表格在第 17 行之后中断：第 19 行起还有 10 行以 | 开头。登记表只允许一张表；若是第二张表，请并进主表
+    ok T1 空行截断 => FAIL
+T2 等级词汇                  exit=1 verdict=FAIL   errors=1 hard=0 warn=0
+    E: P19: 证据等级只允许 L1/L2/L3 或「不建模：…；由…覆盖」，读到「L4」
+    ok T2 等级词汇 => FAIL
+T3 不建模无覆盖                exit=1 verdict=FAIL   errors=1 hard=0 warn=0
+    E: P1: 不建模 但没写谁覆盖（写成「不建模：<理由>；由<谁>覆盖」）
+    ok T3 不建模无覆盖 => FAIL
+T4 证据文件不存在               exit=1 verdict=FAIL   errors=0 hard=1 warn=0
+    H: P19: 引用的文件不存在 -> docs/verification/create-source/nope.sh
+    ok T4 证据文件不存在 => FAIL
+== 结论：四条破坏变体都按预期报红

@@ -11,7 +11,9 @@
       "claim_text": "check-register.mjs 的 readTable 读到第一个不以竖线开头的行就 break，其后的表格行不再解析",
       "section_anchor": "§1 N1 截断静默通过",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC07"],
+      "supporting_source_ids": [
+        "SRC07"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
       "notes": "check-register.mjs:50-55；break 之后没有「后面还有表格行」的检查"
@@ -21,17 +23,23 @@
       "claim_text": "在 P9/P10 之间插一个空行，核对器只读到 9 行（全表 19 行），verdict 仍是 OK、exit 0、errors 为空",
       "section_anchor": "§1 N1 截断静默通过",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC11", "SRC07"],
+      "supporting_source_ids": [
+        "SRC11",
+        "SRC07"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
-      "notes": "rerun E2；rows 计数只用于「零数据行」判定（check-register.mjs:207）"
+      "notes": "rerun E2；rows 计数只用于「零数据行」判定（check-register.mjs:207）（本陈述描述 64f6e75 时的行为；修复后复跑见 evidence/rerun.txt）"
     },
     {
       "statement_id": "ST03",
       "claim_text": "技能文档把 check-register.mjs 的 exit 0 作为 S5 收口的机器核对出口判据",
       "section_anchor": "§2 N2 S5 的机器门只验格式",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC01", "SRC02"],
+      "supporting_source_ids": [
+        "SRC01",
+        "SRC02"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
       "notes": "SKILL.md:31、:75；stations.md:108"
@@ -41,7 +49,11 @@
       "claim_text": "文档给出的 S5 核对命令不带 --strict，而 WARN 默认不影响退出码",
       "section_anchor": "§2 N2 S5 的机器门只验格式",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC01", "SRC02", "SRC07"],
+      "supporting_source_ids": [
+        "SRC01",
+        "SRC02",
+        "SRC07"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
       "notes": "SKILL.md:71-73；stations.md:108；check-register.mjs:216"
@@ -51,17 +63,21 @@
       "claim_text": "把表内一个证据路径改成不存在，按文档命令跑仍 verdict OK、exit 0（只有 1 条 WARN）；加 --strict 才 exit 1",
       "section_anchor": "§2 N2 S5 的机器门只验格式",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC11"],
+      "supporting_source_ids": [
+        "SRC11"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
-      "notes": "rerun E3/E4"
+      "notes": "rerun E3/E4（本陈述描述 64f6e75 时的行为；修复后复跑见 evidence/rerun.txt）"
     },
     {
       "statement_id": "ST06",
       "claim_text": "核对器不执行任何命令；「退出码」列只做 0/PASS 的文本匹配",
       "section_anchor": "§2 N2 S5 的机器门只验格式",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC07"],
+      "supporting_source_ids": [
+        "SRC07"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
       "notes": "check-register.mjs:120-127（脚本自述只管「能不能被机器读」，:10-11）"
@@ -71,17 +87,24 @@
       "claim_text": "破坏变体列写一条从未跑过的命令、退出码照抄 0，核对器仍判 OK",
       "section_anchor": "§2 N2 S5 的机器门只验格式",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC11"],
+      "supporting_source_ids": [
+        "SRC11"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
-      "notes": "rerun E5（bash tests/never-ran-this.sh + 退出码 0）"
+      "notes": "rerun E5（bash tests/never-ran-this.sh + 退出码 0）（本陈述描述 64f6e75 时的行为；修复后复跑见 evidence/rerun.txt）"
     },
     {
       "statement_id": "ST08",
       "claim_text": "S1 的「先画图让人确认转移对不对」在登记表与验证记录两个模板里都没有记录位",
       "section_anchor": "§3 N3 S1 的人确认门没有收据",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC01", "SRC02", "SRC05", "SRC06"],
+      "supporting_source_ids": [
+        "SRC01",
+        "SRC02",
+        "SRC05",
+        "SRC06"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
       "notes": "verify-record 的 A 分区只收「性质/变体/报红/退出码/-workers」"
@@ -91,7 +114,10 @@
       "claim_text": "本次运行的模型与两张图在同一个提交 2f49ffd 里，提交中没有任何「图已由人确认」的记录",
       "section_anchor": "§3 N3 S1 的人确认门没有收据",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC11", "SRC09"],
+      "supporting_source_ids": [
+        "SRC11",
+        "SRC09"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
       "notes": "只能证明「没有记录」，不能证明先后顺序"
@@ -101,17 +127,21 @@
       "claim_text": "chart-fixed.mmd 把「the config files land」之后的状态标为「visible source after 1/3 files」，与 fixed 顺序下采集器最后落盘相矛盾",
       "section_anchor": "§4 N4 交付的图说错话",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC09"],
+      "supporting_source_ids": [
+        "SRC09"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
-      "notes": "chart-fixed.mmd 的 s2/s4 标签；Order.tla:4、:8-10"
+      "notes": "chart-fixed.mmd 的 s2/s4 标签；Order.tla:4、:8-10。修复后旧图存证在 evidence/chart-fixed-before-fix.mmd，check-chart.mjs 对它仍判 FAIL"
     },
     {
       "statement_id": "ST11",
       "claim_text": "SKILL.md 第 31 行指向「可重跑的四项要求」，但正文章节标题已改名为「六条判据」",
       "section_anchor": "§5 N5 文档自引用漂移",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC01"],
+      "supporting_source_ids": [
+        "SRC01"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
       "notes": "SKILL.md:31 与 :33"
@@ -121,17 +151,25 @@
       "claim_text": "旧称「四项」在技能里仍出现 3 次，标题里一次也没有；check-paths.mjs 仍 exit 0",
       "section_anchor": "§5 N5 文档自引用漂移",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC11", "SRC06", "SRC12"],
+      "supporting_source_ids": [
+        "SRC11",
+        "SRC06",
+        "SRC12"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
-      "notes": "rerun E6；verification-record.md:42；pilot-findings.md:22/23/29"
+      "notes": "rerun E6；verification-record.md:42；pilot-findings.md:22/23/29（本陈述描述 64f6e75 时的行为；修复后复跑见 evidence/rerun.txt）"
     },
     {
       "statement_id": "ST13",
       "claim_text": "S0 的出口判据要求写 sync commit，而模板把 sync commit 定义为「模型与代码对齐时的 commit」",
       "section_anchor": "§6 N6 S0 出口与 sync commit 时序矛盾",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC01", "SRC02", "SRC05"],
+      "supporting_source_ids": [
+        "SRC01",
+        "SRC02",
+        "SRC05"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
       "notes": "SKILL.md:26；stations.md:14；property-register.md:22"
@@ -141,7 +179,10 @@
       "claim_text": "证据等级列用 L1–L3（以 S1–S4 为轴），同一列又规定「不建模」的写法；核对器只对字面 L3 有规则",
       "section_anchor": "§7 N7 等级轴被旁路",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC05", "SRC07"],
+      "supporting_source_ids": [
+        "SRC05",
+        "SRC07"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
       "notes": "property-register.md:17、:21；check-register.mjs:111-118"
@@ -151,7 +192,9 @@
       "claim_text": "本次登记表 18 行写「不建模」，唯一的建模行 P19 等级列写「TLA+/TLC 建模」而不是 L1/L2/L3，等级规则一行都没触发",
       "section_anchor": "§7 N7 等级轴被旁路",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC10"],
+      "supporting_source_ids": [
+        "SRC10"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
       "notes": "登记表「证据等级」列"
@@ -161,7 +204,11 @@
       "claim_text": "S3 第三条门写成「把被测函数体换成 return undefined 重跑」，没有给非函数产物的等价判据；本次 P10–P18 的破坏变体都是改生成器/改接线",
       "section_anchor": "§8 N8 S3 第三条门只对函数成立",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC02", "SRC06", "SRC10"],
+      "supporting_source_ids": [
+        "SRC02",
+        "SRC06",
+        "SRC10"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
       "notes": "stations.md:73；verification-record.md:31；登记表 P10–P18 破坏变体列"
@@ -171,27 +218,35 @@
       "claim_text": "技能文本里没有「Mermaid 标签非 ASCII 会被转成数字实体」这条记录（13 份 md，0 份提到）",
       "section_anchor": "§9 N9 toolchain 只记「会崩」不记「坏样」",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC11", "SRC04"],
+      "supporting_source_ids": [
+        "SRC11",
+        "SRC04"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
-      "notes": "rerun E8；toolchain.md:69 只记了 Seq 崩溃"
+      "notes": "rerun E8；toolchain.md:69 只记了 Seq 崩溃（本陈述描述 64f6e75 时的行为；修复后复跑见 evidence/rerun.txt）"
     },
     {
       "statement_id": "ST18",
       "claim_text": "提交 2f49ffd 把 26 个 states/*.st 与 4 个 TTrace 文件带进版本库，而 toolchain.md 明说这些产物都别进版本库",
       "section_anchor": "§10 N10 文档规则没有守门，运行残留入库",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC11", "SRC04"],
+      "supporting_source_ids": [
+        "SRC11",
+        "SRC04"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
-      "notes": "rerun E7；toolchain.md:72"
+      "notes": "rerun E7；toolchain.md:72（本陈述描述 64f6e75 时的行为；修复后复跑见 evidence/rerun.txt）"
     },
     {
       "statement_id": "ST19",
       "claim_text": "本次登记表的 S4 列 19 行里 0 行有 PASS：10 行「未做」、5 行「部分」、4 行「—」",
       "section_anchor": "§11 观察：S4 在这条功能上没有可达面",
       "support_state": "supported",
-      "supporting_source_ids": ["SRC10"],
+      "supporting_source_ids": [
+        "SRC10"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "empirical",
       "notes": "只作观察；模板已写明「S4 未过的行最高记 L2」，因此不算缺陷"
@@ -201,7 +256,11 @@
       "claim_text": "S5 的机器门可以被「写得整齐的表格」满足，弱于它自己「人眼核对不算核对」的声称",
       "section_anchor": "§12 结论",
       "support_state": "partially_supported",
-      "supporting_source_ids": ["SRC01", "SRC07", "SRC11"],
+      "supporting_source_ids": [
+        "SRC01",
+        "SRC07",
+        "SRC11"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "normative",
       "notes": "设计判断：脚本自述只查格式（:10-11），但 SKILL.md 把 exit 0 当收口判据（:75）——两句话强度不一致"
@@ -211,7 +270,11 @@
       "claim_text": "最小修法应落在三处：表格截断即 ERROR、S5 命令默认 --strict、S1 图确认加收据位并让图与模型对表",
       "section_anchor": "§12 结论",
       "support_state": "partially_supported",
-      "supporting_source_ids": ["SRC07", "SRC01", "SRC06"],
+      "supporting_source_ids": [
+        "SRC07",
+        "SRC01",
+        "SRC06"
+      ],
       "contradicting_source_ids": [],
       "claim_type": "normative",
       "notes": "建议，不是已实施的事实；每条附验收方法与回退"

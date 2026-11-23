@@ -47,3 +47,9 @@ app/
 /tools/
 # 注意: index.js 里的内置采集器(disk/swap)是插件代码, 不在这三个目录里。
 research-nex/
+
+# ---- TLA+/TLC 运行产物: 不进仓库 ----
+# states/ 与 *_TTrace_* 是跑模型的副产品（2f49ffd 曾带进 26 个空 .st + 4 个轨迹）。
+# 工具链文档同一句话：四种产物都别进版本库；轨��要留就显式拷到 evidence/ 下并改名。
+docs/**/states/
+docs/**/*_TTrace_*
