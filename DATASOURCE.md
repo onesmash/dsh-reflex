@@ -53,6 +53,10 @@ __pycache__/ *.pyc
 | `collectors/<name>.env.json` / `targets/<name>.env.json` | **立即**（目录签名热发现会重扫，含 env 与间隔） | 采集间隔、超时、本机标识、别名 |
 | profile 的 `cordis.patch.yml` | **插件热重载**（几秒；不需要重启 DSH，但会重载插件、有短暂窗口） | 安静时段、用户画像、**内置**源/目标（disk/cpu）的启停 |
 
+**界面开关（0.6.0 起）**：DSH 侧栏的「数据源」面板可以逐行暂停/恢复，等价于手工
+`touch collectors/<name>.paused` / `rm` 它；走宿主已认证的 `POST api/reflex`（list / pause / resume），
+不需要重启。内置源（disk/cpu）在面板里只读，仍由 profile 的 `l0.sources` 决定。
+
 **都不需要重启 DSH。** 脚本源/脚本 target 连配置都不用改 —— 文件存在即启用（drop-in 热发现）。
 profile 只写内置源/内置 target；把脚本源/脚本 target 写进 `l0.sources` / `l1.targets` 是冗余的，
 启动日志会点名提醒（"可以删掉"）。
