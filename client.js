@@ -33,7 +33,34 @@ window.__ModuleLoader__.load({
 			saveFailed: "保存失败，已保留你的输入。",
 			saveError: "保存被拒绝的原因：",
 			diagNotLanded: "保存未生效 —— 改动没有被接受。",
-			diagErrorPrefix: "保存出错："
+			diagErrorPrefix: "保存出错：",
+			// —— 数据源页面（主列整页） ——
+			srcNav: "数据源",
+			srcTitle: "数据源",
+			srcDesc: "采集脚本的开关。改的是磁盘上的 <name>.paused 标记，采集器下一轮读到；不用改 profile，也不用重启。",
+			srcRefresh: "刷新",
+			srcLoading: "读取中…",
+			srcSummary: "{n} 个采集中 · {m} 个已暂停",
+			srcColName: "名称",
+			srcColEvery: "间隔",
+			srcColToday: "今日",
+			srcColLast: "最近成功",
+			srcColState: "状态",
+			srcColAction: "操作",
+			srcPause: "暂停采集",
+			srcResume: "恢复采集",
+			srcWorking: "处理中…",
+			srcStateOn: "采集中",
+			srcStateIdle: "无数据",
+			srcStatePaused: "已暂停",
+			srcStateFailed: "失败",
+			srcBuiltinTitle: "内置源",
+			srcBuiltinHint: "由 profile 的 l0.sources 控制，改后需重载 DSH。",
+			srcBuiltinAct: "profile 控制",
+			srcEmpty: "collectors 目录还没有脚本：把 <name>.sh 放进去即启用。",
+			srcLoadFail: "读取失败",
+			srcRetry: "重试",
+			srcFollowing: "跟随全局"
 		};
 
 		const en = {
@@ -58,7 +85,34 @@ window.__ModuleLoader__.load({
 			saveFailed: "The deployment did not accept these values; they were left for you to correct.",
 			saveError: "Why the save was refused:",
 			diagNotLanded: "Save did not take effect — the change was not accepted.",
-			diagErrorPrefix: "Save failed: "
+			diagErrorPrefix: "Save failed: ",
+			// —— sources page (global main panel) ——
+			srcNav: "Sources",
+			srcTitle: "Data sources",
+			srcDesc: "Switches for the collector scripts. Each toggle writes <name>.paused on disk, which the collector reads on its next round — no profile edit, no restart.",
+			srcRefresh: "Refresh",
+			srcLoading: "Loading…",
+			srcSummary: "{n} collecting · {m} paused",
+			srcColName: "Name",
+			srcColEvery: "Every",
+			srcColToday: "Today",
+			srcColLast: "Last success",
+			srcColState: "State",
+			srcColAction: "Action",
+			srcPause: "Pause",
+			srcResume: "Resume",
+			srcWorking: "Working…",
+			srcStateOn: "Collecting",
+			srcStateIdle: "No data",
+			srcStatePaused: "Paused",
+			srcStateFailed: "Failed",
+			srcBuiltinTitle: "Built-in sources",
+			srcBuiltinHint: "Controlled by the profile's l0.sources; reload DSH after changing them.",
+			srcBuiltinAct: "Profile-controlled",
+			srcEmpty: "No scripts in collectors yet — drop a <name>.sh there to enable one.",
+			srcLoadFail: "Read failed",
+			srcRetry: "Retry",
+			srcFollowing: "Follows global"
 		};
 
 		function formLabels(t) {
@@ -251,36 +305,17 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 
-		//#region sources panel
+		//#region sources page
 		/**
-		 * 数据源面板：侧栏一行入口 + 点开的弹层。
-		 * 数据来自宿主注册的 exact Fetch route `api/reflex`（与 ds-bot 的 api/bot 同一机制，
-		 * 走会话 cookie 鉴权），不引入 RPC、不开端口。
+		 * 数据源页面：侧栏一行入口 + 主列整页。
+		 *
+		 * 为什么是整页而不是弹层：弹层锚在侧栏底部，宽度被侧栏挤到 560px，十行源要横向缩，
+		 * 点到别处还会消失。宿主有 root 级 keyed `main` 槽（Plugins 页同款）：侧栏入口点一下
+		 * 由侧栏自己调 `selectPanel(id)`，主列换成这一页；入口 id 与 main 的 key 必须相同，
+		 * 否则点了没反应 —— 由 tests/check-sources-panel.mjs 守这条。
 		 */
 		const SRC_ROUTE = "api/reflex";
-		const SRC_LABELS = {
-			title: "数据源",
-			subtitle: (n, m) => `${n} 个采集 · ${m} 个已暂停`,
-			colName: "名称",
-			colEvery: "间隔",
-			colToday: "今日",
-			colLast: "最近成功",
-			colState: "状态",
-			colAct: "操作",
-			pause: "暂停采集",
-			resume: "恢复采集",
-			stateOn: "采集中",
-			stateIdle: "无数据",
-			statePaused: "已暂停",
-			stateFail: "失败",
-			builtin: "内置源（由 profile 配置，改后需重载）",
-			builtinAct: "profile 控制",
-			empty: "collectors 目录还没有脚本：把 <name>.sh 放进去即启用。",
-			loadFail: "读取失败",
-			retry: "重试",
-			following: "跟随全局",
-			close: "关闭"
-		};
+		const SRC_PANEL_ID = "reflex-sources";
 		/** 一次面板请求。统一成 {ok:true,...} 或抛错，调用方只处理一种失败形态。 */
 		async function reflexCall(op, extra) {
 			const res = await fetch(SRC_ROUTE, {
@@ -297,11 +332,11 @@ window.__ModuleLoader__.load({
 			}
 			return body;
 		}
-		function everyLabel(ms) {
-			if (!Number.isFinite(ms) || ms <= 0) return SRC_LABELS.following;
-			if (ms % 3600000 === 0) return ms / 3600000 + " 小时";
-			if (ms % 60000 === 0) return ms / 60000 + " 分钟";
-			return Math.round(ms / 1000) + " 秒";
+		function everyLabel(ms, t) {
+			if (!Number.isFinite(ms) || ms <= 0) return t("srcFollowing");
+			if (ms % 3600000 === 0) return ms / 3600000 + " h";
+			if (ms % 60000 === 0) return ms / 60000 + " min";
+			return Math.round(ms / 1000) + " s";
 		}
 		function clockLabel(ts) {
 			if (!Number.isFinite(ts) || ts <= 0) return "—";
@@ -310,113 +345,141 @@ window.__ModuleLoader__.load({
 			const mm = String(d.getMinutes()).padStart(2, "0");
 			return hh + ":" + mm;
 		}
-		const S = {
-			wrap: { position: "relative", display: "block" },
-			button: {
-				boxSizing: "border-box", width: "100%", minHeight: "36px", border: 0, background: "transparent",
-				color: "var(--dsw-alias-label-primary, inherit)", display: "flex", alignItems: "center", gap: "8px",
-				padding: "0 10px", borderRadius: "var(--dsw-radius-md, 12px)", cursor: "pointer", font: "inherit", textAlign: "left"
-			},
-			panel: {
-				position: "absolute", bottom: "calc(100% + 8px)", left: 0, zIndex: 40, width: "min(560px, calc(100vw - 24px))",
-				maxHeight: "70vh", overflow: "auto", background: "var(--dsw-alias-bg-layer-2, #fff)",
-				color: "var(--dsw-alias-label-primary, #111)", border: "1px solid var(--dsw-alias-border-l2, #e5e5e5)",
-				borderRadius: "var(--dsw-radius-md, 12px)", boxShadow: "0 12px 32px rgba(0,0,0,.18)", padding: "14px 16px",
-				fontSize: "13px", lineHeight: 1.5
-			},
-			head: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "8px", marginBottom: "10px" },
-			table: { width: "100%", borderCollapse: "collapse" },
-			th: { textAlign: "left", fontWeight: 600, padding: "4px 6px", borderBottom: "1px solid var(--dsw-alias-border-l2, #e5e5e5)", whiteSpace: "nowrap" },
-			td: { padding: "6px", borderBottom: "1px solid var(--dsw-alias-border-l1, #f0f0f0)", verticalAlign: "middle" },
-			action: {
-				border: "1px solid var(--dsw-alias-border-l2, #e5e5e5)", background: "transparent", color: "inherit",
-				borderRadius: "var(--dsw-radius-sm, 8px)", padding: "3px 10px", cursor: "pointer", font: "inherit", minHeight: "28px"
-			},
-			dot: (color) => ({ display: "inline-block", width: "7px", height: "7px", borderRadius: "999px", background: color, marginRight: "6px" }),
-			muted: { color: "var(--dsw-alias-label-secondary, #6b7280)" },
-			error: { color: "#c0392b", margin: "8px 0 0" }
-		};
-		/** 状态四态：只有 failed 用红；paused 是用户的选择，保持中性。 */
-		function stateOf(row) {
-			if (row.paused) return { text: SRC_LABELS.statePaused, color: "var(--dsw-alias-label-secondary, #9ca3af)" };
-			if (row.failed) return { text: SRC_LABELS.stateFail, color: "#c0392b" };
-			if (!row.factsToday) return { text: SRC_LABELS.stateIdle, color: "var(--dsw-alias-label-secondary, #9ca3af)" };
-			return { text: SRC_LABELS.stateOn, color: "#2f855a" };
+		/** 状态四态：只有失败用红；暂停是用户的选择，保持中性。 */
+		function stateOf(row, t) {
+			if (row.paused) return { text: t("srcStatePaused"), color: "var(--dsw-alias-label-secondary,#9ca3af)" };
+			if (row.failed) return { text: t("srcStateFailed"), color: "#c0392b" };
+			if (!row.factsToday) return { text: t("srcStateIdle"), color: "var(--dsw-alias-label-secondary,#9ca3af)" };
+			return { text: t("srcStateOn"), color: "#2f855a" };
 		}
-		function SourcesEntry() {
-			const [open, setOpen] = react.useState(false);
-			const [data, setData] = react.useState(null);
-			const [error, setError] = react.useState("");
+		/** 侧栏图标：三条采集行，右侧三个点 —— 与"清单"语义一致，不画数据库。 */
+		function SourcesIcon(props) {
+			const size = props && props.size ? props.size : 16;
+			return react_jsx_runtime.jsxs("svg", {
+				width: size, height: size, viewBox: "0 0 16 16", fill: "none",
+				"aria-hidden": "true", focusable: "false",
+				children: [
+					react_jsx_runtime.jsx("path", {
+						d: "M2.2 4h8.1M2.2 8h8.1M2.2 12h8.1",
+						stroke: "currentColor", strokeWidth: "1.3", strokeLinecap: "round"
+					}, "l"),
+					react_jsx_runtime.jsx("circle", { cx: "12.6", cy: "4", r: "1.15", fill: "currentColor" }, "d1"),
+					react_jsx_runtime.jsx("circle", { cx: "12.6", cy: "8", r: "1.15", fill: "currentColor" }, "d2"),
+					react_jsx_runtime.jsx("circle", { cx: "12.6", cy: "12", r: "1.15", fill: "currentColor" }, "d3")
+				]
+			});
+		}
+		/** 页面样式。作为 <style> 元素渲染在组件里，卸载即移除，不写 document.head。 */
+		const SRC_CSS = [
+			".rfx-page{display:flex;flex-direction:column;height:100%;box-sizing:border-box;padding:0 clamp(24px,4vw,48px);color:var(--dsw-alias-label-primary,#111)}",
+			".rfx-inner{display:flex;flex-direction:column;flex:1;min-height:0;width:100%;max-width:960px;margin:0 auto}",
+			".rfx-head{flex:none;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:calc(var(--dsh-frame-top-clearance,48px) + 4px) 0 16px;border-bottom:1px solid var(--dsw-alias-border-l1,#eee)}",
+			".rfx-title{margin:0;font-size:18px;font-weight:600;line-height:1.3}",
+			".rfx-desc{margin:5px 0 0;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-secondary,#6b7280)}",
+			".rfx-body{flex:1;min-height:0;overflow:auto;padding:0 0 40px}",
+			".rfx-bar{display:flex;align-items:center;gap:10px;padding:12px 0 6px;font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280)}",
+			".rfx-table{width:100%;border-collapse:collapse;font-size:13px}",
+			".rfx-th{text-align:left;font-weight:600;color:var(--dsw-alias-label-secondary,#6b7280);padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,#e5e5e5);white-space:nowrap}",
+			".rfx-td{padding:11px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,#f0f0f0);vertical-align:middle}",
+			".rfx-name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}",
+			".rfx-muted{color:var(--dsw-alias-label-secondary,#9ca3af)}",
+			".rfx-num{font-variant-numeric:tabular-nums}",
+			".rfx-dot{display:inline-block;width:7px;height:7px;border-radius:999px;margin-right:6px;vertical-align:1px}",
+			".rfx-btn{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,#e5e5e5);background:transparent;color:inherit;border-radius:var(--dsw-radius-sm,8px);padding:4px 12px;min-height:28px;font:inherit;font-size:12px;cursor:pointer}",
+			".rfx-btn:disabled{opacity:.5;cursor:default}",
+			".rfx-btn:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.12))}",
+			".rfx-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.06);color:#c0392b;font-size:13px}",
+			".rfx-sec{margin-top:30px}",
+			".rfx-secTitle{margin:0;font-size:13px;font-weight:600}",
+			".rfx-secHint{margin:3px 0 4px;font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280)}"
+		].join("\n");
+		function SourcesPage(props) {
+			const t = typeof props.t === "function" ? props.t : (k) => k;
+			const [view, setView] = react.useState({ phase: "loading", data: null, error: "" });
 			const [busy, setBusy] = react.useState("");
 			const load = react.useCallback(async () => {
-				try { setData(await reflexCall("list")); setError(""); }
-				catch (e) { setError(e && e.message ? e.message : String(e)); }
+				setView((prev) => ({ phase: prev.data ? "ready" : "loading", data: prev.data, error: "" }));
+				try {
+					setView({ phase: "ready", data: await reflexCall("list"), error: "" });
+				} catch (e) {
+					setView({ phase: "error", data: null, error: e && e.message ? e.message : String(e) });
+				}
 			}, []);
-			react.useEffect(() => { if (open) { void load(); } }, [open, load]);
-			const toggle = async (row, paused) => {
+			react.useEffect(() => { void load(); }, [load]);
+			const toggle = async (row) => {
 				setBusy(row.name);
 				try {
-					const next = await reflexCall(paused ? "pause" : "resume", { name: row.name });
-					setData(next); setError("");
-				} catch (e) { setError(e && e.message ? e.message : String(e)); }
-				finally { setBusy(""); }
+					setView({ phase: "ready", data: await reflexCall(row.paused ? "resume" : "pause", { name: row.name }), error: "" });
+				} catch (e) {
+					setView((prev) => ({ ...prev, error: e && e.message ? e.message : String(e) }));
+				} finally { setBusy(""); }
 			};
+			const data = view.data;
 			const rows = (data && data.sources) || [];
 			const builtin = (data && data.builtin) || [];
 			const pausedCount = rows.filter((r) => r.paused).length;
-			const row = (r) => react_jsx_runtime.jsx("tr", { children: [
-				react_jsx_runtime.jsx("td", { style: S.td, children: r.name }, "n"),
-				react_jsx_runtime.jsx("td", { style: S.td, children: everyLabel(r.intervalMs) }, "e"),
-				react_jsx_runtime.jsx("td", { style: S.td, children: String(r.factsToday || 0) }, "t"),
-				react_jsx_runtime.jsx("td", { style: S.td, children: clockLabel(r.lastFactAt) }, "l"),
-				react_jsx_runtime.jsx("td", { style: S.td, children: react_jsx_runtime.jsxs("span", { children: [
-					react_jsx_runtime.jsx("span", { style: S.dot(stateOf(r).color) }, "d"),
-					stateOf(r).text
-				] }) }, "s"),
-				react_jsx_runtime.jsx("td", { style: S.td, children: react_jsx_runtime.jsx("button", {
-					type: "button", style: S.action, disabled: busy === r.name,
-					onClick: () => void toggle(r, !r.paused),
-					children: r.paused ? SRC_LABELS.resume : SRC_LABELS.pause
-				}) }, "a")
-			] }, r.name);
-			return react_jsx_runtime.jsxs("div", { style: S.wrap, children: [
-				react_jsx_runtime.jsxs("button", {
-					type: "button", style: S.button, title: SRC_LABELS.title, "aria-label": SRC_LABELS.title,
-					"aria-expanded": open ? "true" : "false",
-					onClick: () => setOpen((v) => !v),
-					children: [react_jsx_runtime.jsx("span", { "aria-hidden": "true", children: "▤" }), react_jsx_runtime.jsx("span", { children: SRC_LABELS.title })]
-				}),
-				open ? react_jsx_runtime.jsxs("div", { style: S.panel, role: "dialog", "aria-label": SRC_LABELS.title, children: [
-					react_jsx_runtime.jsxs("div", { style: S.head, children: [
-						react_jsx_runtime.jsxs("strong", { children: [
-							SRC_LABELS.title,
-							data ? react_jsx_runtime.jsx("span", { style: S.muted, children: " · " + SRC_LABELS.subtitle(rows.length - pausedCount, pausedCount) }) : null
+			const summary = t("srcSummary")
+				.replace("{n}", String(rows.length - pausedCount))
+				.replace("{m}", String(pausedCount));
+			const rowNode = (r) => {
+				const st = stateOf(r, t);
+				return react_jsx_runtime.jsxs("tr", { children: [
+					react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsx("span", { className: "rfx-name", children: r.name }) }, "n"),
+					react_jsx_runtime.jsx("td", { className: "rfx-td rfx-muted", children: everyLabel(r.intervalMs, t) }, "e"),
+					react_jsx_runtime.jsx("td", { className: "rfx-td rfx-num", children: String(r.factsToday || 0) }, "t"),
+					react_jsx_runtime.jsx("td", { className: "rfx-td rfx-num rfx-muted", children: clockLabel(r.lastFactAt) }, "l"),
+					react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsxs("span", { children: [
+						react_jsx_runtime.jsx("span", { className: "rfx-dot", style: { background: st.color } }, "d"),
+						st.text
+					] }) }, "s"),
+					react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsx("button", {
+						type: "button", className: "rfx-btn", disabled: busy === r.name,
+						onClick: () => void toggle(r),
+						children: busy === r.name ? t("srcWorking") : (r.paused ? t("srcResume") : t("srcPause"))
+					}) }, "a")
+				] }, r.name);
+			};
+			return react_jsx_runtime.jsxs("div", { className: "rfx-page", children: [
+				react_jsx_runtime.jsx("style", { children: SRC_CSS }, "css"),
+				react_jsx_runtime.jsxs("div", { className: "rfx-inner", children: [
+					react_jsx_runtime.jsxs("header", { className: "rfx-head", children: [
+						react_jsx_runtime.jsxs("div", { children: [
+							react_jsx_runtime.jsx("h1", { className: "rfx-title", children: t("srcTitle") }),
+							react_jsx_runtime.jsx("p", { className: "rfx-desc", children: t("srcDesc") })
 						] }),
-						react_jsx_runtime.jsx("button", { type: "button", style: S.action, onClick: () => setOpen(false), children: SRC_LABELS.close })
+						react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: () => void load(), children: t("srcRefresh") })
 					] }),
-					error ? react_jsx_runtime.jsxs("p", { style: S.error, children: [SRC_LABELS.loadFail + "：" + error, " ", react_jsx_runtime.jsx("button", { type: "button", style: S.action, onClick: () => void load(), children: SRC_LABELS.retry })] }) : null,
-					rows.length === 0 && !error ? react_jsx_runtime.jsx("p", { style: S.muted, children: SRC_LABELS.empty }) : error ? null : react_jsx_runtime.jsxs("table", { style: S.table, children: [
-						react_jsx_runtime.jsx("thead", { children: react_jsx_runtime.jsxs("tr", { children: [
-							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colName }),
-							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colEvery }),
-							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colToday }),
-							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colLast }),
-							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colState }),
-							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colAct })
-						] }) }),
-						react_jsx_runtime.jsx("tbody", { children: rows.map(row) })
-					] }),
-					builtin.length > 0 ? react_jsx_runtime.jsxs("div", { children: [
-						react_jsx_runtime.jsx("p", { style: { ...S.muted, margin: "14px 0 4px" }, children: SRC_LABELS.builtin }),
-						react_jsx_runtime.jsxs("table", { style: S.table, children: [
-							react_jsx_runtime.jsx("tbody", { children: builtin.map((b) => react_jsx_runtime.jsxs("tr", { children: [
-								react_jsx_runtime.jsx("td", { style: S.td, children: b.name }),
-								react_jsx_runtime.jsx("td", { style: { ...S.td, ...S.muted }, children: b.enabled ? SRC_LABELS.stateOn : SRC_LABELS.statePaused }),
-								react_jsx_runtime.jsx("td", { style: { ...S.td, ...S.muted }, children: SRC_LABELS.builtinAct })
-							] }, b.name)) })
-						] })
-					] }) : null
-				] }) : null
+					react_jsx_runtime.jsxs("div", { className: "rfx-body", children: [
+						react_jsx_runtime.jsx("div", { className: "rfx-bar", children: data ? summary : t("srcLoading") }),
+						view.error ? react_jsx_runtime.jsxs("div", { className: "rfx-error", children: [
+							react_jsx_runtime.jsx("span", { children: t("srcLoadFail") + "：" + view.error }),
+							react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: () => void load(), children: t("srcRetry") })
+						] }) : null,
+						data && rows.length === 0 && !view.error
+							? react_jsx_runtime.jsx("p", { className: "rfx-muted", children: t("srcEmpty") })
+							: null,
+						rows.length > 0 ? react_jsx_runtime.jsxs("table", { className: "rfx-table", children: [
+							react_jsx_runtime.jsx("thead", { children: react_jsx_runtime.jsxs("tr", { children: [
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: t("srcColName") }),
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: t("srcColEvery") }),
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: t("srcColToday") }),
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: t("srcColLast") }),
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: t("srcColState") }),
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: t("srcColAction") })
+							] }) }),
+							react_jsx_runtime.jsx("tbody", { children: rows.map(rowNode) })
+						] }) : null,
+						builtin.length > 0 ? react_jsx_runtime.jsxs("section", { className: "rfx-sec", children: [
+							react_jsx_runtime.jsx("h2", { className: "rfx-secTitle", children: t("srcBuiltinTitle") }),
+							react_jsx_runtime.jsx("p", { className: "rfx-secHint", children: t("srcBuiltinHint") }),
+							react_jsx_runtime.jsx("table", { className: "rfx-table", children: react_jsx_runtime.jsx("tbody", { children: builtin.map((b) => react_jsx_runtime.jsxs("tr", { children: [
+								react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsx("span", { className: "rfx-name", children: b.name }) }),
+								react_jsx_runtime.jsx("td", { className: "rfx-td rfx-muted", children: b.enabled ? t("srcStateOn") : t("srcStatePaused") }),
+								react_jsx_runtime.jsx("td", { className: "rfx-td rfx-muted", children: t("srcBuiltinAct") })
+							] }, b.name)) }) })
+						] }) : null
+					] })
+				] })
 			] });
 		}
 		//#endregion
@@ -454,12 +517,21 @@ window.__ModuleLoader__.load({
 			ctx.effect(() => () => card.dispose(), "dsh-reflex: form subscription");
 			// whileServed: 宿主服务该行的配置时注册，停止服务时注销 ——
 			// 与官方设置页同一套写法, 所以插件被禁用时这一页不会残留。
-			// 侧栏一行入口（与 ds-harness-remote 同一个槽，宿主负责布局与尺寸）
-			ctx.effect(() => ctx.slots.inject("sidebar.footer.action", () => ctx.slots.register({
-				name: "sidebar.footer.action",
-				id: "dsh-reflex-sources",
-				order: 10
-			}, SourcesEntry)), "dsh-reflex: sources entry");
+			// 数据源是主列整页，不是弹层：main 槽的 keyed 页 + sidebar.panellist 入口
+			// （Plugins 页同款）。侧栏自己调 selectPanel(id)，所以两个 id 必须相同 ——
+			// 不一致就是点了没反应，而界面上没有任何报错。
+			ctx.effect(() => ctx.slots.inject("main", () => ctx.slots.register({
+				name: "main",
+				key: SRC_PANEL_ID,
+				locale: NS
+			}, SourcesPage)), "dsh-reflex: sources page");
+			ctx.effect(() => ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({
+				name: "sidebar.panellist",
+				id: SRC_PANEL_ID,
+				order: 10,
+				label: () => t("srcNav"),
+				locale: NS
+			}, SourcesIcon)), "dsh-reflex: sources nav");
 			ctx.effect(() => ctx.configForms.whileServed([ROW_NS], (served) => {
 				if (!served.has(ROW_NS)) return;
 				return ctx.slots.inject("plugins.row.config", () => ctx.slots.register({
@@ -474,7 +546,8 @@ window.__ModuleLoader__.load({
 
 		exports.NS = NS;
 		exports.reflexCall = reflexCall;
-		exports.SourcesEntry = SourcesEntry;
+		exports.SourcesPage = SourcesPage;
+		exports.SourcesIcon = SourcesIcon;
 		exports.apply = apply;
 		exports.inject = inject;
 		return module.exports;

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // 客户端插件的冒烟测试：不启动 DSH，也能证明
 //   ① client.js 能被模块加载器收下（语法/包装层没坏）
-//   ② apply() 真的把入口注册进 sidebar.footer.action 槽
+//   ② apply() 把页面注册进 main 槽、入口注册进 sidebar.panellist 槽（不是旧弹层）
+//   ②b 入口 id 与 main 的 key 相同 —— 不一致就是点了没反应，且界面上没有报错
 //   ③ 面板的请求打到 `api/reflex`，同源、POST、body 是 {op,...}
 //   ④ 宿主回 {ok:false,error} 时，面板拿到的是可显示的失败原因
 //
@@ -13,7 +14,7 @@ import vm from 'node:vm'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FILE = join(HERE, '..', 'client.js')
-const CASES = ['加载器收下', 'apply 注册侧栏入口', '请求打到 api/reflex', '失败原因可显示']
+const CASES = ['加载器收下', 'apply 注册主列页与侧栏入口', '入口 id 与主列 key 一致', '请求打到 api/reflex', '失败原因可显示']
 
 let code
 try { code = readFileSync(FILE, 'utf8') } catch { console.error(`未判定：读不到 ${FILE}`); process.exit(2) }
@@ -86,12 +87,26 @@ const ctx = {
 const checkStack = (name, fn) => {
   try { fn(); results.push([name, true, '']) } catch (e) { results.push([name, false, `${e?.message} @ ${(e?.stack || '').split('\n')[1]?.trim()}`]) }
 }
+const bySlot = (name) => registered.filter((r) => r.definition?.name === name)
 checkStack(CASES[1], () => {
   assert(Array.isArray(mod.inject) && mod.inject.includes('slots'), 'inject 里没有 slots')
   mod.apply(ctx)
-  const entry = registered.find((r) => r.definition?.name === 'sidebar.footer.action')
-  assert(entry, `没有注册 sidebar.footer.action，实际注册了：${registered.map((r) => r.definition?.name).join(', ')}`)
-  assert(typeof entry.component === 'function', '入口没有挂组件')
+  const page = bySlot('main')
+  assert(page.length === 1, `main 槽注册了 ${page.length} 条（应为 1）`)
+  assert(typeof page[0].component === 'function', '主列页没有挂组件')
+  const nav = bySlot('sidebar.panellist')
+  assert(nav.length === 1, `sidebar.panellist 注册了 ${nav.length} 条（应为 1）`)
+  assert(typeof nav[0].component === 'function', '侧栏入口没有图标组件')
+  assert(bySlot('sidebar.footer.action').length === 0, '仍在注册旧的弹层入口 sidebar.footer.action')
+})
+// 侧栏按 id 去 main 里找同 key 的页：两个值不同 = 点了没反应。
+checkStack(CASES[2], () => {
+  const page = bySlot('main')[0], nav = bySlot('sidebar.panellist')[0]
+  assert(page?.definition?.key, 'main 注册缺 key')
+  assert(nav?.definition?.id, 'panellist 注册缺 id')
+  assert(page.definition.key === nav.definition.id,
+    `id 不一致：main key=${page.definition.key} / panellist id=${nav.definition.id}`)
+  assert(typeof nav.definition.label === 'function', 'panellist 缺 label，侧栏没有可显示的文字')
 })
 
 
@@ -105,8 +120,8 @@ const runAsync = async () => {
     assert(call.init?.method === 'POST', '不是 POST')
     assert(call.init?.credentials === 'same-origin', '缺 credentials: same-origin')
     assert(JSON.parse(call.init.body).op === 'list', 'body 里没有 op')
-    results.push([CASES[2], true, ''])
-  } catch (e) { results.push([CASES[2], false, e.message]) }
+    results.push([CASES[3], true, ''])
+  } catch (e) { results.push([CASES[3], false, e.message]) }
 
   // ④ 失败形态
   try {
@@ -119,8 +134,8 @@ const runAsync = async () => {
     assert(/invalid name/.test(caught.message), `抛出的原因不对：${caught.message}`)
     const body = JSON.parse(fetches.at(-1).init.body)
     assert(body.name === 'nope' && body.op === 'pause', 'pause 请求没带 name/op')
-    results.push([CASES[3], true, ''])
-  } catch (e) { results.push([CASES[3], false, e.message]) }
+    results.push([CASES[4], true, ''])
+  } catch (e) { results.push([CASES[4], false, e.message]) }
 }
 
 await runAsync()
