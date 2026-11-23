@@ -1,0 +1,29 @@
+{
+  "skill": "research-nex",
+  "run_id": "2026-11-24-vdi-friction",
+  "mode": "Validate",
+  "tools": {
+    "web_search": "not used（本题的证据全在本机一手文件与机器复跑里；外部检索不会改变结论）",
+    "web_fetch": "not used",
+    "node": "ok (v23.11.0，需显式 PATH=/usr/local/bin，见 toolchain.md:15)",
+    "python3": "ok (3.9.6)",
+    "git": "ok"
+  },
+  "local_sources_read": [
+    "SRC01", "SRC02", "SRC03", "SRC04", "SRC05", "SRC06", "SRC07", "SRC08", "SRC09", "SRC10", "SRC12"
+  ],
+  "machine_reruns": [
+    "SRC11 E1: check-register 全表 → rows=19 / OK / rc=0",
+    "SRC11 E2: 表内插一个空行 → rows=9 / OK / rc=0",
+    "SRC11 E3: 证据路径改成不存在（文档命令）→ OK / rc=0，仅 1 条 WARN",
+    "SRC11 E4: 同上 + --strict → rc=1",
+    "SRC11 E5: 未跑过的命令 + 退出码 0 → OK / rc=0",
+    "SRC11 E6: 悬空小标题引用存在时 check-paths → rc=0",
+    "SRC11 E7: git show --stat 2f49ffd → 26 个 states/*.st + 4 个 TTrace 入库"
+  ],
+  "blocked": [],
+  "undecided": [
+    "「先画图让人确认」在本次运行里是否真的发生在建模之前——提交历史无法区分先后（模型与图同一次提交），登记表与验证记录都没有这个字段"
+  ],
+  "notes": "3 个来源类别：技能文本（13 份 md）/ 运行产物（模型、脚本、登记表、图）/ 机器复跑输出。无外部来源，因此不适用检索层指标。"
+}

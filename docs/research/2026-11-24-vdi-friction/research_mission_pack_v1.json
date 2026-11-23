@@ -1,0 +1,22 @@
+{
+  "skill": "research-nex",
+  "run_id": "2026-11-24-vdi-friction",
+  "mode": "Validate",
+  "profile": "technical-detail",
+  "delivery_medium": "repo docs + chat",
+  "objective": "审计 verifying-design-invariants 在本次 add-source 运行中暴露的流程摩擦，并给出可机器核对的修法",
+  "question_tree": [
+    "S0–S5 的出口判据哪些当场不可执行",
+    "工具与脚本层的失效面",
+    "假绿：技能本该防住却没防住的",
+    "收据/模板与门禁的时序与词汇冲突",
+    "文档自引用漂移由谁守",
+    "这些缺口是否放过了本次交付物本身的错误"
+  ],
+  "claim_targets": [
+    "ST01", "ST02", "ST03", "ST04", "ST05", "ST06", "ST07",
+    "ST08", "ST09", "ST10", "ST11", "ST12", "ST13", "ST14",
+    "ST15", "ST16", "ST17", "ST18", "ST19", "ST20", "ST21"
+  ],
+  "persistence": "durable (repo docs, committed)"
+}

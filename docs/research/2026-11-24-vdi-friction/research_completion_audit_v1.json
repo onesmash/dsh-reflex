@@ -1,0 +1,31 @@
+{
+  "skill": "research-nex",
+  "run_id": "2026-11-24-vdi-friction",
+  "terminal_state": "completed",
+  "claim_level": "L1_primary_local_artifacts",
+  "metrics": {
+    "statement_count": 21,
+    "supported": 19,
+    "partially_supported": 2,
+    "unsupported": 0,
+    "inconclusive": 0,
+    "citation_support_rate": 0.9048,
+    "citation_support_rate_source": "research_nex_validate_statement_audit.py 的 FACT 行（supported 计入，partially 不计）",
+    "effective_citations": 10,
+    "source_class_count": 3,
+    "machine_rerun_cases": 8,
+    "machine_rerun_exit": 0,
+    "findings": { "P1": 2, "P2": 5, "P3": 3 }
+  },
+  "downgrade": {
+    "failure_mode": "non_verifiable_statement_class (normative)",
+    "impact": "ST20（S5 门弱于其声称）与 ST21（三条修法）是设计判断，不是可直接核验的事实；结论强度只能是 partially_supported",
+    "recovery_used": "按 VeriScore 口径标 claim_type=normative，在正文里降级陈述，不进 unsupported_statement_register",
+    "remaining_risk": "两条判断的边界（「弱到什么程度算弱」「先修哪条」）需要人来定，机器给不出"
+  },
+  "open_gaps": [
+    "「先画图让人确认」是否真的发生在建模之前，提交历史无法判定（模型与图同一提交，两个模板都没有这个字段）",
+    "本次未重跑登记表 19 行声称的命令；「那些 0 仍然成立」不在本报告结论里"
+  ],
+  "notes": "validator 输出：PASS statement_support_matrix.json / PASS unsupported_statement_register.json / FACT citation_accuracy=0.9048 effective_citations=10 network_unavailable=True / exit=0。其中 network_unavailable=True 是本轮已知的硬编码常量（上一轮已作为 research-nex 摩擦上报），本运行完全未使用网络，该字段不构成降级理由。"
+}

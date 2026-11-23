@@ -1,0 +1,119 @@
+{
+  "skill": "research-nex",
+  "mode": "Validate",
+  "generated_at": "2026-11-24T00:12:00+08:00",
+  "target": "verifying-design-invariants 在本次 add-source 运行中暴露的流程摩擦",
+  "source_class_count": 3,
+  "sources": [
+    {
+      "source_id": "SRC01",
+      "title": "verifying-design-invariants / SKILL.md",
+      "publisher": "~/.agents/skills/verifying-design-invariants",
+      "url": "file://~/.agents/skills/verifying-design-invariants/SKILL.md",
+      "kind": "primary skill text",
+      "grade": "A",
+      "locator_style": "行号（如 SKILL.md:31）",
+      "read_at": "2026-11-24T00:02:00+08:00"
+    },
+    {
+      "source_id": "SRC02",
+      "title": "references/stations.md（五站逐站）",
+      "publisher": "同上",
+      "url": "file://~/.agents/skills/verifying-design-invariants/references/stations.md",
+      "kind": "primary skill text",
+      "grade": "A",
+      "read_at": "2026-11-24T00:02:00+08:00"
+    },
+    {
+      "source_id": "SRC03",
+      "title": "references/gates.md（七条质量门）",
+      "publisher": "同上",
+      "url": "file://~/.agents/skills/verifying-design-invariants/references/gates.md",
+      "kind": "primary skill text",
+      "grade": "A",
+      "read_at": "2026-11-24T00:02:00+08:00"
+    },
+    {
+      "source_id": "SRC04",
+      "title": "references/toolchain.md（本机工具链与硬约束）",
+      "publisher": "同上",
+      "url": "file://~/.agents/skills/verifying-design-invariants/references/toolchain.md",
+      "kind": "primary skill text",
+      "grade": "A",
+      "read_at": "2026-11-24T00:03:00+08:00"
+    },
+    {
+      "source_id": "SRC05",
+      "title": "templates/property-register.md（登记表模板）",
+      "publisher": "同上",
+      "url": "file://~/.agents/skills/verifying-design-invariants/templates/property-register.md",
+      "kind": "primary skill text",
+      "grade": "A",
+      "read_at": "2026-11-24T00:03:00+08:00"
+    },
+    {
+      "source_id": "SRC06",
+      "title": "templates/verification-record.md（验证记录模板）",
+      "publisher": "同上",
+      "url": "file://~/.agents/skills/verifying-design-invariants/templates/verification-record.md",
+      "kind": "primary skill text",
+      "grade": "A",
+      "read_at": "2026-11-24T00:03:00+08:00"
+    },
+    {
+      "source_id": "SRC07",
+      "title": "scripts/check-register.mjs（登记表核对器）",
+      "publisher": "同上",
+      "url": "file://~/.agents/skills/verifying-design-invariants/scripts/check-register.mjs",
+      "kind": "primary checker source",
+      "grade": "A",
+      "read_at": "2026-11-24T00:04:00+08:00"
+    },
+    {
+      "source_id": "SRC08",
+      "title": "scripts/check-paths.mjs（交叉引用核对器）",
+      "publisher": "同上",
+      "url": "file://~/.agents/skills/verifying-design-invariants/scripts/check-paths.mjs",
+      "kind": "primary checker source",
+      "grade": "A",
+      "read_at": "2026-11-24T00:04:00+08:00"
+    },
+    {
+      "source_id": "SRC09",
+      "title": "本次运行的验证产物（Order.tla / *.cfg / check.sh / report.md / chart-*.mmd）",
+      "publisher": "~/SourceCode/dsh-reflex/docs/verification/create-source",
+      "url": "file://~/SourceCode/dsh-reflex/docs/verification/create-source/",
+      "kind": "run artifact",
+      "grade": "A",
+      "read_at": "2026-11-24T00:05:00+08:00"
+    },
+    {
+      "source_id": "SRC10",
+      "title": "docs/property-register-sources.md（本次性质登记表，19 行）",
+      "publisher": "~/SourceCode/dsh-reflex/docs",
+      "url": "file://~/SourceCode/dsh-reflex/docs/property-register-sources.md",
+      "kind": "run artifact",
+      "grade": "A",
+      "read_at": "2026-11-24T00:05:00+08:00"
+    },
+    {
+      "source_id": "SRC11",
+      "title": "本次审计的机器复跑记录（evidence/rerun.sh + rerun.txt）",
+      "publisher": "本目录",
+      "url": "file://docs/research/2026-11-24-vdi-friction/evidence/rerun.txt",
+      "kind": "machine rerun transcript",
+      "grade": "A",
+      "note": "同一脚本可重跑；退出码 0 = 七条预期全部符合，1 = 有不符合，2 = 未判定（找不到 node / 文件）",
+      "read_at": "2026-11-24T00:10:00+08:00"
+    },
+    {
+      "source_id": "SRC12",
+      "title": "references/pilot-findings.md（试点十条摩擦 + 四轮补记）",
+      "publisher": "同上",
+      "url": "file://~/.agents/skills/verifying-design-invariants/references/pilot-findings.md",
+      "kind": "primary skill text",
+      "grade": "A",
+      "read_at": "2026-11-24T00:03:00+08:00"
+    }
+  ]
+}

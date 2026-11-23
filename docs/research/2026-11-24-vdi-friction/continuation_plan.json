@@ -1,0 +1,49 @@
+{
+  "skill": "research-nex",
+  "run_id": "2026-11-24-vdi-friction",
+  "next_actions": [
+    {
+      "action": "check-register.mjs 加「表格中间中断」判据：break 后继续扫，再遇表格行即 ERROR",
+      "owner": "Chief",
+      "cost": "Quick",
+      "acceptance": "复跑 E2 的期望改成 FAIL 后仍 exit 0；不带空行的旧表仍 OK；exit 码仍是 0/1/2 三态",
+      "rollback": "只新增一条 ERROR，不动已有判据；回退等于删掉该分支"
+    },
+    {
+      "action": "S5 文档命令加 --strict，并把「只验格式」写回出口判据本身（SKILL.md:31/:75、stations.md:108）",
+      "owner": "Chief",
+      "cost": "Quick",
+      "acceptance": "复跑 E3 期望改成 exit 1；SKILL.md 与脚本头部自述口径一致；WARN 默认失败后本表仍 0 error 0 warning",
+      "rollback": "改回不带 --strict 的两个字符串"
+    },
+    {
+      "action": "重画 chart-fixed.mmd：状态按「采集器在不在」命名，并加一条图表对表检查",
+      "owner": "Chief",
+      "cost": "Quick",
+      "acceptance": "对表脚本能报出旧图的 s2/s4 矛盾（先红），改后 exit 0；图里每步的可见性与 Order.tla:18 的 Atomic 同源",
+      "rollback": "图是文档，保留旧文件在 git 历史里"
+    },
+    {
+      "action": "把「不建模」从证据等级列拆出去（独立列或独立表），等级列只允许 L1/L2/L3",
+      "owner": "Chief",
+      "cost": "Standard",
+      "acceptance": "本表 19 行重排后 check-register 仍 OK；P19 能读出 L2；18 行不建模各自写清谁覆盖",
+      "rollback": "列改名属于格式变更，旧表可原样保留在 git 历史"
+    },
+    {
+      "action": "S0 出口判据把 sync commit 改成「基线 commit」，sync commit 移到 S5 并要求 pending 语义",
+      "owner": "Chief",
+      "cost": "Quick",
+      "acceptance": "SKILL.md:26、stations.md:14 与 property-register.md:22 三处不再互相矛盾；模板列名同步",
+      "rollback": "纯文档改动"
+    },
+    {
+      "action": "补三条 lint：运行产物不入库（states/、*_TTrace_*）、引号内小标题存在性、Mermaid 标签只许 ASCII；S3③ 改写成类判据",
+      "owner": "Chief",
+      "cost": "Standard",
+      "acceptance": "三条各自能先红后绿；2f49ffd 那类提交会被拦；旧称「四项」= 0",
+      "rollback": "lint 可单独停用，不影响已有检查器"
+    }
+  ],
+  "stop_reason": "Validate 阈值已满足（21 条陈述全部可回到行号或机器输出，0 unsupported，0 inconclusive，validator exit 0）；继续挖的边际收益低，剩下的是「改不改技能」的取舍，需要人定。"
+}

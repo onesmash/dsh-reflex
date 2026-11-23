@@ -1,0 +1,10 @@
+{
+  "skill": "research-nex",
+  "version": "7.1.0",
+  "generated_at": "2026-11-24T00:18:00+08:00",
+  "mode": "Validate",
+  "target": "verifying-design-invariants 在本次 add-source 运行中暴露的流程摩擦",
+  "entry_count": 0,
+  "entries": [],
+  "note": "0 条是刻意的：19 条经验陈述全部能回到文件行号或机器复跑输出；2 条设计判断属 normative，按 VeriScore 口径不做「不支持」处理、也不进本表，在正文里降级陈述（ST20/ST21）。真正的缺口在 open_gaps 里：S1「先画图让人确认」是否真的发生在建模之前，提交历史无法判定——这是记录缺口，不是可登记的无出处断言。"
+}

@@ -1,0 +1,210 @@
+{
+  "skill": "research-nex",
+  "mode": "Validate",
+  "generated_at": "2026-11-24T00:16:00+08:00",
+  "target": "verifying-design-invariants 在本次 add-source 运行中暴露的流程摩擦",
+  "claim_evidence_map": [
+    {
+      "claim_id": "ST01",
+      "claim": "check-register.mjs 的 readTable 读到第一个不以 | 开头的行就 break，其后的表格行不再解析",
+      "evidence": [{ "source_id": "SRC07", "locator": "scripts/check-register.mjs:50-55" }],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST02",
+      "claim": "在登记表 P9/P10 之间插一个空行后，核对器只读到 9 行（全表 19 行），verdict 仍是 OK、exit 0、errors 为空",
+      "evidence": [
+        { "source_id": "SRC11", "locator": "E2" },
+        { "source_id": "SRC07", "locator": "scripts/check-register.mjs:207（rows 计数只用于「零数据行」判定）" }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST03",
+      "claim": "技能文档把 check-register.mjs 的 exit 0 作为 S5 收口的机器核对出口判据",
+      "evidence": [
+        { "source_id": "SRC01", "locator": "SKILL.md:31、SKILL.md:75" },
+        { "source_id": "SRC02", "locator": "references/stations.md:108" }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST04",
+      "claim": "文档给出的 S5 核对命令不带 --strict，而 WARN 默认不影响退出码",
+      "evidence": [
+        { "source_id": "SRC01", "locator": "SKILL.md:71-73" },
+        { "source_id": "SRC02", "locator": "references/stations.md:108" },
+        { "source_id": "SRC07", "locator": "scripts/check-register.mjs:216" }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST05",
+      "claim": "把表内一个证据路径改成不存在，按文档命令跑仍 verdict OK、exit 0（只有 1 条 WARN）；加 --strict 才 exit 1",
+      "evidence": [{ "source_id": "SRC11", "locator": "E3、E4" }],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST06",
+      "claim": "核对器不执行任何命令；「退出码」列只做 0 / PASS 的文本匹配",
+      "evidence": [{ "source_id": "SRC07", "locator": "scripts/check-register.mjs:120-127" }],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST07",
+      "claim": "破坏变体列写一条从未跑过的命令、退出码照抄 0，核对器仍判 OK",
+      "evidence": [{ "source_id": "SRC11", "locator": "E5" }],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST08",
+      "claim": "S1 的「先画图让人确认转移对不对」在登记表与验证记录两个模板里都没有记录位",
+      "evidence": [
+        { "source_id": "SRC01", "locator": "SKILL.md:27" },
+        { "source_id": "SRC02", "locator": "references/stations.md:22-26" },
+        { "source_id": "SRC05", "locator": "templates/property-register.md:7（表头列）" },
+        { "source_id": "SRC06", "locator": "templates/verification-record.md:22-26（A 分区只收性质/变体/报红/退出码/-workers）" }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST09",
+      "claim": "本次运行的模型（Order.tla）与两张图（chart-current.mmd / chart-fixed.mmd）在同一个提交 2f49ffd 里，提交中没有任何「图已由人确认」的记录",
+      "evidence": [
+        { "source_id": "SRC11", "locator": "E7（git show --stat 2f49ffd 同时列出 Order.tla 与 chart-*.mmd）" },
+        { "source_id": "SRC09", "locator": "docs/verification/create-source/" }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST10",
+      "claim": "chart-fixed.mmd 把「the config files land」之后的状态标为「visible source after 1/3 files」；而该顺序下采集器最后落盘，此刻源还不可见",
+      "evidence": [
+        { "source_id": "SRC09", "locator": "docs/verification/create-source/chart-fixed.mmd:s1→s2 与状态 s2 的标签" },
+        { "source_id": "SRC09", "locator": "docs/verification/create-source/Order.tla:4（采集器一出现源就可见）、:8-10（fixed 顺序 3→2→1）" }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST11",
+      "claim": "SKILL.md 第 31 行指向「可重跑的四项要求」，但正文章节标题已改名为「六条判据」",
+      "evidence": [{ "source_id": "SRC01", "locator": "SKILL.md:31 与 SKILL.md:33" }],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST12",
+      "claim": "旧称「四项」在技能里仍出现 3 次，标题里一次也没有；check-paths.mjs 仍 exit 0",
+      "evidence": [
+        { "source_id": "SRC11", "locator": "E6" },
+        { "source_id": "SRC01", "locator": "SKILL.md:31" },
+        { "source_id": "SRC06", "locator": "templates/verification-record.md:42" },
+        { "source_id": "SRC12", "locator": "references/pilot-findings.md:22、:23、:29" }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST13",
+      "claim": "S0 的出口判据要求写 sync commit，而模板把 sync commit 定义为「模型与代码对齐时的 commit」",
+      "evidence": [
+        { "source_id": "SRC01", "locator": "SKILL.md:26（S0 出口）" },
+        { "source_id": "SRC02", "locator": "references/stations.md:14" },
+        { "source_id": "SRC05", "locator": "templates/property-register.md:22" }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST14",
+      "claim": "证据等级列用 L1–L3（以 S1–S4 为轴），同一列又规定「不建模」的写法；核对器只对字面 L3 有规则",
+      "evidence": [
+        { "source_id": "SRC05", "locator": "templates/property-register.md:17、:21" },
+        { "source_id": "SRC07", "locator": "scripts/check-register.mjs:111-118" }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST15",
+      "claim": "本次登记表 18 行写「不建模」，唯一的建模行 P19 等级列写「TLA+/TLC 建模」而不是 L1/L2/L3，等级规则一行都没触发",
+      "evidence": [{ "source_id": "SRC10", "locator": "docs/property-register-sources.md:P1–P18 与 P19 的「证据等级」列" }],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST16",
+      "claim": "S3 第三条门写成「把被测函数体换成 return undefined 重跑」，没有给非函数产物的等价判据；本次 P10–P18 的破坏变体都是改生成器/改接线",
+      "evidence": [
+        { "source_id": "SRC02", "locator": "references/stations.md:73" },
+        { "source_id": "SRC06", "locator": "templates/verification-record.md:31" },
+        { "source_id": "SRC10", "locator": "docs/property-register-sources.md:P10–P18「破坏变体」列" }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST17",
+      "claim": "技能文本里没有「Mermaid 标签非 ASCII 会被转成数字实体」这条记录（13 份 md，0 份提到）",
+      "evidence": [
+        { "source_id": "SRC11", "locator": "E8" },
+        { "source_id": "SRC04", "locator": "references/toolchain.md:69（只记了 Seq 会崩）" }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST18",
+      "claim": "提交 2f49ffd 把 26 个 states/*.st 与 4 个 TTrace 文件带进版本库，而 toolchain.md 明说这些产物都别进版本库",
+      "evidence": [
+        { "source_id": "SRC11", "locator": "E7" },
+        { "source_id": "SRC04", "locator": "references/toolchain.md:72" }
+      ],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST19",
+      "claim": "本次登记表的 S4 列 19 行里 0 行有 PASS：10 行「未做」、5 行「部分」、4 行「—」",
+      "evidence": [{ "source_id": "SRC10", "locator": "docs/property-register-sources.md:S4 日志列" }],
+      "grade": "A",
+      "status": "supported"
+    },
+    {
+      "claim_id": "ST20",
+      "claim": "S5 的机器门可以被「写得整齐的表格」满足，弱于它自己「人眼核对不算核对」的声称",
+      "evidence": [
+        { "source_id": "SRC01", "locator": "SKILL.md:75" },
+        { "source_id": "SRC07", "locator": "scripts/check-register.mjs:10-11（脚本自述只管「能不能被机器读」）" },
+        { "source_id": "SRC11", "locator": "E3、E5" }
+      ],
+      "grade": "A",
+      "status": "partially_supported"
+    },
+    {
+      "claim_id": "ST21",
+      "claim": "最小修法应落在三处：表格截断即 ERROR、S5 命令默认 --strict、S1 图确认加收据位并让图与模型对表",
+      "evidence": [
+        { "source_id": "SRC07", "locator": "scripts/check-register.mjs:44-59（截断点）" },
+        { "source_id": "SRC01", "locator": "SKILL.md:71（S5 命令）" },
+        { "source_id": "SRC06", "locator": "templates/verification-record.md:22-26（S1 分区）" }
+      ],
+      "grade": "B",
+      "status": "partially_supported"
+    }
+  ],
+  "open_gaps": [
+    "「先画图让人确认」是否真的发生在建模之前，无法从提交历史判定（模型与图同一提交，且两个模板都没有这个字段）——这是流程记录缺口，不是本次审计能补的事实",
+    "本次未重跑登记表 19 行声称的命令（那属于 add-source 功能回归，不属于流程摩擦审计）；因此「登记表里的 0 仍然成立」不在本报告结论里"
+  ]
+}

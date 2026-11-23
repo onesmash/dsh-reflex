@@ -1,0 +1,13 @@
+== 环境
+repo   = /Users/xuhui/SourceCode/dsh-reflex
+skill  = /Users/xuhui/.agents/skills/verifying-design-invariants
+v23.11.0
+== E1 全表：rows=19 verdict=OK rc=0（预期 19 / OK / 0）
+== E2 表内空行：rows=9（应读 9）verdict=OK rc=0 errors 为空=1（预期 9 / OK / 0 / 1）
+== E3 假证据路径（文档命令）：verdict=OK rc=0 不存在告警数=1（预期 OK / 0 / 1）
+== E4 假证据路径 + --strict：rc=1（预期 1）
+== E5 没跑过的命令 + 退出码 0：verdict=OK rc=0（预期 OK / 0）
+== E6 悬空小标题：旧称出现 3 次，标题叫「四项要求」的 0 个，check-paths rc=0（预期 >0 / 0 / 0）
+== E7 2f49ffd 里的运行残留：states/*.st 26 个，TTrace 4 个（预期 26 / 4）
+== E8 非 ASCII 标签的记录：0 份 md 提到（预期 0）
+== 结论：八条观测与预期一致

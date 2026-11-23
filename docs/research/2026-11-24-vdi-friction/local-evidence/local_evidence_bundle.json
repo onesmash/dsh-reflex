@@ -1,0 +1,834 @@
+{
+  "skill": "research-nex",
+  "version": "7.1.0",
+  "generated_at": "2026-11-23T16:11:21Z",
+  "target_scope": {
+    "scope_root": "/Users/xuhui",
+    "targets": [
+      "/Users/xuhui/.agents/skills/verifying-design-invariants",
+      "/Users/xuhui/SourceCode/dsh-reflex/docs/verification/create-source",
+      "/Users/xuhui/SourceCode/dsh-reflex/docs/property-register-sources.md",
+      "/Users/xuhui/SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui"
+    ],
+    "file_count": 26
+  },
+  "evidence_role": "local_runtime_evidence",
+  "file_inventory": [
+    {
+      "path": ".agents/skills/verifying-design-invariants/SKILL.md",
+      "kind": "other",
+      "sha256": "sha256:dad1910080eb54b046dfee443ae52d0ac09ff096f170172f78a43bdab4f3a0b7",
+      "line_count": 156,
+      "size_bytes": 14707,
+      "read_status": "ok"
+    },
+    {
+      "path": ".agents/skills/verifying-design-invariants/examples/liveness/README.md",
+      "kind": "other",
+      "sha256": "sha256:e51976223725baa1dae420c7fe5d17f6b7d5b5919a49ab5cc958ae0deeabfcc3",
+      "line_count": 43,
+      "size_bytes": 2274,
+      "read_status": "ok"
+    },
+    {
+      "path": ".agents/skills/verifying-design-invariants/examples/log-check/README.md",
+      "kind": "other",
+      "sha256": "sha256:53a1afee34e25de501f512569911bd347b5e0cd39d2a1edc12a00afd53c15f63",
+      "line_count": 114,
+      "size_bytes": 6097,
+      "read_status": "ok"
+    },
+    {
+      "path": ".agents/skills/verifying-design-invariants/examples/view-window/README.md",
+      "kind": "other",
+      "sha256": "sha256:f20420cc7a4ac0bee15c219b82ec4bf07a633fb50e9f737a12ef0a2e2ef87348",
+      "line_count": 80,
+      "size_bytes": 3530,
+      "read_status": "ok"
+    },
+    {
+      "path": ".agents/skills/verifying-design-invariants/examples/view-window/out/report.md",
+      "kind": "other",
+      "sha256": "sha256:f22ae03b9692a27f9ae5a42baff9df94db4552a6059ea1ef612a0a7a59a3ccb0",
+      "line_count": 7,
+      "size_bytes": 130,
+      "read_status": "ok"
+    },
+    {
+      "path": ".agents/skills/verifying-design-invariants/examples/view-window/outbug/report.md",
+      "kind": "other",
+      "sha256": "sha256:4d66596ee1b5f3c3c260aac1320d048809b99bb3380b405620fad6d652673b32",
+      "line_count": 15,
+      "size_bytes": 391,
+      "read_status": "ok"
+    },
+    {
+      "path": ".agents/skills/verifying-design-invariants/references/example-ledger-view.md",
+      "kind": "other",
+      "sha256": "sha256:8de11dc98108d42cfa268fad4629177f9cdc3ffff273304df5c1a134ddd11881",
+      "line_count": 50,
+      "size_bytes": 3414,
+      "read_status": "ok"
+    },
+    {
+      "path": ".agents/skills/verifying-design-invariants/references/gates.md",
+      "kind": "other",
+      "sha256": "sha256:6df66c1200ad668342181a709aa5b65e1280216f73e6d7534036078a8879b184",
+      "line_count": 38,
+      "size_bytes": 3279,
+      "read_status": "ok"
+    },
+    {
+      "path": ".agents/skills/verifying-design-invariants/references/pilot-findings.md",
+      "kind": "other",
+      "sha256": "sha256:48cdfcc94ccd0c09503cd6aee697ef2acc29d998dd10d8418d79e6a38497a9b8",
+      "line_count": 75,
+      "size_bytes": 9486,
+      "read_status": "ok"
+    },
+    {
+      "path": ".agents/skills/verifying-design-invariants/references/stations.md",
+      "kind": "other",
+      "sha256": "sha256:2611314f7fe7e2bb419c36e4b9e2d0a7554306492fdb1ce44e2632ef7b339989",
+      "line_count": 130,
+      "size_bytes": 8206,
+      "read_status": "ok"
+    },
+    {
+      "path": ".agents/skills/verifying-design-invariants/references/toolchain.md",
+      "kind": "other",
+      "sha256": "sha256:e24d80364fe35ea7e9f779a884553e36f119eba9f93f6c390cd58b25f5e41721",
+      "line_count": 87,
+      "size_bytes": 6699,
+      "read_status": "ok"
+    },
+    {
+      "path": ".agents/skills/verifying-design-invariants/templates/property-register.md",
+      "kind": "other",
+      "sha256": "sha256:2cf1c2e8a8efc9d1d34daa2ae3b7bf0e7a2fbc3c562aeefe7c1e5b58ef18140f",
+      "line_count": 31,
+      "size_bytes": 2541,
+      "read_status": "ok"
+    },
+    {
+      "path": ".agents/skills/verifying-design-invariants/templates/verification-record.md",
+      "kind": "other",
+      "sha256": "sha256:b69c11c28051f046fc6fa1f22ba43865e0a9d28e9bca653ce8da58c790f66e10",
+      "line_count": 61,
+      "size_bytes": 3051,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/property-register-sources.md",
+      "kind": "other",
+      "sha256": "sha256:76bcd3eeb96dab88cbf4501a91879ae87caf05eebe1057eed1a651a59b572bb5",
+      "line_count": 74,
+      "size_bytes": 13798,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/README.md",
+      "kind": "other",
+      "sha256": "sha256:82a37206a5362177ba911fed09cdd6dfc12cd7c71a490dbf9f8a7c3a46f6938e",
+      "line_count": 47,
+      "size_bytes": 3002,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/claim_evidence_map.json",
+      "kind": "other",
+      "sha256": "sha256:7be9f131763b07b2bfbe02bdf662001fe15eb1023b9219989dd9e2488d7b418a",
+      "line_count": 101,
+      "size_bytes": 2413,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/continuation_plan.json",
+      "kind": "other",
+      "sha256": "sha256:70d8a770561839011a7cf4477137f3d8f9891c507c4ff132255935a6e9accbaf",
+      "line_count": 18,
+      "size_bytes": 559,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/preflight_report.json",
+      "kind": "other",
+      "sha256": "sha256:8865e3ab3610f6bdcad56e228b6e4ddf5ce727a4e20b89542bd39698a549b629",
+      "line_count": 20,
+      "size_bytes": 396,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/research_brief.md",
+      "kind": "other",
+      "sha256": "sha256:3eee986ed85b5c649ec391d3f55d9755b31245de345de77709b8e89f6d5080de",
+      "line_count": 14,
+      "size_bytes": 905,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/research_completion_audit_v1.json",
+      "kind": "other",
+      "sha256": "sha256:37e6078eb146e54aa9f44bdb02ce8f77102190ddd0d53668f01fe6634d1c603a",
+      "line_count": 23,
+      "size_bytes": 937,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/research_mission_pack_v1.json",
+      "kind": "other",
+      "sha256": "sha256:3c33e92a4f21fce7a3e4095f9bc3303dfbfda8a29db4265eac9e9b2042f47deb",
+      "line_count": 25,
+      "size_bytes": 583,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/source_matrix.json",
+      "kind": "other",
+      "sha256": "sha256:81659e508c9aadab75144c0cc1579b2cae4eab7585668f96dfe1aeefcdcfbb6b",
+      "line_count": 47,
+      "size_bytes": 1732,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/statement_support_matrix.json",
+      "kind": "other",
+      "sha256": "sha256:c06ade22a66c5b79185b613e9494e710360f65940773a6bd1e36f4dc64b5ea1a",
+      "line_count": 100,
+      "size_bytes": 3683,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/unsupported_statement_register.json",
+      "kind": "other",
+      "sha256": "sha256:1e0c93b0731f4e6a0fbb40a5449ecf1fa44119cab79dd34481931e18638a6c3c",
+      "line_count": 10,
+      "size_bytes": 262,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/verification/create-source/check.sh",
+      "kind": "other",
+      "sha256": "sha256:ae3eada503b1d07c5180455cd21a79b22cb1704b59e4310f55e1fe982bfaf0ae",
+      "line_count": 52,
+      "size_bytes": 2391,
+      "read_status": "ok"
+    },
+    {
+      "path": "SourceCode/dsh-reflex/docs/verification/create-source/report.md",
+      "kind": "other",
+      "sha256": "sha256:6dbff4a0ae6ec47281c3f75077eb5997e37c37af4c3be20b4bf7b59193fef900",
+      "line_count": 96,
+      "size_bytes": 5114,
+      "read_status": "ok"
+    }
+  ],
+  "contract_surface": {
+    "frontmatter_keys": [],
+    "schemas": [],
+    "scripts": [],
+    "tests": [],
+    "headings": []
+  },
+  "path_refs": [
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/SKILL.md",
+      "ref": "templates/property-register.md",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/SKILL.md",
+      "ref": "references/stations.md",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/SKILL.md",
+      "ref": "templates/verification-record.md",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/SKILL.md",
+      "ref": "references/pilot-findings.md",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/SKILL.md",
+      "ref": "property-register.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/SKILL.md",
+      "ref": "references/toolchain.md",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/SKILL.md",
+      "ref": "toolchain.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/SKILL.md",
+      "ref": "README.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/SKILL.md",
+      "ref": "references/gates.md",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/SKILL.md",
+      "ref": "references/example-ledger-view.md",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/examples/log-check/README.md",
+      "ref": "good.log.json",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/examples/log-check/README.md",
+      "ref": "bad.log.json",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/examples/log-check/README.md",
+      "ref": "empty-trace.log.json",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/examples/log-check/README.md",
+      "ref": "thin.log.json",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/examples/view-window/README.md",
+      "ref": "report.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/references/example-ledger-view.md",
+      "ref": "state.json",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/references/pilot-findings.md",
+      "ref": "run-s4.sh",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/references/pilot-findings.md",
+      "ref": "toolchain.md",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/references/pilot-findings.md",
+      "ref": "check-register.sh",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/references/pilot-findings.md",
+      "ref": "references/gates.md",
+      "exists": false,
+      "inside_scope": true
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/references/pilot-findings.md",
+      "ref": "templates/verification-record.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/references/stations.md",
+      "ref": "templates/property-register.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/references/stations.md",
+      "ref": "report.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/references/stations.md",
+      "ref": "property-register.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/references/toolchain.md",
+      "ref": "SKILL.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/references/toolchain.md",
+      "ref": "out/report.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": ".agents/skills/verifying-design-invariants/templates/verification-record.md",
+      "ref": "property-register.md",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/property-register-sources.md",
+      "ref": "env.json",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/property-register-sources.md",
+      "ref": "manifest.json",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/property-register-sources.md",
+      "ref": "docs/verification/create-source/check.sh",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/README.md",
+      "ref": "raw.githubusercontent.com/n8n-io/n8n-docs/be6702d26245396df6b2fcfeb6394576a7ce3326/_snippets/integrations/builtin/poll-modes.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/README.md",
+      "ref": "continuation_plan.json",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/README.md",
+      "ref": "scripts/research_nex_validate_statement_audit.py",
+      "exists": false,
+      "inside_scope": true
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/README.md",
+      "ref": "statement_support_matrix.json",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/README.md",
+      "ref": "unsupported_statement_register.json",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/research_brief.md",
+      "ref": "claim_evidence_map.json",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/research_brief.md",
+      "ref": "statement_support_matrix.json",
+      "exists": true,
+      "inside_scope": true
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/research/2026-11-23-add-source-ui/source_matrix.json",
+      "ref": "raw.githubusercontent.com/n8n-io/n8n-docs/be6702d26245396df6b2fcfeb6394576a7ce3326/_snippets/integrations/builtin/poll-modes.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/verification/create-source/check.sh",
+      "ref": "docs/verification/create-source/check.sh",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/verification/create-source/report.md",
+      "ref": "docs/property-register-sources.md",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/verification/create-source/report.md",
+      "ref": "collectors/crash.sh",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/verification/create-source/report.md",
+      "ref": "targets/crash.sh",
+      "exists": false,
+      "inside_scope": false
+    },
+    {
+      "source_file": "SourceCode/dsh-reflex/docs/verification/create-source/report.md",
+      "ref": "docs/verification/create-source/check.sh",
+      "exists": false,
+      "inside_scope": false
+    }
+  ],
+  "review_targets": [],
+  "test_targets": [],
+  "degradation": {
+    "status": "completed",
+    "skipped_count": 81,
+    "skipped": [
+      {
+        "path": ".agents/skills/verifying-design-invariants/.DS_Store",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/.DS_Store",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/Liveness.tla",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/Liveness_TTrace_1795393699.bin",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/Liveness_TTrace_1795393699.tla",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/fair.cfg",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness-0.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness-1.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness-10.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness-11.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness-2.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness-3.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness-4.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness-5.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness-6.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness-7.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness-8.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness-9.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness_0.fp",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/Liveness_1.fp",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/nodes_0",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/states/26-11-23-08-28-19.544/ptrs_0",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/liveness/unfair.cfg",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/log-check/bad.log.jsonl",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/log-check/check-log.mjs",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/log-check/empty-trace.log.jsonl",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/log-check/good.log.jsonl",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/log-check/ledger.spec.mjs",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/log-check/thin.log.jsonl",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/view-window/ViewWindow.cfg",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/view-window/ViewWindow.tla",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/view-window/ViewWindowBug.cfg",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/view-window/ViewWindowBug.tla",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/view-window/out/chart.mmd",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/view-window/out/tlc.out",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/view-window/outbug/chart.mmd",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/examples/view-window/outbug/tlc.out",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/scripts/check-paths.mjs",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/scripts/check-portability.mjs",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": ".agents/skills/verifying-design-invariants/scripts/check-register.mjs",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/Order.tla",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/Order_TTrace_1795448948.bin",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/Order_TTrace_1795448948.tla",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/Order_TTrace_1795449106.bin",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/Order_TTrace_1795449106.tla",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/chart-current.mmd",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/chart-fixed.mmd",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/current.cfg",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/fixed.cfg",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order-0.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order-1.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order-10.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order-11.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order-2.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order-3.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order-4.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order-5.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order-6.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order-7.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order-8.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order-9.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order_0.fp",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-49-08.083/Order_1.fp",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order-0.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order-1.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order-10.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order-11.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order-2.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order-3.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order-4.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order-5.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order-6.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order-7.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order-8.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order-9.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order.st",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order_0.fp",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/states/26-11-23-23-51-46.456/Order_1.fp",
+        "reason": "unsupported_extension"
+      },
+      {
+        "path": "SourceCode/dsh-reflex/docs/verification/create-source/view.mjs",
+        "reason": "unsupported_extension"
+      }
+    ],
+    "degrading_skipped_count": 0,
+    "degrading_skipped": [],
+    "truncated_count": 0,
+    "truncated": [],
+    "notes": [
+      "collector is self-contained in research-nex",
+      "no knowledge-base lifecycle scripts or publish surfaces are used",
+      "intentional skips for cache directories and unsupported extensions are informational"
+    ]
+  }
+}

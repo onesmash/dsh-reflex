@@ -1,0 +1,150 @@
+{
+  "skill": "research-nex",
+  "mode": "Validate",
+  "generated_at": "2026-11-24T00:16:00+08:00",
+  "target": "verifying-design-invariants 在本次 add-source 运行中暴露的流程摩擦",
+  "citations": [
+    {
+      "citation_id": "CT01",
+      "source_id": "SRC07",
+      "locator": "scripts/check-register.mjs:44-59",
+      "quoted": "for (let i = headIndex + 1; i < lines.length; i++) { ... if (!line.trim().startsWith(\"|\")) { if (rows.length === 0) continue; else break; } }",
+      "verified_by": "read（逐行读源码）",
+      "verification_result": "quoted_exact",
+      "supports": ["ST01"]
+    },
+    {
+      "citation_id": "CT02",
+      "source_id": "SRC07",
+      "locator": "scripts/check-register.mjs:207、:216-227",
+      "quoted": "if (table.rows.length === 0) errors.push(\"表格没有数据行\"); ... const failed = errors.length > 0 || (strict && warns.length > 0);",
+      "verified_by": "read",
+      "verification_result": "quoted_exact",
+      "supports": ["ST02", "ST04"]
+    },
+    {
+      "citation_id": "CT03",
+      "source_id": "SRC01",
+      "locator": "SKILL.md:31、:33、:71-75",
+      "quoted": "「S5 收口 … 见下「可重跑的四项要求」」；「**可重跑的六条判据**」；「node <skill>/scripts/check-register.mjs <property-register.md> --root <仓库根>」；「人眼核对不算核对」",
+      "verified_by": "read + grep",
+      "verification_result": "quoted_exact",
+      "supports": ["ST03", "ST04", "ST11", "ST20"]
+    },
+    {
+      "citation_id": "CT04",
+      "source_id": "SRC11",
+      "locator": "evidence/rerun.txt E2",
+      "quoted": "rows=9（应读 9）verdict=OK rc=0 errors 为空=1",
+      "verified_by": "exec（bash evidence/rerun.sh，exit 0）",
+      "verification_result": "reproduced",
+      "supports": ["ST02"]
+    },
+    {
+      "citation_id": "CT05",
+      "source_id": "SRC11",
+      "locator": "evidence/rerun.txt E3、E4",
+      "quoted": "verdict=OK rc=0 不存在告警数=1；rc=1（加 --strict）",
+      "verified_by": "exec",
+      "verification_result": "reproduced",
+      "supports": ["ST05", "ST20"]
+    },
+    {
+      "citation_id": "CT06",
+      "source_id": "SRC11",
+      "locator": "evidence/rerun.txt E5",
+      "quoted": "verdict=OK rc=0（破坏变体列写 bash tests/never-ran-this.sh）",
+      "verified_by": "exec",
+      "verification_result": "reproduced",
+      "supports": ["ST07"]
+    },
+    {
+      "citation_id": "CT07",
+      "source_id": "SRC06",
+      "locator": "templates/verification-record.md:22-26、:31、:42",
+      "quoted": "「## A S1 建模（签者：）每条性质一行：性质原文 / 破坏变体文件 / 报红输出的关键行 / 退出码 / `-workers`」「③被测函数体换成 `return undefined` 后**仍失败**」",
+      "verified_by": "read",
+      "verification_result": "quoted_exact",
+      "supports": ["ST08", "ST16", "ST12"]
+    },
+    {
+      "citation_id": "CT08",
+      "source_id": "SRC05",
+      "locator": "templates/property-register.md:7、:17、:21、:22",
+      "quoted": "表头列：| 编号 | 性质 | owner | 覆盖的文件/函数 | 范围 | 证据等级 | 破坏变体 / 证据命令 | 退出码 | S4 日志 | 状态 | sync commit |；「不建模的性质：状态栏不适用时，在「证据等级」写 不建模 + 理由 + 谁覆盖」",
+      "verified_by": "read",
+      "verification_result": "quoted_exact",
+      "supports": ["ST08", "ST14", "ST13"]
+    },
+    {
+      "citation_id": "CT09",
+      "source_id": "SRC02",
+      "locator": "references/stations.md:14、:22-26、:73、:108",
+      "quoted": "「顺序不能倒：先画图让人确认转移对不对，再写 PlusCal → TLA+」；「③ 把被测函数体换成 `return undefined` 重跑」；「一次机器核对：node <skill>/scripts/check-register.mjs <property-register.md> 的 exit 0」",
+      "verified_by": "read",
+      "verification_result": "quoted_exact",
+      "supports": ["ST08", "ST16", "ST03", "ST13"]
+    },
+    {
+      "citation_id": "CT10",
+      "source_id": "SRC09",
+      "locator": "docs/verification/create-source/chart-fixed.mmd",
+      "quoted": "s1 --> s2: the config files land / s2: visible source after 1/3 files / s2 --> s4: the target file lands / s4: visible source after 2/3 files",
+      "verified_by": "read（整文件）",
+      "verification_result": "quoted_exact",
+      "supports": ["ST10"]
+    },
+    {
+      "citation_id": "CT11",
+      "source_id": "SRC09",
+      "locator": "docs/verification/create-source/Order.tla:4、:8-10",
+      "quoted": "1 = collectors/<name>.sh 采集器：它一出现在盘上，插件下一轮就当数据源；落盘顺序用守卫编码，不用序列 —— fixed: 3 → 2 → 1",
+      "verified_by": "read",
+      "verification_result": "quoted_exact",
+      "supports": ["ST10"]
+    },
+    {
+      "citation_id": "CT12",
+      "source_id": "SRC11",
+      "locator": "evidence/rerun.txt E6、E7、E8",
+      "quoted": "旧称出现 3 次，标题叫「四项要求」的 0 个，check-paths rc=0；states/*.st 26 个，TTrace 4 个；非 ASCII 标签记录 0 份 md",
+      "verified_by": "exec",
+      "verification_result": "reproduced",
+      "supports": ["ST12", "ST18", "ST17", "ST09"]
+    },
+    {
+      "citation_id": "CT13",
+      "source_id": "SRC10",
+      "locator": "docs/property-register-sources.md（19 行表格 + S4 日志列）",
+      "quoted": "18 行「不建模（…）」、P19「TLA+/TLC 建模」；S4 列 10 未做 / 5 部分 / 4 —；退出码列 19 行全为 0",
+      "verified_by": "grep + awk 列计数",
+      "verification_result": "reproduced",
+      "supports": ["ST15", "ST19"]
+    },
+    {
+      "citation_id": "CT14",
+      "source_id": "SRC04",
+      "locator": "references/toolchain.md:69、:72",
+      "quoted": "「状态变量必须是枚举型…序列版必崩」；「别在仓库里跑…`out/`、`states/`、`<模块>_TTrace_*.tla|bin`…都别进版本库」",
+      "verified_by": "read",
+      "verification_result": "quoted_exact",
+      "supports": ["ST17", "ST18"]
+    },
+    {
+      "citation_id": "CT15",
+      "source_id": "SRC12",
+      "locator": "references/pilot-findings.md:22、:23、:29、:46-51",
+      "quoted": "「S5「可重跑四项」第 ②…」「S5 四项第 ④…」「S5 四项把…拆成四条」；「输入集为空的检查必然通过…候选数为 0 → exit 2 UNVERIFIED」",
+      "verified_by": "read",
+      "verification_result": "quoted_exact",
+      "supports": ["ST12", "ST02（同类病，修了空集没修截断）"]
+    }
+  ],
+  "summary": {
+    "citations_total": 15,
+    "quoted_exact": 11,
+    "reproduced": 4,
+    "not_found": 0,
+    "unresolved": 0
+  }
+}
