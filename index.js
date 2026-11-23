@@ -18,7 +18,7 @@ import Schema from '@deepseek-ai/schemastery'
 // 因此完全绕过 backend 配置；且 tools/semif-adapt.py 未随包发布。
 // 本文件由本机补丁加入，升级 dsh-reflex 后需重新应用（见 REFLEX-PATCH.md）。
 import { scoreBatch as jevScoreBatch, writeShadow as jevWriteShadow } from './jev-adapter.mjs'
-import { scanSources, setPaused, respondToOp } from './sources.mjs'
+import { scanSources, setPaused, respondToOp, SOURCE_ROUTE } from './sources.mjs'
 import { promisify, format } from 'node:util'
 import { randomUUID, createHash } from 'node:crypto'
 import { loadavg } from 'node:os'
@@ -1522,9 +1522,12 @@ function install(rt, ctx, cfg) {
       ctx.inject(['connection'], (sub) => {
         const connection = sub?.connection
         if (!connection?.fetch?.register) { log('connection.fetch 不可用：数据源管理路由未注册'); return }
+        log(`connection 可见：注册 POST ${SOURCE_ROUTE}`)
         try {
+          // 路径必须带前导斜杠：宿主用 endpointFromPath('/api', path) 校验，'/api/x' 才通过；
+          // 客户端写相对地址 'api/reflex'（浏览器解析成 /api/reflex）。两处形状不同，别照抄对方。
           sub.effect(() => connection.fetch.register({
-            path: 'api/reflex',
+            path: SOURCE_ROUTE,
             methods: ['POST'],
             requestBody: 'buffered',
             fetch: async (request) => {
@@ -1543,7 +1546,7 @@ function install(rt, ctx, cfg) {
               }
             },
           }), 'dsh-reflex: api/reflex route')
-          log('sources route registered: POST api/reflex')
+          log(`sources route registered: POST ${SOURCE_ROUTE}`)
         } catch (e) { log(`register api/reflex failed: ${e.message}`) }
       })
     }

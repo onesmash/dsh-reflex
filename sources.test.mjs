@@ -5,7 +5,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { scanSources, setPaused, respondToOp, BUILTIN_SOURCES } from './sources.mjs'
+import { readFileSync } from 'node:fs'
+import { scanSources, setPaused, respondToOp, BUILTIN_SOURCES, SOURCE_ROUTE, SOURCE_ROUTE_CLIENT } from './sources.mjs'
 
 const tempRoot = () => mkdtempSync(join(tmpdir(), 'reflex-sources-'))
 
@@ -112,4 +113,12 @@ test('P7 操作正确接线：pause/resume 落到 commit(name, 对应布尔)，�
   assert.equal(r3.ok, false)
   assert.match(r3.error, /unknown op/)
   assert.equal(calls.length, before)                     // 未知 op 一个字都不许写
+})
+
+test('P9 宿主路由与客户端地址指向同一端点（差一个前导斜杠）', () => {
+  assert.match(SOURCE_ROUTE, /^\/api\/[a-z][a-z0-9-]*$/, `宿主路由必须形如 /api/x，实际 ${SOURCE_ROUTE}`)
+  const clientSrc = readFileSync(new URL('./client.js', import.meta.url), 'utf8')
+  const m = clientSrc.match(/const SRC_ROUTE = "([^"]+)"/)
+  assert.ok(m, 'client.js 里找不到 SRC_ROUTE')
+  assert.equal(m[1], SOURCE_ROUTE_CLIENT, `客户端 ${m[1]} 与宿主 ${SOURCE_ROUTE} 不是同一个端点`)
 })

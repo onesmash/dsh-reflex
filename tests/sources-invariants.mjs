@@ -76,6 +76,13 @@ const MUTATIONS = [
     to: 'io.commit(name, op !== \'pause\')',
   },
   {
+    name: 'P9 客户端地址与宿主路由脱钩',
+    prop: 'P9',
+    file: 'client.js',
+    from: 'const SRC_ROUTE = "api/reflex"',
+    to: 'const SRC_ROUTE = "api/other"',
+  },
+  {
     name: 'P6 没有 manifest 就返回空',
     prop: 'P6',
     from: 'const names = entries.filter(',
@@ -84,7 +91,7 @@ const MUTATIONS = [
 ]
 
 function applyMutations(dir, mutation) {
-  const file = join(dir, 'sources.mjs')
+  const file = join(dir, mutation.file || 'sources.mjs')
   let src = readFileSync(file, 'utf8')
   for (const step of [mutation, ...(mutation.extra ? [mutation.extra] : [])]) {
     if (!src.includes(step.from)) return `替换串没匹配上：${step.from.slice(0, 60)}`

@@ -15,6 +15,11 @@ import { join } from 'node:path'
 /** 内置源名：与 index.js 的 BUILTIN_SOURCES 必须一致（测试会拿它们验拒绝）。 */
 export const BUILTIN_SOURCES = Object.freeze(['disk', 'cpu'])
 
+/** 宿主注册的 exact Fetch 路由（必须带前导斜杠，否则 assertFetchRoute 拒绝）。 */
+export const SOURCE_ROUTE = '/api/reflex'
+/** 浏览器侧的相对地址：与 SOURCE_ROUTE 必须是同一个端点，只差前导斜杠。 */
+export const SOURCE_ROUTE_CLIENT = SOURCE_ROUTE.replace(/^\//, '')
+
 /** 合法源名：小写字母数字开头，其余允许 . _ -；不允许斜杠与点开头。 */
 const NAME = /^[a-z0-9][a-z0-9._-]*$/
 
