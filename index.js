@@ -18,6 +18,7 @@ import Schema from '@deepseek-ai/schemastery'
 // 因此完全绕过 backend 配置；且 tools/semif-adapt.py 未随包发布。
 // 本文件由本机补丁加入，升级 dsh-reflex 后需重新应用（见 REFLEX-PATCH.md）。
 import { scoreBatch as jevScoreBatch, writeShadow as jevWriteShadow } from './jev-adapter.mjs'
+import { scanSources, setPaused, respondToOp } from './sources.mjs'
 import { promisify, format } from 'node:util'
 import { randomUUID, createHash } from 'node:crypto'
 import { loadavg } from 'node:os'
@@ -1480,6 +1481,73 @@ function install(rt, ctx, cfg) {
       log(`discovery refreshed: sources=[${Object.keys(SCRIPT_SOURCES).join(',')}] script-targets=[${Object.keys(SCRIPT_TARGETS).join(',')}]`)
     }
   }
+
+  // ---------- 数据源管理：一张表 + 两个开关 (api/reflex) ----------
+  // 语义复用磁盘事实: collectors/<name>.sh 在、<name>.paused 不在 = 采集中。
+  // 列表逻辑在 sources.mjs（纯函数，有守门测试与破坏变体），这里只做接线与 IO。
+  // 路由挂宿主已认证的 /api 通道（与 ds-bot 的 api/bot 同一机制），由会话 cookie 鉴权。
+  const factsCountCache = new Map()   // file -> { mtimeMs, size, lines }
+  function factsStat(name) {
+    const d = new Date()
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const file = join(cfg.l0.storeDir, name, `${day}.jsonl`)
+    try {
+      const st = statSync(file)
+      const hit = factsCountCache.get(file)
+      if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return { factsToday: hit.lines, lastFactAt: st.mtimeMs }
+      const text = readFileSync(file, 'utf8')
+      const lines = text.length === 0 ? 0 : text.split('\n').filter(Boolean).length
+      factsCountCache.set(file, { mtimeMs: st.mtimeMs, size: st.size, lines })
+      return { factsToday: lines, lastFactAt: st.mtimeMs }
+    } catch { return { factsToday: 0, lastFactAt: null } }
+  }
+  const builtinNames = () => Object.keys(BUILTIN_SOURCES)
+  function sourceRows() {
+    return scanSources(collectorsDir).map((row) => ({ ...row, ...factsStat(row.name) }))
+  }
+  function builtinRows() {
+    const declared = new Set(cfg.l0.sources ?? [])
+    return builtinNames().map((name) => ({ name, builtin: true, enabled: declared.has(name) }))
+  }
+  async function reflexRoute(op, body) {
+    return respondToOp(op, body, {
+      list: () => ({ sources: sourceRows(), builtin: builtinRows(), scannedAt: Date.now() }),
+      commit: (name, paused) => setPaused(collectorsDir, name, paused, { builtins: builtinNames() }),
+      refresh: () => refreshDiscovery(),
+      log,
+    })
+  }
+  try {
+    if (typeof ctx.inject === 'function') {
+      ctx.inject(['connection'], (sub) => {
+        const connection = sub?.connection
+        if (!connection?.fetch?.register) { log('connection.fetch 不可用：数据源管理路由未注册'); return }
+        try {
+          sub.effect(() => connection.fetch.register({
+            path: 'api/reflex',
+            methods: ['POST'],
+            requestBody: 'buffered',
+            fetch: async (request) => {
+              let body = {}
+              try { body = await request.json() } catch {}
+              try {
+                const result = await reflexRoute(String(body?.op ?? ''), body)
+                return new Response(JSON.stringify(result), {
+                  status: result.ok === false && /unknown op/.test(result.error ?? '') ? 400 : 200,
+                  headers: { 'content-type': 'application/json' },
+                })
+              } catch (e) {
+                return new Response(JSON.stringify({ ok: false, error: e?.message ?? String(e) }), {
+                  status: 400, headers: { 'content-type': 'application/json' },
+                })
+              }
+            },
+          }), 'dsh-reflex: api/reflex route')
+          log('sources route registered: POST api/reflex')
+        } catch (e) { log(`register api/reflex failed: ${e.message}`) }
+      })
+    }
+  } catch (e) { log(`inject connection failed: ${e.message}`) }
 
   // 防重入: 脚本 target 可能要跑十几秒(要启浏览器、要调 SemIf), 一旦超过 l1.intervalMs,
   // setInterval 会让两轮决策并发 —— 它们会读到同一批事实各判一次, 造成重复唤醒。

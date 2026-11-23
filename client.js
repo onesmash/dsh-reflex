@@ -251,6 +251,176 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 
+		//#region sources panel
+		/**
+		 * 数据源面板：侧栏一行入口 + 点开的弹层。
+		 * 数据来自宿主注册的 exact Fetch route `api/reflex`（与 ds-bot 的 api/bot 同一机制，
+		 * 走会话 cookie 鉴权），不引入 RPC、不开端口。
+		 */
+		const SRC_ROUTE = "api/reflex";
+		const SRC_LABELS = {
+			title: "数据源",
+			subtitle: (n, m) => `${n} 个采集 · ${m} 个已暂停`,
+			colName: "名称",
+			colEvery: "间隔",
+			colToday: "今日",
+			colLast: "最近成功",
+			colState: "状态",
+			colAct: "操作",
+			pause: "暂停采集",
+			resume: "恢复采集",
+			stateOn: "采集中",
+			stateIdle: "无数据",
+			statePaused: "已暂停",
+			stateFail: "失败",
+			builtin: "内置源（由 profile 配置，改后需重载）",
+			builtinAct: "profile 控制",
+			empty: "collectors 目录还没有脚本：把 <name>.sh 放进去即启用。",
+			loadFail: "读取失败",
+			retry: "重试",
+			following: "跟随全局",
+			close: "关闭"
+		};
+		/** 一次面板请求。统一成 {ok:true,...} 或抛错，调用方只处理一种失败形态。 */
+		async function reflexCall(op, extra) {
+			const res = await fetch(SRC_ROUTE, {
+				method: "POST",
+				credentials: "same-origin",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ op, ...(extra || {}) })
+			});
+			let body = null;
+			try { body = await res.json(); } catch (e) { /* 非 JSON = 宿主没挂上路由 */ }
+			if (!res.ok || !body || body.ok !== true) {
+				const why = body && body.error ? body.error : "HTTP " + res.status;
+				throw new Error(why);
+			}
+			return body;
+		}
+		function everyLabel(ms) {
+			if (!Number.isFinite(ms) || ms <= 0) return SRC_LABELS.following;
+			if (ms % 3600000 === 0) return ms / 3600000 + " 小时";
+			if (ms % 60000 === 0) return ms / 60000 + " 分钟";
+			return Math.round(ms / 1000) + " 秒";
+		}
+		function clockLabel(ts) {
+			if (!Number.isFinite(ts) || ts <= 0) return "—";
+			const d = new Date(ts);
+			const hh = String(d.getHours()).padStart(2, "0");
+			const mm = String(d.getMinutes()).padStart(2, "0");
+			return hh + ":" + mm;
+		}
+		const S = {
+			wrap: { position: "relative", display: "block" },
+			button: {
+				boxSizing: "border-box", width: "100%", minHeight: "36px", border: 0, background: "transparent",
+				color: "var(--dsw-alias-label-primary, inherit)", display: "flex", alignItems: "center", gap: "8px",
+				padding: "0 10px", borderRadius: "var(--dsw-radius-md, 12px)", cursor: "pointer", font: "inherit", textAlign: "left"
+			},
+			panel: {
+				position: "absolute", bottom: "calc(100% + 8px)", left: 0, zIndex: 40, width: "min(560px, calc(100vw - 24px))",
+				maxHeight: "70vh", overflow: "auto", background: "var(--dsw-alias-bg-layer-2, #fff)",
+				color: "var(--dsw-alias-label-primary, #111)", border: "1px solid var(--dsw-alias-border-l2, #e5e5e5)",
+				borderRadius: "var(--dsw-radius-md, 12px)", boxShadow: "0 12px 32px rgba(0,0,0,.18)", padding: "14px 16px",
+				fontSize: "13px", lineHeight: 1.5
+			},
+			head: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "8px", marginBottom: "10px" },
+			table: { width: "100%", borderCollapse: "collapse" },
+			th: { textAlign: "left", fontWeight: 600, padding: "4px 6px", borderBottom: "1px solid var(--dsw-alias-border-l2, #e5e5e5)", whiteSpace: "nowrap" },
+			td: { padding: "6px", borderBottom: "1px solid var(--dsw-alias-border-l1, #f0f0f0)", verticalAlign: "middle" },
+			action: {
+				border: "1px solid var(--dsw-alias-border-l2, #e5e5e5)", background: "transparent", color: "inherit",
+				borderRadius: "var(--dsw-radius-sm, 8px)", padding: "3px 10px", cursor: "pointer", font: "inherit", minHeight: "28px"
+			},
+			dot: (color) => ({ display: "inline-block", width: "7px", height: "7px", borderRadius: "999px", background: color, marginRight: "6px" }),
+			muted: { color: "var(--dsw-alias-label-secondary, #6b7280)" },
+			error: { color: "#c0392b", margin: "8px 0 0" }
+		};
+		/** 状态四态：只有 failed 用红；paused 是用户的选择，保持中性。 */
+		function stateOf(row) {
+			if (row.paused) return { text: SRC_LABELS.statePaused, color: "var(--dsw-alias-label-secondary, #9ca3af)" };
+			if (row.failed) return { text: SRC_LABELS.stateFail, color: "#c0392b" };
+			if (!row.factsToday) return { text: SRC_LABELS.stateIdle, color: "var(--dsw-alias-label-secondary, #9ca3af)" };
+			return { text: SRC_LABELS.stateOn, color: "#2f855a" };
+		}
+		function SourcesEntry() {
+			const [open, setOpen] = react.useState(false);
+			const [data, setData] = react.useState(null);
+			const [error, setError] = react.useState("");
+			const [busy, setBusy] = react.useState("");
+			const load = react.useCallback(async () => {
+				try { setData(await reflexCall("list")); setError(""); }
+				catch (e) { setError(e && e.message ? e.message : String(e)); }
+			}, []);
+			react.useEffect(() => { if (open) { void load(); } }, [open, load]);
+			const toggle = async (row, paused) => {
+				setBusy(row.name);
+				try {
+					const next = await reflexCall(paused ? "pause" : "resume", { name: row.name });
+					setData(next); setError("");
+				} catch (e) { setError(e && e.message ? e.message : String(e)); }
+				finally { setBusy(""); }
+			};
+			const rows = (data && data.sources) || [];
+			const builtin = (data && data.builtin) || [];
+			const pausedCount = rows.filter((r) => r.paused).length;
+			const row = (r) => react_jsx_runtime.jsx("tr", { children: [
+				react_jsx_runtime.jsx("td", { style: S.td, children: r.name }, "n"),
+				react_jsx_runtime.jsx("td", { style: S.td, children: everyLabel(r.intervalMs) }, "e"),
+				react_jsx_runtime.jsx("td", { style: S.td, children: String(r.factsToday || 0) }, "t"),
+				react_jsx_runtime.jsx("td", { style: S.td, children: clockLabel(r.lastFactAt) }, "l"),
+				react_jsx_runtime.jsx("td", { style: S.td, children: react_jsx_runtime.jsxs("span", { children: [
+					react_jsx_runtime.jsx("span", { style: S.dot(stateOf(r).color) }, "d"),
+					stateOf(r).text
+				] }) }, "s"),
+				react_jsx_runtime.jsx("td", { style: S.td, children: react_jsx_runtime.jsx("button", {
+					type: "button", style: S.action, disabled: busy === r.name,
+					onClick: () => void toggle(r, !r.paused),
+					children: r.paused ? SRC_LABELS.resume : SRC_LABELS.pause
+				}) }, "a")
+			] }, r.name);
+			return react_jsx_runtime.jsxs("div", { style: S.wrap, children: [
+				react_jsx_runtime.jsxs("button", {
+					type: "button", style: S.button, title: SRC_LABELS.title, "aria-label": SRC_LABELS.title,
+					"aria-expanded": open ? "true" : "false",
+					onClick: () => setOpen((v) => !v),
+					children: [react_jsx_runtime.jsx("span", { "aria-hidden": "true", children: "▤" }), react_jsx_runtime.jsx("span", { children: SRC_LABELS.title })]
+				}),
+				open ? react_jsx_runtime.jsxs("div", { style: S.panel, role: "dialog", "aria-label": SRC_LABELS.title, children: [
+					react_jsx_runtime.jsxs("div", { style: S.head, children: [
+						react_jsx_runtime.jsxs("strong", { children: [
+							SRC_LABELS.title,
+							data ? react_jsx_runtime.jsx("span", { style: S.muted, children: " · " + SRC_LABELS.subtitle(rows.length - pausedCount, pausedCount) }) : null
+						] }),
+						react_jsx_runtime.jsx("button", { type: "button", style: S.action, onClick: () => setOpen(false), children: SRC_LABELS.close })
+					] }),
+					error ? react_jsx_runtime.jsxs("p", { style: S.error, children: [SRC_LABELS.loadFail + "：" + error, " ", react_jsx_runtime.jsx("button", { type: "button", style: S.action, onClick: () => void load(), children: SRC_LABELS.retry })] }) : null,
+					rows.length === 0 ? react_jsx_runtime.jsx("p", { style: S.muted, children: SRC_LABELS.empty }) : react_jsx_runtime.jsxs("table", { style: S.table, children: [
+						react_jsx_runtime.jsx("thead", { children: react_jsx_runtime.jsxs("tr", { children: [
+							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colName }),
+							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colEvery }),
+							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colToday }),
+							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colLast }),
+							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colState }),
+							react_jsx_runtime.jsx("th", { style: S.th, children: SRC_LABELS.colAct })
+						] }) }),
+						react_jsx_runtime.jsx("tbody", { children: rows.map(row) })
+					] }),
+					builtin.length > 0 ? react_jsx_runtime.jsxs("div", { children: [
+						react_jsx_runtime.jsx("p", { style: { ...S.muted, margin: "14px 0 4px" }, children: SRC_LABELS.builtin }),
+						react_jsx_runtime.jsxs("table", { style: S.table, children: [
+							react_jsx_runtime.jsx("tbody", { children: builtin.map((b) => react_jsx_runtime.jsxs("tr", { children: [
+								react_jsx_runtime.jsx("td", { style: S.td, children: b.name }),
+								react_jsx_runtime.jsx("td", { style: { ...S.td, ...S.muted }, children: b.enabled ? SRC_LABELS.stateOn : SRC_LABELS.statePaused }),
+								react_jsx_runtime.jsx("td", { style: { ...S.td, ...S.muted }, children: SRC_LABELS.builtinAct })
+							] }, b.name)) })
+						] })
+					] }) : null
+				] }) : null
+			] });
+		}
+		//#endregion
+
 		//#region index
 		/** 本插件配置所在的 profile 行 id（cordis.patch.yml 里那条 `- id:`）。 */
 		const ROW_NS = "dsh-reflex";
@@ -284,6 +454,12 @@ window.__ModuleLoader__.load({
 			ctx.effect(() => () => card.dispose(), "dsh-reflex: form subscription");
 			// whileServed: 宿主服务该行的配置时注册，停止服务时注销 ——
 			// 与官方设置页同一套写法, 所以插件被禁用时这一页不会残留。
+			// 侧栏一行入口（与 ds-harness-remote 同一个槽，宿主负责布局与尺寸）
+			ctx.effect(() => ctx.slots.inject("sidebar.footer.action", () => ctx.slots.register({
+				name: "sidebar.footer.action",
+				id: "dsh-reflex-sources",
+				order: 10
+			}, SourcesEntry)), "dsh-reflex: sources entry");
 			ctx.effect(() => ctx.configForms.whileServed([ROW_NS], (served) => {
 				if (!served.has(ROW_NS)) return;
 				return ctx.slots.inject("plugins.row.config", () => ctx.slots.register({
@@ -297,6 +473,8 @@ window.__ModuleLoader__.load({
 		//#endregion
 
 		exports.NS = NS;
+		exports.reflexCall = reflexCall;
+		exports.SourcesEntry = SourcesEntry;
 		exports.apply = apply;
 		exports.inject = inject;
 		return module.exports;
