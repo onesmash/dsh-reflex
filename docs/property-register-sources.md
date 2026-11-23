@@ -24,7 +24,7 @@
 | P16 | 客户端只挡「还没填完」（名字/命令/match 关键词/semantic 判据），格式合法性交给宿主 —— 不写第二份正则 | Chief | `client.js: formBlocker` | 单进程、仅 bundle | 不建模（纯函数，由 bundle 冒烟守） | 变体：漏掉采集命令这一项；命令 `node tests/check-sources-panel.mjs` | 0 | — | 守住（bundle） | 7ac0ac1 |
 | P17 | 界面用 `tr()` 取的每个文案 key，在 zh / en / 英文兜底三处词典里都存在（少一处只会让非 zh/en 用户看到 `addProbeRc` 这种字样，静态看不出来） | Chief | `client.js: SourcesPage / NewSourceForm / SRC_FALLBACK` | 单进程、仅 bundle | 不建模（静态完整性，由 bundle 冒烟守） | 变体：英文兜底删掉一条；命令 `node tests/check-sources-panel.mjs` | 0 | — | 守住（bundle） | 7ac0ac1 |
 | P18 | 三段式表单能被真的渲染：FEED/EVERY/TRIGGER 三段都在、创建与取消都在、条件字段跟模式变（match 才有关键词框、semantic 才有判据框）、试跑结果（几行/几行合法/退出码/stderr）与创建失败原因都渲染出来 | Chief | `client.js: NewSourceForm` | 单进程、仅 bundle | 不建模（渲染冒烟，走一遍 jsx 树） | 变体：条件字段不再跟模式走；命令 `node tests/check-sources-panel.mjs` | 0 | 未做：未在运行中的 DSH 里点过 | 守住（渲染冒烟） | 7ac0ac1 |
-| P19 | 创建事务的崩溃原子性：`collectors/<name>.sh` 是唯一提交点（**最后**落盘）—— 任意时刻进程被杀，都不会留下「采集器在盘、判定脚本不在」的源 | Chief | `sources.mjs: planSourceFiles / createSource` | 单进程 | **TLA+/TLC 建模**（`docs/verification/create-source/`：现顺序 `Atomic breaks` 两步走破，修法顺序 `Atomic` 守住） | 变体：把提交点挪回最前 → P19 报红；命令 `bash docs/verification/create-source/check.sh`、`node tests/sources-invariants.mjs` | 0 | 部分：P19 用真 `SIGKILL` 子进程重放崩溃 | 守住（模型 + 崩溃重放） | （本轮） |
+| P19 | 创建事务的崩溃原子性：`collectors/<name>.sh` 是唯一提交点（**最后**落盘）—— 任意时刻进程被杀，都不会留下「采集器在盘、判定脚本不在」的源 | Chief | `sources.mjs: planSourceFiles / createSource` | 单进程 | **TLA+/TLC 建模**（`docs/verification/create-source/`：现顺序 `Atomic breaks` 两步走破，修法顺序 `Atomic` 守住） | 变体：把提交点挪回最前 → P19 报红；命令 `bash docs/verification/create-source/check.sh`、`node tests/sources-invariants.mjs` | 0 | 部分：P19 用真 `SIGKILL` 子进程重放崩溃 | 守住（模型 + 崩溃重放） | 2f49ffd |
 
 ## S0：哪些性质建模、哪些不建模（决策留痕）
 
