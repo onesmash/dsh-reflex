@@ -222,6 +222,12 @@ checkStack(CASES[8], () => {
 
   const failed = textOf(mod.NewSourceForm({ ...base, saveState: { phase: 'error', error: '已存在：x.sh', name: '' } }))
   assert(failed.includes('已存在：x.sh'), '创建失败的原因没渲染到表单上')
+
+  // 列表页也要能渲染：入口按钮就在这一页上，白屏的话功能等于不存在
+  // 词典取不到时会走英文兜底（srcText），所以这里断言兜底文案 —— 顺带证明兜底这条路是通的
+  const page = textOf(mod.SourcesPage({ t: (key) => key }))
+  assert(page.includes('Trigger'), `列表页标题没渲染出来：${page.slice(0, 160)}`)
+  assert(page.includes('Add data source'), `列表页没有「添加数据源」入口：${page.slice(0, 240)}`)
 })
 
 const runAsync = async () => {
