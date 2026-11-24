@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 // 客户端插件的冒烟测试：不启动 DSH，也能证明
 //   ① client.js 能被模块加载器收下（语法/包装层没坏）
-//   ② apply() 把页面注册进 main 槽、入口注册进 sidebar.panellist 槽（不是旧弹层）
+//   ② apply() 把页面注册进 main 槽、入口注册到 sidebar.panellist 槽（不是旧弹层）
 //   ②b 入口 id 与 main 的 key 相同 —— 不一致就是点了没反应，且界面上没有报错
 //   ③ 面板的请求打到 `api/reflex`，同源、POST、body 是 {op,...}
 //   ④ 宿主回 {ok:false,error} 时，面板拿到的是可显示的失败原因
+//
+// 2026-11-25 起，「添加数据源」不再是一张独立的三段式页面：用户只写一句话，
+// 宿主把原话拼成提示词投给 Chief，由它按 reflex-datasource 落盘。
+// 所以这一版守的是：一句话框 + 发送按钮在首页首屏、请求体形状、以及
+// **添加页确实已经不在了**（删干净比少写更常见地出错）。
 //
 // 退出码：0 全过 / 1 有断言失败 / 2 未判定（文件缺失、候选 0）
 import { readFileSync } from 'node:fs'
@@ -20,11 +25,11 @@ const CASES = [
   '入口 id 与主列 key 一致',
   '请求打到 api/reflex',
   '失败原因可显示',
-  'P15 三段式表单拼出正确的请求体',
-  'P16 表单缺项时说清缺哪一项',
+  'P15 一句话拼出 {op:"delegate"} 的请求体',
+  'P16 空句子与超长句子在本地就被拦下',
   'P17 界面用到的文案三处词典都齐',
-  'P18 三段式表单能真的渲染出来',
-  'P20 无障碍底座在渲染树里齐着（原生控件 + 标注 + 播报）',
+  'P18 首屏就有一句话框与发送按钮，且添加页已经删干净',
+  'P20 无障碍底座在渲染树里齐着（标注 + 播报）',
   'P21 浅/深主题下主按钮与错误文字都够对比',
   'P22 预热过的 list 让首帧直接出表（不再进 loading）',
 ]
@@ -97,6 +102,25 @@ const ctx = {
   remote: { credentials: { set: async () => {}, describe: async () => ({ value: {} }) } },
 }
 
+/** 把渲染树拍平成节点数组（函数组件就地展开一次）。 */
+const nodesOf = (node, out = []) => {
+  if (!node || typeof node !== 'object') return out
+  if (Array.isArray(node)) { for (const n of node) nodesOf(n, out); return out }
+  const props = node.props || {}
+  out.push({ type: node.type, props })
+  if (typeof node.type === 'function') nodesOf(node.type(props), out)
+  if ('children' in props) nodesOf(props.children, out)
+  return out
+}
+const textOf = (node) => {
+  if (node == null || node === false) return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node) + ' '
+  if (Array.isArray(node)) return node.map(textOf).join('')
+  const props = node.props || {}
+  if (typeof node.type === 'function') return textOf(node.type(props))
+  return 'children' in props ? textOf(props.children) : ''
+}
+
 const checkStack = (name, fn) => {
   try { fn(); results.push([name, true, '']) } catch (e) { results.push([name, false, `${e?.message} @ ${(e?.stack || '').split('\n')[1]?.trim()}`]) }
 }
@@ -126,44 +150,37 @@ checkStack(CASES[2], () => {
   assert(typeof navText === 'string' && navText.length > 0, `panellist 的 label() 没有返回可显示文字：${String(navText)}`)
 })
 
-
-// ⑤ 三段式表单 → 请求体：名称/命令 trim、间隔转数字、关键词按全角/半角逗号切分
+// ⑤ 一句话 → 请求体。界面上只有一个输入框，所以这里能漏的字段只有"sentence 忘了 trim"。
 checkStack(CASES[5], () => {
-  const body = mod.newSourceBody({
-    name: ' x-timeline ', about: ' 盯推文 ', cmd: ' printf \'{"a":1}\\n\' ', intervalMs: '1800000',
-    mode: 'match', keywords: '裁员, 仲裁，昇腾', criteria: '',
-  })
-  assert(body.op === 'create', `op 不对：${body.op}`)
-  assert(body.name === 'x-timeline', `name 没 trim：${JSON.stringify(body.name)}`)
-  assert(body.cmd === 'printf \'{"a":1}\\n\'', `cmd 没 trim：${JSON.stringify(body.cmd)}`)
-  assert(body.intervalMs === 1800000, `intervalMs 不是数字：${JSON.stringify(body.intervalMs)}`)
-  assert(JSON.stringify(body.trigger) === JSON.stringify({ mode: 'match', keywords: ['裁员', '仲裁', '昇腾'] }),
-    `关键词切分不对：${JSON.stringify(body.trigger)}`)
-  const sem = mod.newSourceBody({ name: 'a', cmd: 'echo 1', mode: 'semantic', criteria: ' 值得处理吗 ' })
-  assert(JSON.stringify(sem.trigger) === JSON.stringify({ mode: 'semantic', criteria: '值得处理吗' }),
-    `语义判据不对：${JSON.stringify(sem.trigger)}`)
-  const off = mod.newSourceBody({ name: 'a', cmd: 'echo 1', mode: 'off' })
-  assert(JSON.stringify(off.trigger) === JSON.stringify({ mode: 'off' }), 'off 模式不该带多余字段')
-  assert(off.intervalMs === 900000, '没给间隔时要用默认值')
+  const body = mod.delegateBody('  盯着 a.com 有更新就叫我  ')
+  assert(body.op === 'delegate', `op 不对：${body.op}`)
+  assert(body.sentence === '盯着 a.com 有更新就叫我', `原句没 trim：${JSON.stringify(body.sentence)}`)
+  assert(JSON.stringify(Object.keys(body).sort()) === JSON.stringify(['op', 'sentence']),
+    `除了 op/sentence 不该带别的字段：${JSON.stringify(body)}`)
 })
 
-// ⑥ 本地只挡"没填完"：拦下来的那一项要能被翻成一句人话
+// ⑥ 本地只挡"还没填"与"长得离谱"，格式合法性交给宿主（错了它给准话）。
 checkStack(CASES[6], () => {
-  assert(mod.formBlocker({}) === 'addNeedName', '空表单应报缺名字')
-  assert(mod.formBlocker({ name: 'a' }) === 'addNeedCmd', '只填名字应报缺命令')
-  assert(mod.formBlocker({ name: 'a', cmd: 'echo 1', mode: 'match', keywords: ' , ， ' }) === 'addNeedKeywords',
-    '关键词模式只有标点应报缺关键词')
-  assert(mod.formBlocker({ name: 'a', cmd: 'echo 1', mode: 'semantic', criteria: ' ' }) === 'addNeedCriteria',
-    '语义模式缺判据应报缺判据')
-  assert(mod.formBlocker({ name: 'a', cmd: 'echo 1', mode: 'all' }) === '', '填完了不该再拦')
+  assert(mod.sentenceBlocker('') === 'addAskNeedSentence', '空句子应报缺内容')
+  assert(mod.sentenceBlocker('   ') === 'addAskNeedSentence', '全空白应报缺内容')
+  assert(mod.sentenceBlocker('x'.repeat(500)) === '', '500 字是上限，不该拦')
+  assert(mod.sentenceBlocker('x'.repeat(501)) === 'addAskTooLong', '超长应在本地就拦下（省一次往返）')
+
+  // 本地上限必须与宿主同一个数：两边各写一个 500，改一边忘了另一边，用户会看到
+  // 「本地让发、宿主报太长」这种自相矛盾的回执。
+  const src = readFileSync(FILE, 'utf8')
+  const local = /const SENTENCE_MAX = (\d+)/.exec(src)
+  const host = /sentenceMax:\s*(\d+)/.exec(readFileSync(join(HERE, '..', 'sources.mjs'), 'utf8'))
+  assert(local && host, '取不到一句话长度上限（本地或宿主）')
+  assert(local[1] === host[1], `本地上限 ${local[1]} 与宿主 ${host[1]} 不是同一个数`)
 })
 
 // ⑦ 文案完整性：界面上 tr() 用到的每个 key，zh / en / 英文兜底三处都要有。
-//    少一处不会报错，只会让切换语言的人看到 "addProbeRc" 这种字样 —— 静态看不出来，只能这么抓。
+//    少一处不会报错，只会让切换语言的人看到 "addAskSend" 这种字样 —— 静态看不出来，只能这么抓。
 checkStack(CASES[7], () => {
   const src = readFileSync(FILE, 'utf8')
   const used = [...src.matchAll(/\btr\(["']([a-zA-Z][\w.]*)["']\)/g)].map((m) => m[1])
-  assert(used.length >= 20, `没抓到 tr() 调用（候选 ${used.length} 条），这个检查等于没跑`)
+  assert(used.length >= 15, `没抓到 tr() 调用（候选 ${used.length} 条），这个检查等于没跑`)
   const blockOf = (name) => {
     const start = src.indexOf(name)
     const end = src.indexOf('};', start)
@@ -180,155 +197,49 @@ checkStack(CASES[7], () => {
   assert(miss.length === 0, `这些 key 缺翻译：${miss.join(', ')}`)
 })
 
-// ⑧ 真的渲染一次：把 jsx 对象走一遍，不出异常、三段都在、条件字段跟着模式变。
-//    "能通过语法检查"和"渲染出来不是白屏"是两件事 —— 后者只能这么验。
+// ⑧ 首屏就该能建：一句话框与发送按钮必须在（此时列表还在 loading，正好验"不依赖数据"）。
+//    同时验"删干净了"——添加页、三段式表单、四个触发方式 radio 都不该再出现在源码里。
 checkStack(CASES[8], () => {
-  const textOf = (node) => {
-    if (node == null || node === false) return ''
-    if (typeof node === 'string' || typeof node === 'number') return String(node) + ' '
-    if (Array.isArray(node)) return node.map(textOf).join('')
-    const props = node.props || {}
-    const extra = [props.id, props.placeholder, props.value, props.className].filter((v) => typeof v === 'string' && v).join(' ')
-    if (typeof node.type === 'function') return extra + ' ' + textOf(node.type(props))
-    const kids = 'children' in props ? textOf(props.children) : ''
-    return extra + ' ' + kids
-  }
-  // tr 直接返回 key 就能核对"哪一段渲染出来了"；带插值的两条给模板，用来验替换
-  const tr = (key) => (key === 'addProbeLines' ? '{lines} lines / {valid} valid'
-    : key === 'addFiles' ? 'collectors/{name}.sh and targets/{name}.sh'
-      : key)
-  const base = {
-    form: { name: 'x', about: '', cmd: 'echo 1', intervalMs: 900000, mode: 'all', keywords: '', criteria: '' },
-    probe: { phase: 'idle', data: null, error: '' },
-    saveState: { phase: 'idle', error: '', name: '' },
-    tr,
-  }
-  const plain = textOf(mod.NewSourceForm({ ...base }))
-  assert(plain.includes('FEED') && plain.includes('EVERY') && plain.includes('TRIGGER'),
-    `三段标签没渲染齐：${plain.slice(0, 160)}`)
-  assert(!/GIVE|WHEN|WAKE/.test(plain), '旧标签还留在页面上（改了一半）')
-  assert(plain.includes('addCreate') && plain.includes('addCancel'), '创建/取消按钮没渲染出来')
-  assert(/rfx-name/.test(plain) && /rfx-cmd/.test(plain) && /rfx-interval/.test(plain), '三个必填控件没渲染出来')
-  assert(!/rfx-keywords/.test(plain) && !/rfx-criteria/.test(plain), 'all 模式不该出现关键词/判据输入框')
+  const page = mod.SourcesPage({ t: (key) => key })
+  const nodes = nodesOf(page)
+  const input = nodes.find((n) => n.props.id === 'rfx-ask')
+  assert(input, `首屏没有一句话输入框（loading 态也要有）：${textOf(page).slice(0, 160)}`)
+  assert(input.type === 'input', `一句话框不是原生 input：${String(input.type)}`)
+  assert(typeof input.props.placeholder === 'string' && input.props.placeholder.length > 0, '输入框没有提示文字')
+  // 按 className 定位而不是按文案：文案会被 tr() 解析成中/英，key 不会出现在渲染结果里
+  const send = nodes.find((n) => n.type === 'button' && /rfx-askSend/.test(String(n.props.className || '')))
+  assert(send, '没有发送按钮')
+  assert(send.props.type === 'button', '发送按钮不是原生 button')
+  assert(typeof send.props.children === 'string' && send.props.children.length > 0, '发送按钮没有可读文案')
 
-  const match = textOf(mod.NewSourceForm({ ...base, form: { ...base.form, mode: 'match' } }))
-  assert(/rfx-keywords/.test(match) && match.includes('裁员, 仲裁, 昇腾'), 'match 模式的关键词输入框没出现')
-  const semantic = textOf(mod.NewSourceForm({ ...base, form: { ...base.form, mode: 'semantic' } }))
-  assert(/rfx-criteria/.test(semantic), 'semantic 模式的判据输入框没出现')
-
-  const probed = textOf(mod.NewSourceForm({
-    ...base,
-    probe: { phase: 'ok', data: { lines: 3, valid: 1, bad: 2, sample: ['{"a":1}'], code: 0, timedOut: false, stderrTail: '' } },
-  }))
-  assert(/3 lines \/ 1 valid/.test(probed), `试跑结果没显示行数/合法行数：${probed.slice(-200)}`)
-  const bad = textOf(mod.NewSourceForm({
-    ...base,
-    probe: { phase: 'ok', data: { lines: 1, valid: 1, bad: 0, sample: [], code: 2, timedOut: false, stderrTail: 'boom' } },
-  }))
-  assert(/addProbeRc/.test(bad) && bad.includes('boom'), '非 0 退出与 stderr 末行没显示出来')
-
-  // {name} 出现两次（collectors/ 与 targets/），只替换第一处会让界面上留着 "{name}" 字样
-  assert(!/\{name\}/.test(plain), `占位符没替换干净：${(plain.match(/[^ ]*\{name\}[^ ]*/) || [''])[0]}`)
-  assert(plain.includes('collectors/x.sh') && plain.includes('targets/x.sh'), '预览里没写出将会生成的文件名')
-
-  // 版面：表单 + 右侧「将要发生什么」+ 常驻操作条；三段各只出现一次标签（之前 EVERY 的段标题与字段标签重复）
-  assert(/rfx-form/.test(plain), '表单根节点没渲染出来')
-  assert(/rfx-sum/.test(plain), '「将要发生什么」摘要面板没渲染出来')
-  assert(/rfx-barActions/.test(plain), '常驻操作条没渲染出来（创建按钮要随时可见）')
-  const modeCards = (plain.match(/rfx-modeCard/g) || []).length
-  assert(modeCards === 4, `四张触发方式卡片没渲染齐：${modeCards}`)
-  const whenLabels = (plain.match(/addWhen(?![A-Za-z])/g) || []).length
-  assert(whenLabels === 1, `EVERY 段的「多久采一次」出现了 ${whenLabels} 次（段标题与字段标签重复）`)
-  assert(/addNameRule/.test(plain), '名字的允许字符没写在字段旁（只能靠提交后才报错）')
-  assert(/addProbeHint/.test(plain), '试跑的代价（15 秒超时 / 不写盘）没写在按钮旁')
-  assert(/addWritesTitle/.test(plain), '摘要里没有「会写入哪些文件」')
-
-  // 操作条必须与滚动区分开：塞回表单里就会被 .rfx-form 的 overflow 裁掉，跟着内容一起滚走
-  const root = mod.NewSourceForm(base)
-  assert(/rfx-formBody/.test(root.props.className || ''), '表单根节点缺少 rfx-formBody')
-  const kids = root.props.children || []
-  assert(Array.isArray(kids) && kids.length === 2, `滚动区与操作条没有分成两块（children=${kids.length}）`)
-  assert(kids[0] && /rfx-form/.test(kids[0].props.className || ''), '第一块不是表单')
-  assert(kids[1] && /rfx-barActions/.test(kids[1].props.className || ''), '第二块不是常驻操作条')
-  const barText = textOf(kids[1])
-  assert(barText.includes('addCreate') && barText.includes('addCancel'), '操作条里没有创建/取消')
-  const submitBtns = []
-  const walk = (n) => {
-    if (!n || typeof n !== 'object') return
-    if (Array.isArray(n)) { n.forEach(walk); return }
-    const p = n.props || {}
-    if (p.type === 'submit') submitBtns.push(p)
-    if ('children' in p) walk(p.children)
-  }
-  walk(kids[1])
-  assert(submitBtns.length === 1 && submitBtns[0].form === 'rfx-add-source', '创建按钮没有用 form 属性挂到表单上（回车/点击都提交不了）')
-
-  const failed = textOf(mod.NewSourceForm({ ...base, saveState: { phase: 'error', error: '已存在：x.sh', name: '' } }))
-  assert(failed.includes('已存在：x.sh'), '创建失败的原因没渲染到表单上')
-
-  // 列表页也要能渲染：入口按钮就在这一页上，白屏的话功能等于不存在
-  // 词典取不到时会走英文兜底（srcText），所以这里断言兜底文案 —— 顺带证明兜底这条路是通的
-  const page = textOf(mod.SourcesPage({ t: (key) => key }))
-  assert(page.includes('Trigger'), `列表页标题没渲染出来：${page.slice(0, 160)}`)
-  assert(page.includes('Add data source'), `列表页没有「添加数据源」入口：${page.slice(0, 240)}`)
+  const src = readFileSync(FILE, 'utf8')
+  assert(!/AddSourcePage/.test(src), '还留着专门的添加页（AddSourcePage）')
+  assert(!/NewSourceForm/.test(src), '还留着三段式表单组件（NewSourceForm）')
+  assert(!/rfx-add-source/.test(src), '还留着三段式表单的 id')
+  assert(!/rfx-modeCard/.test(src), '还留着四种触发方式的选择卡')
+  assert(!/newSourceBody|formBlocker/.test(src), '还留着表单专用的拼装/校验函数')
 })
 
 // ⑨ 无障碍底座。这些在界面上「少了也不会报错」：删掉 aria-live 只是读屏不播报，
-//    把原生 radio 换成 div 只是键盘选不动 —— 所以只能靠渲染树断言守着。
-//    断言的是「属性写进去了、引用指向存在的 id」，不是「读屏读出来是对的」（后者见 ACCESSIBILITY.md 的已知障碍）。
+//    把原生控件换成 div 只是键盘用不了 —— 所以只能靠渲染树断言守着。
 checkStack(CASES[9], () => {
-  const nodesOf = (node, out = []) => {
-    if (!node || typeof node !== 'object') return out
-    if (Array.isArray(node)) { for (const n of node) nodesOf(n, out); return out }
-    const props = node.props || {}
-    out.push({ type: node.type, props })
-    if (typeof node.type === 'function') nodesOf(node.type(props), out)
-    if ('children' in props) nodesOf(props.children, out)
-    return out
-  }
-  const byId = (nodes) => new Map(nodes.filter((n) => n.props.id).map((n) => [n.props.id, n]))
-  const refs = (nodes, attr) => nodes.flatMap((n) => String(n.props[attr] || '').split(/\s+/).filter(Boolean))
-  const base = {
-    form: { name: 'x', about: '', cmd: 'echo 1', intervalMs: 900000, mode: 'all', keywords: '', criteria: '' },
-    probe: { phase: 'idle', data: null, error: '' },
-    saveState: { phase: 'idle', error: '', name: '' },
-    tr: (key) => key,
-  }
-  const treeFor = (patch) => nodesOf(mod.NewSourceForm({ ...base, form: { ...base.form, ...patch } }))
-
-  const all = treeFor({ mode: 'all' })
+  const all = nodesOf(mod.SourcesPage({ t: (key) => key }))
   const ids = new Set(all.map((n) => n.props.id).filter(Boolean))
-
-  // 三段各有一个能读出名字的标题：aria-labelledby → 段内 h2 的 id
-  for (const step of ['feed', 'every', 'trigger']) {
-    const id = `rfx-step-${step}`
-    assert(refs(all, 'aria-labelledby').includes(id), `第 ${step} 段没有 aria-labelledby：${id}`)
-    assert(ids.has(id), `aria-labelledby 指向的 id 不存在：${id}`)
-  }
   // 所有 aria-labelledby / aria-describedby 都必须指向树里真的存在的 id（悬空引用读屏只会念个空）
-  const dangling = [...refs(all, 'aria-labelledby'), ...refs(all, 'aria-describedby')].filter((id) => !ids.has(id))
+  const refs = (attr) => all.flatMap((n) => String(n.props[attr] || '').split(/\s+/).filter(Boolean))
+  const dangling = [...refs('aria-labelledby'), ...refs('aria-describedby')].filter((id) => !ids.has(id))
   assert(dangling.length === 0, `这些 aria 引用指向不存在的 id：${[...new Set(dangling)].join(', ')}`)
 
-  // 保存失败必须有个常驻播报区：idle 时也在，读屏才有地方接话
+  const input = all.find((n) => n.props.id === 'rfx-ask')
+  assert(input.props['aria-describedby'], '一句话框没有 aria-describedby，提示只靠视觉位置')
+
+  // 投递结果必须有个常驻播报区：idle 时也在，读屏才有地方接话
   const live = all.find((n) => n.props.role === 'status')
-  assert(live, '保存失败没有 role="status" 播报区')
+  assert(live, '投递结果没有 role="status" 播报区')
   assert(live.props['aria-live'] === 'polite', `播报区不是 aria-live="polite"：${String(live.props['aria-live'])}`)
 
-  // 输入框的提示用 aria-describedby 挂上，不靠视觉位置（关键词框只在 match、判据框只在 semantic）
-  const maps = {}
-  for (const mode of ['all', 'match', 'semantic']) maps[mode] = byId(treeFor({ mode }))
-  for (const [mode, id] of [['all', 'rfx-name'], ['all', 'rfx-cmd'], ['match', 'rfx-keywords'], ['semantic', 'rfx-criteria']]) {
-    const node = maps[mode].get(id)
-    assert(node, `${mode} 模式下控件没渲染出来：${id}`)
-    const hint = node.props['aria-describedby']
-    assert(typeof hint === 'string' && hint.trim(), `${id} 没有 aria-describedby，提示只靠视觉位置`)
-  }
-
-  // 触发方式必须是原生 radio：自绘控件（div + role="radio"）的键盘与读屏行为都得自己实现，不给自己留这条路
-  const radios = all.filter((n) => n.props.type === 'radio')
-  assert(radios.length === 4, `触发方式不是 4 个原生 radio（${radios.length} 个）`)
-  assert(radios.every((n) => n.type === 'input'), '触发方式的 radio 不在 <input> 上（原生 radio 才带键盘行为）')
-  assert(!all.some((n) => n.props.role === 'radio'), '出现了自绘的 role="radio" 控件')
+  const send = all.find((n) => n.type === 'button' && /rfx-askSend/.test(String(n.props.className || '')))
+  assert(send && send.props.type === 'button', '发送按钮不是原生 button')
 
   // 三条只在 CSS 里、界面上看不出来的规则：焦点环 / 触屏 44px / 减少动态
   assert(mod.SRC_CSS.includes(':focus-visible'), 'CSS 里没有 :focus-visible 焦点环')
@@ -408,20 +319,9 @@ const runAsync = async () => {
   } catch (e) { results.push([CASES[4], false, e.message]) }
 
   // P22 首帧不等网络：插件加载时预热过一次 list，点开侧栏就该直接有表。
-  // 判据用「bar 里是 summary 还是 loading」——这两段文案互斥，且都在渲染树里，
-  // 比断言某个源名更稳（源名是单字母，includes 会假绿）。
+  // 判据用结构：有数据才渲染出 <table class="rfx-table">，没数据只有一行 loading 文案。
   try {
-    const textOf = (node) => {
-      if (node == null || node === false) return ''
-      if (typeof node === 'string' || typeof node === 'number') return String(node) + ' '
-      if (Array.isArray(node)) return node.map(textOf).join('')
-      const props = node.props || {}
-      if (typeof node.type === 'function') return textOf(node.type(props))
-      return 'children' in props ? textOf(props.children) : ''
-    }
     await new Promise((r) => setTimeout(r, 0))   // 让预热那次 fetch 落地
-    // 不按文案断言：tr() 走的是英文兜底，取不到 key；按结构断言更稳——
-    // 有数据才渲染出 <table class="rfx-table">，没数据只有一行 loading 文案。
     const classes = []
     const walkCls = (n) => {
       if (!n || typeof n !== 'object') return

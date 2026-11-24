@@ -14,7 +14,7 @@
 // 用法： node tools/invariant-check.mjs
 // 环境： NODE_BIN=<node 可执行文件> 可覆盖（默认 process.execPath）
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -37,7 +37,9 @@ function undecided(why) {
 function runTests(cwd, kind) {
   const args = kind === 'panel'
     ? ['tests/check-sources-panel.mjs']
-    : ['--test', 'sources.test.mjs', 'tests/create-source.test.mjs']
+    : kind === 'delegate'
+      ? ['tests/delegate-route.mjs']
+      : ['--test', 'sources.test.mjs', 'tests/create-source.test.mjs']
   const r = spawnSync(NODE, args, { cwd, encoding: 'utf8' })
   return { rc: r.status, out: `${r.stdout || ''}${r.stderr || ''}` }
 }
@@ -138,28 +140,52 @@ const MUTATIONS = [
     to: 'return { lines: lines.length, valid: lines.length, bad: 0, sample: lines.slice(0, Math.max(0, limit)) }',
   },
   {
-    name: 'P15 请求体的 op 写错',
+    name: 'P15 一句话请求体的 op 写错',
     prop: 'P15',
     file: 'client.js',
     runner: 'panel',
-    from: '\t\t\t\top: "create",',
-    to: '\t\t\t\top: "add",',
+    from: 'return { op: \"delegate\", sentence: String(sentence || \"\").trim() };',
+    to: 'return { op: \"add\", sentence: String(sentence || \"\").trim() };',
   },
   {
-    name: 'P16 本地校验漏掉采集命令',
+    name: 'P16 本地不再拦空句子',
     prop: 'P16',
     file: 'client.js',
     runner: 'panel',
-    from: 'if (!String(f.cmd || "").trim()) return "addNeedCmd"',
-    to: 'if (false) return "addNeedCmd"',
+    from: 'if (!s) return \"addAskNeedSentence\";',
+    to: 'if (false) return \"addAskNeedSentence\";',
   },
   {
     name: 'P17 英文兜底缺一条文案',
     prop: 'P17',
     file: 'client.js',
     runner: 'panel',
-    from: '\t\t\taddProbeRc: "Exit code {code} (non-zero is recorded as failed; append || true when empty is normal)"',
-    to: '\t\t\taddProbeRcX: "Exit code {code} (non-zero is recorded as failed; append || true when empty is normal)"',
+    from: '\naddAskSend: \"Send to Chief\",',
+    to: '\naddAskSendX: \"Send to Chief\",',
+  },
+  {
+    name: 'P18 一句话输入框的 id 改坏（首屏找不到入口）',
+    prop: 'P18',
+    file: 'client.js',
+    runner: 'panel',
+    from: 'id: \"rfx-ask\", type: \"text\"',
+    to: 'id: \"rfx-nope\", type: \"text\"',
+  },
+  {
+    name: 'P20 播报区去掉 aria-live（读屏不再播报）',
+    prop: 'P20',
+    file: 'client.js',
+    runner: 'panel',
+    from: 'className: \"rfx-saveMsg\", role: \"status\", \"aria-live\": \"polite\"',
+    to: 'className: \"rfx-saveMsg\", role: \"status\"',
+  },
+  {
+    name: 'P21 主按钮文字色写死 #fff（深色主题下隐形）',
+    prop: 'P21',
+    file: 'client.js',
+    runner: 'panel',
+    from: '.rfx-btnPrimary{border-color:var(--rfx-brand);background:var(--rfx-brand);color:var(--rfx-on-brand)}',
+    to: '.rfx-btnPrimary{border-color:var(--rfx-brand);background:var(--rfx-brand);color:#fff}',
   },
   {
     name: 'P19 采集器不再最后落盘（提交点回到最前）',
@@ -168,12 +194,30 @@ const MUTATIONS = [
     to: 'return [commitPoint, ...collectorConfig, ...targetFiles]',
   },
   {
-    name: 'P18 条件字段不再跟模式走（all 模式也显示关键词框）',
-    prop: 'P18',
-    file: 'client.js',
-    runner: 'panel',
-    from: 'mode === "match" ? react_jsx_runtime.jsxs("div", { className: "rfx-field"',
-    to: 'true ? react_jsx_runtime.jsxs("div", { className: "rfx-field"',
+    name: 'P23 提示词不再要求加载 reflex-datasource',
+    prop: 'P23',
+    from: '1. 加载 skill reflex-datasource',
+    to: '1. 加载 skill reflex-anything',
+  },
+  {
+    name: 'P24 一句话长度上限放宽到 700（与测试约定不一致）',
+    prop: 'P24',
+    from: 'sentenceMax: 500,',
+    to: 'sentenceMax: 700,',
+  },
+  {
+    name: 'P25 delegate 未接线时假装成功',
+    prop: 'P25',
+    from: "if (typeof io?.delegate !== 'function') {",
+    to: 'if (false) {',
+  },
+  {
+    name: 'P26 投递消息角色写错（post → request）',
+    prop: 'P26',
+    file: 'index.js',
+    runner: 'delegate',
+    from: "source: { kind: 'bot', form: 'relay', role: 'post',",
+    to: "source: { kind: 'bot', form: 'relay', role: 'request',",
   },
   {
     name: 'P6 没有 manifest 就返回空',
@@ -218,6 +262,11 @@ try {
   for (const mutation of MUTATIONS) {
     const dir = join(tmp, mutation.prop)
     cpSync(REPO, dir, { recursive: true, filter: (src) => !src.includes('node_modules') && !src.includes('.git') })
+    // 依赖不复制，但要接上：进 index.js 的运行器（delegate 端到端）缺 node_modules 时会在 import 处
+    // 直接崩，那种红不是断言给的 —— 曾经因此把一次「假抓到」记成 CAUGHT。
+    if (existsSync(join(REPO, 'node_modules'))) {
+      try { symlinkSync(join(REPO, 'node_modules'), join(dir, 'node_modules')) } catch {}
+    }
     const failure = applyMutations(dir, mutation)
     if (failure) { misses.push(`${mutation.name}：${failure}`); console.log(`ERROR ${mutation.name}：${failure}`); continue }
     const r = runTests(dir, mutation.runner)
@@ -227,7 +276,9 @@ try {
       continue
     }
     // node --test 用 ✖ 前缀报失败名；bundle 冒烟用 FAIL。
-    const marker = mutation.runner === 'panel' ? `FAIL ${mutation.prop}` : `✖ ${mutation.prop}`
+    const marker = mutation.runner === 'panel' || mutation.runner === 'delegate'
+      ? `FAIL ${mutation.prop}`
+      : `✖ ${mutation.prop}`
     if (r.out.includes(marker)) {
       caught += 1
       console.log(`CAUGHT ${mutation.name}`)

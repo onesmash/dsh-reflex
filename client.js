@@ -115,6 +115,16 @@ window.__ModuleLoader__.load({
 			addNeedCriteria: "「语义判据」需要一句话",
 			addNeedReload: "宿主里的插件还是旧版（不认识 create）：重启 DSH 之后这个入口才能真的写盘。",
 			createdOk: "已创建 {name}：开始采集，首跑只建水位（不发存量）。",
+			// 一句话建源（2026-11-25 起界面只剩这一个入口）
+			addAskTitle: "一句话加监控",
+			addAskPlaceholder: "例：盯着 arxiv cs.SE 有新论文就叫我",
+			addAskSend: "交给 Chief",
+			addAskSending: "投递中…",
+			addAskSent: "已交给 {target}：它去写采集器并自验，建好后列表里会出现这一行（它正忙时会排队）。",
+			addAskHint: "不用填字段：原话会原样交给 Chief，由它按 reflex-datasource 写采集器并跑一遍验证。",
+			addAskNeedSentence: "先写一句话：监控什么、什么情况叫你。",
+			addAskTooLong: "那句话太长了（上限 500 字），拆成两个监控更清楚。",
+			addAskReload: "宿主里的插件还是旧版（不认识 delegate）：重启 DSH 之后这个按钮才真的把话交给 Chief。",
 			srcNew: "新"
 		};
 
@@ -222,6 +232,16 @@ window.__ModuleLoader__.load({
 			addNeedCriteria: "Semantic mode needs one sentence",
 			addNeedReload: "The loaded plugin is older than this page (it does not know create). Restart DSH, then this button writes files.",
 			createdOk: "Created {name}: collecting now; the first run only builds the watermark (no backlog).",
+			// one-line creation (the only entry point since 2026-11-25)
+			addAskTitle: "Add a monitor in one line",
+			addAskPlaceholder: "e.g. tell me when arxiv cs.SE has a new paper",
+			addAskSend: "Send to Chief",
+			addAskSending: "Sending…",
+			addAskSent: "Handed to {target}: it writes the collector and verifies it; the row shows up here once created (it queues while busy).",
+			addAskHint: "No fields: your words go to Chief verbatim, and it follows reflex-datasource to write the collector and verify it.",
+			addAskNeedSentence: "Write one line: what to watch, and when to tell you.",
+			addAskTooLong: "That line is too long (max 500 characters); two smaller monitors are clearer.",
+			addAskReload: "The loaded plugin is older than this page (it does not know delegate). Restart DSH, then this button really hands the line to Chief.",
 			srcNew: "new"
 		};
 
@@ -563,6 +583,15 @@ addNeedKeywords: "Keyword mode needs at least one keyword",
 addNeedCriteria: "Semantic mode needs one sentence",
 			addNeedReload: "The loaded plugin is older than this page (it does not know create). Restart DSH, then this button writes files.",
 createdOk: "Created {name}: collecting now; the first run only builds the watermark (no backlog).",
+addAskTitle: "Add a monitor in one line",
+addAskPlaceholder: "e.g. tell me when arxiv cs.SE has a new paper",
+addAskSend: "Send to Chief",
+addAskSending: "Sending…",
+addAskSent: "Handed to {target}: it writes the collector and verifies it; the row shows up here once created (it queues while busy).",
+addAskHint: "No fields: your words go to Chief verbatim, and it follows reflex-datasource to write the collector and verify it.",
+addAskNeedSentence: "Write one line: what to watch, and when to tell you.",
+addAskTooLong: "That line is too long (max 500 characters); two smaller monitors are clearer.",
+addAskReload: "The loaded plugin is older than this page (it does not know delegate). Restart DSH, then this button really hands the line to Chief.",
 srcNew: "new"
 		};
 		/** 取一条文案：当前语言没有就回退英文，再没有才回 key。 */
@@ -571,380 +600,69 @@ srcNew: "new"
 			return !value || value === key ? (SRC_FALLBACK[key] || key) : value;
 		}
 		/** 页面样式。作为 <style> 元素渲染在组件里，卸载即移除，不写 document.head。 */
-		const SRC_CSS = `
-.rfx-page{--rfx-line:var(--dsw-alias-border-l1,#ececec);--rfx-line2:var(--dsw-alias-border-l2,#dedede);--rfx-ink2:var(--dsw-alias-label-secondary,#6b7280);--rfx-ink3:var(--dsw-alias-label-tertiary,#9ca3af);--rfx-brand:var(--dsw-alias-brand-primary,#4d6bfe);--rfx-on-brand:var(--dsw-alias-label-primary-inverted,#fff);--rfx-err:color-mix(in srgb,#e5484d 62%,var(--dsw-alias-label-primary,#111));--rfx-panel:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.06));--rfx-card:var(--dsw-alias-bg-layer-1,transparent);display:flex;flex-direction:column;flex:1;min-height:0;height:100%;box-sizing:border-box;padding:0 clamp(20px,3.2vw,40px);color:var(--dsw-alias-label-primary,#111);container-type:inline-size}
+		const SRC_CSS = `.rfx-page{--rfx-line:var(--dsw-alias-border-l1,#ececec);--rfx-line2:var(--dsw-alias-border-l2,#dedede);--rfx-ink2:var(--dsw-alias-label-secondary,#6b7280);--rfx-ink3:var(--dsw-alias-label-tertiary,#9ca3af);--rfx-brand:var(--dsw-alias-brand-primary,#4d6bfe);--rfx-on-brand:var(--dsw-alias-label-primary-inverted,#fff);--rfx-err:color-mix(in srgb,#e5484d 62%,var(--dsw-alias-label-primary,#111));--rfx-panel:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.06));--rfx-card:var(--dsw-alias-bg-layer-1,transparent);display:flex;flex-direction:column;flex:1;min-height:0;height:100%;box-sizing:border-box;padding:0 clamp(20px,3.2vw,40px);color:var(--dsw-alias-label-primary,#111);container-type:inline-size}
 .rfx-inner{display:flex;flex-direction:column;flex:1;min-height:0;width:100%;max-width:1080px;margin:0 auto}
 .rfx-head{flex:none;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:calc(var(--dsh-frame-top-clearance,44px) + 4px) 0 14px;border-bottom:1px solid var(--rfx-line)}
 .rfx-title{margin:0;font-size:18px;font-weight:600;line-height:1.3;text-wrap:balance}
 .rfx-desc{margin:5px 0 0;font-size:12.5px;line-height:1.55;color:var(--rfx-ink2);text-wrap:pretty}
 .rfx-headActions{display:flex;align-items:center;gap:8px;flex:none}
-.rfx-body{flex:1;min-height:0;overflow:auto;padding:0 0 8px;scroll-padding-bottom:76px}
-.rfx-formBody{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;padding:0}.rfx-form{accent-color:var(--rfx-brand)}.rfx-form{flex:1;min-height:0;overflow:auto;display:block;scroll-padding-bottom:12px}
-.rfx-grid{display:grid;grid-template-columns:minmax(0,1fr) 292px;column-gap:34px;align-items:start;padding-top:6px}
-.rfx-formCol{min-width:0}
-.rfx-step{padding:22px 0 4px}
-.rfx-step+.rfx-step{border-top:1px solid var(--rfx-line);margin-top:6px}
-.rfx-stepHead{display:flex;align-items:flex-start;gap:10px;margin-bottom:14px}
-.rfx-stepNo{flex:none;width:24px;height:24px;border-radius:7px;border:1px solid var(--rfx-line2);background:var(--rfx-card);display:flex;align-items:center;justify-content:center;font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--rfx-ink3);transition:color 140ms ease,border-color 140ms ease,background-color 140ms ease}
-.rfx-stepNo--done{color:var(--rfx-brand);border-color:color-mix(in srgb,var(--rfx-brand) 45%,transparent);background:color-mix(in srgb,var(--rfx-brand) 9%,transparent)}
-.rfx-stepText{min-width:0}
-.rfx-stepTitle{margin:1px 0 0;font-size:14px;font-weight:600;line-height:1.4;display:flex;align-items:baseline;gap:8px;text-wrap:balance}
-.rfx-stepEn{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:.1em;color:var(--rfx-ink2);font-weight:500}
-.rfx-stepHint{margin:4px 0 0;font-size:12px;line-height:1.55;color:var(--rfx-ink2);text-wrap:pretty}
-.rfx-field{margin:0 0 14px}
-.rfx-labelRow{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px}
-.rfx-label{display:inline-flex;align-items:baseline;gap:4px;font-size:12.5px;font-weight:600;cursor:default}
-.rfx-req{color:var(--rfx-brand);font-weight:600}
-.rfx-opt{font-weight:400;font-size:11.5px;color:var(--rfx-ink2)}
-.rfx-rule{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;color:var(--rfx-ink2);white-space:nowrap}
-.rfx-hint{margin:6px 0 0;font-size:11.5px;line-height:1.55;color:var(--rfx-ink2);text-wrap:pretty}
-.rfx-hintInline{margin:0}
-.rfx-input,.rfx-textarea,.rfx-select{box-sizing:border-box;width:100%;font:inherit;font-size:13px;padding:8px 10px;min-height:36px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--rfx-line2);background:var(--rfx-card);color:inherit;transition:border-color 140ms ease,box-shadow 140ms ease}
-.rfx-input::placeholder,.rfx-textarea::placeholder{color:var(--rfx-ink3)}
-.rfx-textarea{resize:vertical;line-height:1.55;min-height:92px}
-.rfx-select{width:auto;min-width:132px;padding-right:8px}
-.rfx-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
-.rfx-form :where(input,textarea,select):focus-visible{outline:none;border-color:var(--rfx-brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--rfx-brand) 16%,transparent)}
-.rfx-cmdBar{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+.rfx-body{flex:1;min-height:0;overflow:auto;padding:0 0 8px}
+.rfx-ask{margin:16px 0 4px;padding:14px;border:1px solid var(--rfx-line);border-radius:var(--dsw-radius-md,10px);background:var(--rfx-panel)}
+.rfx-askTitle{margin:0 0 9px;font-size:13px;font-weight:600}
+.rfx-askRow{display:flex;align-items:center;gap:8px}
+.rfx-input{box-sizing:border-box;width:100%;font:inherit;font-size:13px;padding:8px 10px;min-height:36px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--rfx-line2);background:var(--rfx-card);color:inherit;transition:border-color 140ms ease,box-shadow 140ms ease}
+.rfx-input::placeholder{color:var(--rfx-ink3)}
+.rfx-input:focus-visible{outline:none;border-color:var(--rfx-brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--rfx-brand) 16%,transparent)}
+.rfx-askInput{flex:1;min-width:0}
+.rfx-hint{margin:7px 0 0;font-size:11.5px;line-height:1.55;color:var(--rfx-ink2);text-wrap:pretty}
+.rfx-saveMsg{font-size:12px;line-height:1.45;color:var(--rfx-err)}
+.rfx-saveMsg:empty{display:none}
 .rfx-btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;flex:none;border:1px solid var(--rfx-line2);background:var(--rfx-card);color:inherit;border-radius:var(--dsw-radius-sm,8px);padding:0 12px;min-height:32px;font:inherit;font-size:12.5px;cursor:pointer;transition:background-color 140ms ease,border-color 140ms ease,transform 120ms ease,color 140ms ease}
 .rfx-btn:hover:not(:disabled){background:var(--rfx-panel);border-color:var(--rfx-ink3)}
 .rfx-btn:active:not(:disabled){transform:translateY(1px)}
 .rfx-btn:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--rfx-brand) 22%,transparent)}
 .rfx-btn:disabled{opacity:.5;cursor:default}
+.rfx-askSend{min-width:104px}
 .rfx-btnPrimary{border-color:var(--rfx-brand);background:var(--rfx-brand);color:var(--rfx-on-brand)}
 .rfx-btnPrimary:hover:not(:disabled){background:color-mix(in srgb,var(--rfx-brand) 88%,#000);border-color:color-mix(in srgb,var(--rfx-brand) 88%,#000);color:var(--rfx-on-brand)}
-.rfx-btnQuiet{border-color:transparent;background:var(--rfx-panel);color:var(--rfx-ink2)}
-.rfx-btnQuiet:hover:not(:disabled){color:var(--dsw-alias-label-primary,#111);border-color:var(--rfx-line2)}
-.rfx-modes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0;padding:0;border:0}
-.rfx-modeCard{position:relative;display:flex;align-items:flex-start;gap:9px;box-sizing:border-box;min-height:58px;padding:10px 11px;border:1px solid var(--rfx-line2);border-radius:var(--dsw-radius-md,10px);background:var(--rfx-card);cursor:pointer;transition:border-color 140ms ease,background-color 140ms ease}
-.rfx-modeCard:hover{border-color:var(--rfx-ink3)}
-.rfx-modeCard:has(input:checked){border-color:var(--rfx-brand);background:color-mix(in srgb,var(--rfx-brand) 5%,transparent)}
-.rfx-modeCard:has(input:focus-visible){outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--rfx-brand) 18%,transparent)}
-.rfx-modeBody{display:flex;flex-direction:column;gap:3px;min-width:0}
-.rfx-modeLabel{font-size:12.5px;font-weight:600;line-height:1.45}
-.rfx-modeHint{font-size:11.5px;line-height:1.5;color:var(--rfx-ink2);text-wrap:pretty}
-.rfx-sr{position:absolute;clip-path:inset(50%);overflow:hidden;width:1px;height:1px;margin:-1px;padding:0;border:0;white-space:nowrap}
-.rfx-sum{position:sticky;top:10px;margin-top:22px;padding:14px;border:1px solid var(--rfx-line);border-radius:var(--dsw-radius-md,10px);background:var(--rfx-panel)}
-.rfx-sumTitle{margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:.02em;text-wrap:balance}
-.rfx-sumRow{display:grid;grid-template-columns:52px minmax(0,1fr);gap:8px;padding:6px 0;border-top:1px solid color-mix(in srgb,var(--rfx-line) 70%,transparent)}
-.rfx-sumRow:first-of-type{border-top:0;padding-top:0}
-.rfx-sumKey{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;letter-spacing:.09em;color:var(--rfx-ink2);padding-top:2px}
-.rfx-sumVal{margin:0;font-size:12px;line-height:1.5;word-break:break-word}
-.rfx-sumVal--mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rfx-sumWrites{margin-top:10px;padding-top:10px;border-top:1px solid color-mix(in srgb,var(--rfx-line) 70%,transparent)}
-.rfx-sumSub{margin:0;font-size:11px;font-weight:600;color:var(--rfx-ink2)}
-.rfx-probe{display:flex;flex-direction:column;gap:6px;margin-top:10px;padding:9px 10px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--rfx-line2);background:var(--rfx-card);font-size:12px;line-height:1.5}
-.rfx-probe--ok{border-color:color-mix(in srgb,#2f855a 40%,transparent);background:color-mix(in srgb,#2f855a 6%,transparent)}
-.rfx-probe--bad{border-color:color-mix(in srgb,#b0651f 45%,transparent);background:color-mix(in srgb,#b0651f 7%,transparent)}
-.rfx-probeHead{display:flex;align-items:baseline;gap:8px}
-.rfx-probeMark{flex:none;width:16px;height:16px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:#fff;background:#2f855a;align-self:center}
-.rfx-probe--bad .rfx-probeMark{background:#b0651f}
-.rfx-probeText{flex:1;min-width:0}
-.rfx-probeRc{flex:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;color:var(--rfx-ink2)}
-.rfx-pre{margin:2px 0 0;padding:8px 9px;border-radius:6px;background:var(--rfx-panel);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.5;overflow:auto;max-height:150px;white-space:pre-wrap;word-break:break-all}
-.rfx-saveMsg{flex:1;min-width:0;font-size:12px;line-height:1.45;color:var(--rfx-err)}
-.rfx-saveMsg:empty{min-height:0}
-
-.rfx-barActions{flex:none;display:flex;align-items:center;justify-content:flex-end;gap:12px;margin:0 -4px;padding:10px 4px 12px;border-top:1px solid var(--rfx-line);background:var(--dsw-alias-bg-layer-1,#fff)}
-.rfx-barBtns{display:flex;align-items:center;gap:8px;flex:none}
-.rfx-btnPrimary.rfx-btn{min-width:84px}
 .rfx-bar{display:flex;align-items:center;gap:10px;padding:12px 0 4px;font-size:12px;color:var(--rfx-ink2)}
 .rfx-table{width:100%;border-collapse:collapse;font-size:13px}
 .rfx-th{text-align:left;font-weight:600;color:var(--rfx-ink2);padding:8px 10px;border-bottom:1px solid var(--rfx-line2);white-space:nowrap}
 .rfx-td{padding:11px 10px;border-bottom:1px solid var(--rfx-line);vertical-align:middle}
 .rfx-name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.rfx-nameRow{display:inline-flex;align-items:center;gap:8px}
 .rfx-muted{color:var(--rfx-ink3)}
 .rfx-num{font-variant-numeric:tabular-nums}
 .rfx-dot{display:inline-block;width:7px;height:7px;border-radius:999px;margin-right:6px;vertical-align:1px}
-.rfx-nameRow{display:inline-flex;align-items:center;gap:8px}
-.rfx-chip{font-size:10.5px;padding:1px 6px;border-radius:999px;background:color-mix(in srgb,#2f855a 12%,transparent);color:#2f855a}
 .rfx-sec{margin-top:30px}
 .rfx-secTitle{margin:0;font-size:13px;font-weight:600}
 .rfx-secHint{margin:3px 0 4px;font-size:12px;color:var(--rfx-ink2)}
-.rfx-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.06);color:#c0392b;font-size:13px}
-.rfx-ok{margin:10px 0;padding:9px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(47,133,90,.35);background:rgba(47,133,90,.06);color:#2f855a;font-size:12.5px}
-
-@container (max-width:900px){.rfx-grid{grid-template-columns:minmax(0,1fr)}.rfx-sum{position:static;margin-top:8px;order:2}.rfx-barActions{order:3}}
-@container (max-width:560px){.rfx-modes{grid-template-columns:1fr}.rfx-barActions{flex-wrap:wrap}.rfx-barBtns{width:100%}.rfx-barBtns .rfx-btn{flex:1}}
-@media (max-width:640px){.rfx-grid{grid-template-columns:minmax(0,1fr)}.rfx-sum{position:static;margin-top:10px}.rfx-modes{grid-template-columns:1fr}.rfx-barActions{flex-wrap:wrap}.rfx-barBtns{width:100%}.rfx-barBtns .rfx-btn{flex:1}}
-@media (pointer:coarse){.rfx-btn{min-height:44px}.rfx-modeCard{min-height:64px}.rfx-input,.rfx-textarea,.rfx-select{min-height:44px}}
+.rfx-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.06);color:var(--rfx-err);font-size:13px}
+@container (max-width:560px){.rfx-askRow{flex-wrap:wrap}.rfx-askSend{width:100%}}
+@media (max-width:640px){.rfx-head{flex-wrap:wrap;align-items:flex-start}.rfx-askRow{flex-wrap:wrap}.rfx-askSend{width:100%}}
+@container (max-width:560px){.rfx-sources .rfx-th,.rfx-sources .rfx-td{padding-left:6px;padding-right:6px}.rfx-sources thead th:nth-child(3),.rfx-sources thead th:nth-child(4),.rfx-sources tbody td:nth-child(3),.rfx-sources tbody td:nth-child(4){display:none}.rfx-sources .rfx-btn{padding:0 8px;font-size:12px}.rfx-sources .rfx-name{word-break:break-all}.rfx-sources .rfx-th:last-child,.rfx-sources .rfx-td:last-child{white-space:nowrap}}
+@media (pointer:coarse){.rfx-btn{min-height:44px}.rfx-input{min-height:44px}}
 @media (prefers-reduced-motion:reduce){.rfx-page *{transition:none!important;animation:none!important}}
 `;
-		/** 关键词切分：半角/全角逗号、分号、顿号、换行都算分隔符 —— 用户不该被标点卡住。 */
-		function splitKeywords(text) {
-			return String(text || "")
-				.split(/[,，;；、\n]+/)
-				.map((one) => one.trim())
-				.filter(Boolean);
-		}
 		/**
-		 * 表单 → 请求体。纯函数：界面到底发了什么，可以被测试直接调一次看到。
-		 * 三段式的字段一一对应 give / when / trigger。
+		 * 一句话 → 请求体。纯函数：界面到底发了什么，测试可以直接调一次看到。
+		 *
+		 * 2026-11-25 起界面只剩一个输入框：用户说一句，宿主把原话拼成提示词投给 Chief，
+		 * 由它按 reflex-datasource 落盘。这里只做 trim，绝不"帮用户改写需求"——
+		 * 改写过的原话，建出来的就是另一个监控。
 		 */
-		function newSourceBody(form) {
-			const f = form || {};
-			const mode = f.mode || "all";
-			const trigger = mode === "match"
-				? { mode: mode, keywords: splitKeywords(f.keywords) }
-				: mode === "semantic"
-					? { mode: mode, criteria: String(f.criteria || "").trim() }
-					: { mode: mode };
-			return {
-				op: "create",
-				name: String(f.name || "").trim(),
-				about: String(f.about || "").trim(),
-				cmd: String(f.cmd || "").trim(),
-				intervalMs: Number(f.intervalMs) || 900000,
-				trigger: trigger
-			};
+		function delegateBody(sentence) {
+			return { op: "delegate", sentence: String(sentence || "").trim() };
 		}
-		/**
-		 * 本地只挡「还没填完」，格式合法性交给宿主（错了它给准话）。
-		 * 两处各守各的，不写第二份正则 —— 否则两边一改就互相打脸。
-		 * @returns {string} 缺的那一项对应的文案 key；空串 = 可以提交
-		 */
-		function formBlocker(form) {
-			const f = form || {};
-			if (!String(f.name || "").trim()) return "addNeedName";
-			if (!String(f.cmd || "").trim()) return "addNeedCmd";
-			if ((f.mode || "all") === "match" && splitKeywords(f.keywords).length === 0) return "addNeedKeywords";
-			if ((f.mode || "all") === "semantic" && !String(f.criteria || "").trim()) return "addNeedCriteria";
+		/** 本地只挡「还没写」和「长得离谱」；其余交给宿主，错了它给准话。上限与宿主同一个数。 */
+		const SENTENCE_MAX = 500;
+		/** @returns {string} 对应的文案 key；空串 = 可以发 */
+		function sentenceBlocker(sentence) {
+			const s = String(sentence || "").trim();
+			if (!s) return "addAskNeedSentence";
+			if (s.length > SENTENCE_MAX) return "addAskTooLong";
 			return "";
 		}
-		/** 采集间隔可选值（ms）。默认 15 分钟：外部服务不会被打爆，人也不用等太久。 */
-		const INTERVAL_CHOICES = [60000, 300000, 900000, 1800000, 3600000, 21600000];
-		const EMPTY_FORM = { name: "", about: "", cmd: "", intervalMs: 900000, mode: "all", keywords: "", criteria: "" };
-		function emptyForm() { return { ...EMPTY_FORM }; }
-		/**
-		 * 三段式表单本体（展示型组件）：状态与请求都留在 SourcesPage，这里只负责画。
-		 * 为什么单独拆出来：界面改动最怕"静态检查全绿、一渲染就白屏"，
-		 * 拆成纯展示组件之后可以在测试里真的渲染一次，把三段文案与条件字段都验到。
-		 */
-		function NewSourceForm(props) {
-			const form = props.form || EMPTY_FORM;
-			const probe = props.probe || { phase: "idle", data: null, error: "" };
-			const saveState = props.saveState || { phase: "idle", error: "", name: "" };
-			const tr = typeof props.tr === "function" ? props.tr : (k) => k;
-			const onField = typeof props.onField === "function" ? props.onField : () => () => {};
-			const onMode = typeof props.onMode === "function" ? props.onMode : () => () => {};
-			const onSubmit = typeof props.onSubmit === "function" ? props.onSubmit : () => {};
-			const onCancel = typeof props.onCancel === "function" ? props.onCancel : () => {};
-			const onProbe = typeof props.onProbe === "function" ? props.onProbe : () => {};
-			const mode = form.mode || "all";
-			const name = String(form.name || "").trim();
-			const firstLine = String(form.cmd || "").trim().split("\n")[0] || "—";
-			const intervalLabel = everyLabel(Number(form.intervalMs) || 900000, tr);
-			const triggerText = mode === "match"
-				? tr("addModeMatch") + " · " + (splitKeywords(form.keywords).join(" / ") || "—")
-				: mode === "semantic"
-					? tr("addModeSemantic") + " · " + (String(form.criteria || "").trim() || "—")
-					: mode === "off" ? tr("addModeOff") : tr("addModeAll");
-			// 零输出是「本轮没数据」，不算坏；非 0 退出与"有行但不合法"才是要去修的
-			const probeBad = probe.phase === "ok" && probe.data
-				&& ((probe.data.lines > 0 && probe.data.valid !== probe.data.lines) || probe.data.code !== 0);
-			const stepHead = (id, no, en, title, hint, done) => react_jsx_runtime.jsxs("header", { className: "rfx-stepHead", children: [
-				react_jsx_runtime.jsx("span", {
-					className: done ? "rfx-stepNo rfx-stepNo--done" : "rfx-stepNo",
-					"aria-hidden": "true", children: String(no)
-				}, "n"),
-				react_jsx_runtime.jsxs("div", { className: "rfx-stepText", children: [
-					react_jsx_runtime.jsxs("h2", { className: "rfx-stepTitle", id: id, children: [
-						react_jsx_runtime.jsx("span", { className: "rfx-stepEn", children: en }, "e"),
-						title
-					] }),
-					react_jsx_runtime.jsx("p", { className: "rfx-stepHint", children: hint })
-				] }, "t")
-			] });
-			const required = react_jsx_runtime.jsx("span", { className: "rfx-req", "aria-hidden": "true", children: "*" }, "r");
-			const modeOption = (value, label, hint) => react_jsx_runtime.jsxs("label", { className: "rfx-modeCard", children: [
-				react_jsx_runtime.jsx("input", {
-					type: "radio", name: "rfx-trigger", value: value,
-					checked: mode === value,
-					onChange: onMode(value)
-				}, "i"),
-				react_jsx_runtime.jsxs("span", { className: "rfx-modeBody", children: [
-					react_jsx_runtime.jsx("span", { className: "rfx-modeLabel", children: label }, "l"),
-					react_jsx_runtime.jsx("span", { className: "rfx-modeHint", children: hint }, "h")
-				] }, "b")
-			] }, value);
-			const probeNode = () => {
-				if (probe.phase === "running") return react_jsx_runtime.jsx("p", { className: "rfx-hint", role: "status", children: tr("addProbing") }, "run");
-				if (probe.phase === "error") return react_jsx_runtime.jsxs("div", { className: "rfx-probe rfx-probe--bad", role: "status", children: [
-					react_jsx_runtime.jsx("span", { className: "rfx-probeMark", "aria-hidden": "true", children: "!" }, "m"),
-					react_jsx_runtime.jsx("span", { children: probe.error }, "t")
-				] }, "err");
-				if (probe.phase !== "ok" || !probe.data) return null;
-				const d = probe.data;
-				const verdict = Number(d.lines) === 0
-					? tr("addProbeEmpty")
-					: tr("addProbeLines").replace("{lines}", String(d.lines)).replace("{valid}", String(d.valid));
-				return react_jsx_runtime.jsxs("div", { className: "rfx-probe " + (probeBad ? "rfx-probe--bad" : "rfx-probe--ok"), role: "status", children: [
-					react_jsx_runtime.jsxs("div", { className: "rfx-probeHead", children: [
-						react_jsx_runtime.jsx("span", { className: "rfx-probeMark", "aria-hidden": "true", children: probeBad ? "!" : "✓" }, "m"),
-						react_jsx_runtime.jsx("span", { className: "rfx-probeText", children: verdict }, "t"),
-						react_jsx_runtime.jsx("span", { className: "rfx-probeRc", children: "exit " + String(d.code) }, "c")
-					] }),
-					d.timedOut ? react_jsx_runtime.jsx("p", { className: "rfx-hint", children: tr("addProbeTimeout") }, "to") : null,
-					!d.timedOut && Number(d.code) !== 0 ? react_jsx_runtime.jsx("p", { className: "rfx-hint", children: tr("addProbeRc").replace("{code}", String(d.code)) }, "rc") : null,
-					d.stderrTail ? react_jsx_runtime.jsx("p", { className: "rfx-hint rfx-mono", children: tr("addProbeStderr") + d.stderrTail }, "se") : null,
-					d.sample && d.sample.length ? react_jsx_runtime.jsx("pre", { className: "rfx-pre", children: d.sample.join("\n") }, "s") : null
-				] }, "ok");
-			};
-			const filesText = tr("addFiles").split("{name}").join(name || "<name>");
-			return react_jsx_runtime.jsxs("div", { className: "rfx-body rfx-formBody", children: [
-				react_jsx_runtime.jsxs("form", {
-					id: "rfx-add-source", className: "rfx-form", noValidate: true,
-					onSubmit: (event) => { if (event && typeof event.preventDefault === "function") event.preventDefault(); onSubmit() },
-					children: [
-						react_jsx_runtime.jsxs("div", { className: "rfx-grid", children: [
-							react_jsx_runtime.jsxs("div", { className: "rfx-formCol", children: [
-								react_jsx_runtime.jsxs("section", { className: "rfx-step", "aria-labelledby": "rfx-step-feed", children: [
-									stepHead("rfx-step-feed", 1, "FEED", tr("addGive"), tr("addGiveHint"), Boolean(name && String(form.cmd || "").trim())),
-									react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
-										react_jsx_runtime.jsxs("div", { className: "rfx-labelRow", children: [
-											react_jsx_runtime.jsxs("label", { className: "rfx-label", htmlFor: "rfx-name", children: [tr("addName"), required] }, "l"),
-											react_jsx_runtime.jsx("span", { className: "rfx-rule", children: tr("addNameRule") }, "r")
-										] }),
-										react_jsx_runtime.jsx("input", {
-											id: "rfx-name", className: "rfx-input rfx-mono", value: form.name, required: true,
-											placeholder: "x-timeline", autoComplete: "off", spellCheck: false,
-											autoCapitalize: "none", autoCorrect: "off", "aria-describedby": "rfx-name-hint",
-											onChange: onField("name")
-										}, "i"),
-										react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-name-hint", children: tr("addNameHint") }, "h")
-									] }),
-									react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
-										react_jsx_runtime.jsxs("label", { className: "rfx-label", htmlFor: "rfx-about", children: [
-											tr("addAbout"),
-											react_jsx_runtime.jsx("span", { className: "rfx-opt", children: tr("addOptional") }, "o")
-										] }),
-										react_jsx_runtime.jsx("input", {
-											id: "rfx-about", className: "rfx-input", value: form.about, autoComplete: "off",
-											"aria-describedby": "rfx-about-hint", onChange: onField("about")
-										}, "i"),
-										react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-about-hint", children: tr("addAboutHint") }, "h")
-									] }),
-									react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
-										react_jsx_runtime.jsxs("label", { className: "rfx-label", htmlFor: "rfx-cmd", children: [tr("addCmd"), required] }),
-										react_jsx_runtime.jsx("textarea", {
-											id: "rfx-cmd", className: "rfx-textarea rfx-mono", rows: 4, spellCheck: false,
-											required: true, value: form.cmd, "aria-describedby": "rfx-cmd-hint rfx-probe-hint",
-											onChange: onField("cmd")
-										}, "i"),
-										react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-cmd-hint", children: tr("addCmdHint") }, "h"),
-										react_jsx_runtime.jsxs("div", { className: "rfx-cmdBar", children: [
-											react_jsx_runtime.jsx("button", {
-												type: "button", className: "rfx-btn rfx-btnQuiet", disabled: probe.phase === "running",
-												onClick: onProbe, "aria-describedby": "rfx-probe-hint",
-												children: probe.phase === "running" ? tr("addProbing") : tr("addProbe")
-											}, "p"),
-											react_jsx_runtime.jsx("span", { className: "rfx-hint rfx-hintInline", id: "rfx-probe-hint", children: tr("addProbeHint") }, "h")
-										] }),
-										probeNode()
-									] })
-								] }),
-								react_jsx_runtime.jsxs("section", { className: "rfx-step", "aria-labelledby": "rfx-step-every", children: [
-									stepHead("rfx-step-every", 2, "EVERY", tr("addWhen"), tr("addWhenHint"), true),
-									react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
-										react_jsx_runtime.jsx("label", { className: "rfx-label", htmlFor: "rfx-interval", children: tr("addInterval") }, "l"),
-										react_jsx_runtime.jsx("select", {
-											id: "rfx-interval", className: "rfx-select", value: String(form.intervalMs),
-											onChange: onField("intervalMs"),
-											children: INTERVAL_CHOICES.map((ms) => react_jsx_runtime.jsx("option", {
-												value: String(ms), children: everyLabel(ms, tr)
-											}, String(ms)))
-										}, "s")
-									] })
-								] }),
-								react_jsx_runtime.jsxs("section", { className: "rfx-step", "aria-labelledby": "rfx-step-trigger", children: [
-									stepHead("rfx-step-trigger", 3, "TRIGGER", tr("addTrigger"), tr("addTriggerHint"), true),
-									react_jsx_runtime.jsxs("fieldset", { className: "rfx-modes", children: [
-										react_jsx_runtime.jsx("legend", { className: "rfx-sr", children: tr("addTriggerLegend") }, "lg"),
-										modeOption("all", tr("addModeAll"), tr("addModeAllHint")),
-										modeOption("match", tr("addModeMatch"), tr("addModeMatchHint")),
-										modeOption("semantic", tr("addModeSemantic"), tr("addModeSemanticHint")),
-										modeOption("off", tr("addModeOff"), tr("addModeOffHint"))
-									] }),
-									mode === "match" ? react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
-										react_jsx_runtime.jsxs("label", { className: "rfx-label", htmlFor: "rfx-keywords", children: [tr("addKeywords"), required] }, "l"),
-										react_jsx_runtime.jsx("input", {
-											id: "rfx-keywords", className: "rfx-input", value: form.keywords,
-											placeholder: "裁员, 仲裁, 昇腾", "aria-describedby": "rfx-keywords-hint",
-											onChange: onField("keywords")
-										}, "i"),
-										react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-keywords-hint", children: tr("addKeywordsHint") }, "h")
-									] }) : null,
-									mode === "semantic" ? react_jsx_runtime.jsxs("div", { className: "rfx-field", children: [
-										react_jsx_runtime.jsxs("label", { className: "rfx-label", htmlFor: "rfx-criteria", children: [tr("addCriteria"), required] }, "l"),
-										react_jsx_runtime.jsx("input", {
-											id: "rfx-criteria", className: "rfx-input", value: form.criteria,
-											"aria-describedby": "rfx-criteria-hint", onChange: onField("criteria")
-										}, "i"),
-										react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-criteria-hint", children: tr("addCriteriaHint") }, "h")
-									] }) : null
-								] })
-							] }),
-							react_jsx_runtime.jsxs("aside", { className: "rfx-sum", "aria-labelledby": "rfx-sum-title", children: [
-								react_jsx_runtime.jsx("h2", { className: "rfx-sumTitle", id: "rfx-sum-title", children: tr("addPreview") }, "t"),
-								react_jsx_runtime.jsxs("div", { className: "rfx-sumRow", children: [
-									react_jsx_runtime.jsx("span", { className: "rfx-sumKey", children: "FEED" }, "k"),
-									react_jsx_runtime.jsx("p", { className: "rfx-sumVal rfx-sumVal--mono", title: firstLine, children: firstLine }, "v")
-								] }, "feed"),
-								react_jsx_runtime.jsxs("div", { className: "rfx-sumRow", children: [
-									react_jsx_runtime.jsx("span", { className: "rfx-sumKey", children: "EVERY" }, "k"),
-									react_jsx_runtime.jsx("p", { className: "rfx-sumVal", children: intervalLabel }, "v")
-								] }, "every"),
-								react_jsx_runtime.jsxs("div", { className: "rfx-sumRow", children: [
-									react_jsx_runtime.jsx("span", { className: "rfx-sumKey", children: "TRIGGER" }, "k"),
-									react_jsx_runtime.jsx("p", { className: "rfx-sumVal", children: triggerText }, "v")
-								] }, "trigger"),
-								react_jsx_runtime.jsxs("div", { className: "rfx-sumWrites", children: [
-									react_jsx_runtime.jsx("h3", { className: "rfx-sumSub", children: tr("addWritesTitle") }, "t"),
-									react_jsx_runtime.jsx("p", { className: "rfx-hint", children: filesText }, "p")
-								] }, "writes")
-							] })
-						] })
-					]
-				}, "form"),
-				react_jsx_runtime.jsxs("div", { className: "rfx-barActions", children: [
-					react_jsx_runtime.jsx("div", {
-						className: "rfx-saveMsg", role: "status", "aria-live": "polite",
-						children: saveState.phase === "error" ? saveState.error : ""
-					}, "msg"),
-					react_jsx_runtime.jsxs("div", { className: "rfx-barBtns", children: [
-						react_jsx_runtime.jsx("button", {
-							type: "button", className: "rfx-btn", onClick: onCancel,
-							children: tr("addCancel")
-						}, "c"),
-						react_jsx_runtime.jsx("button", {
-							type: "submit", form: "rfx-add-source", className: "rfx-btn rfx-btnPrimary",
-							disabled: saveState.phase === "running",
-							children: saveState.phase === "running" ? tr("addCreating") : tr("addCreate")
-						}, "s")
-					] }, "b")
-				] }, "bar")
-			] }, "body");
-		}
-
-		/** 整页：标题 + 返回 + 表单。拆出来是为了能单独渲染成静态页面做视觉核对（tests/render-add-source.mjs）。 */
-		function AddSourcePage(props) {
-			const tr = typeof props.tr === "function" ? props.tr : (k) => k;
-			const onBack = typeof props.onBack === "function" ? props.onBack : () => {};
-			return react_jsx_runtime.jsxs("div", { className: "rfx-page", children: [
-				react_jsx_runtime.jsx("style", { children: SRC_CSS }, "css"),
-				react_jsx_runtime.jsxs("div", { className: "rfx-inner", children: [
-					react_jsx_runtime.jsxs("header", { className: "rfx-head", children: [
-						react_jsx_runtime.jsxs("div", { children: [
-							react_jsx_runtime.jsx("h1", { className: "rfx-title", children: tr("srcTitle") }, "t"),
-							react_jsx_runtime.jsx("p", { className: "rfx-desc", children: tr("addDesc") }, "d")
-						] }, "h"),
-						react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: onBack, children: tr("srcAddBack") }, "b")
-					] }),
-					NewSourceForm(props)
-				] })
-			] }, "page");
-		}
-
 		function SourcesPage(props) {
 			const t = typeof props.t === "function" ? props.t : (k) => k;
 			const tr = (k) => srcText(t, k);
@@ -955,10 +673,11 @@ srcNew: "new"
 				: { phase: "loading", data: null, error: "" });
 			const [apiMs, setApiMs] = react.useState(0);
 			const [busy, setBusy] = react.useState("");
-			const [adding, setAdding] = react.useState(false);
-			const [form, setForm] = react.useState(EMPTY_FORM);
-			const [probe, setProbe] = react.useState({ phase: "idle", data: null, error: "" });
-			const [saveState, setSaveState] = react.useState({ phase: "idle", error: "", name: "" });
+			// 一句话建源：输入框里是用户原话，send 是这条请求的投递状态。
+			// 三个状态必须都看得见：投递中 / 已交给 Chief / 没投出去。少一个就会出现
+			// 「点了没反应」这种最坏的观感 —— 用户不知道是坏了还是在排队。
+			const [ask, setAsk] = react.useState("");
+			const [send, setSend] = react.useState({ phase: "idle", error: "", target: "" });
 			const load = react.useCallback(async () => {
 				setView((prev) => ({ phase: prev.data ? "ready" : "loading", data: prev.data, error: "" }));
 				const t0 = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
@@ -980,56 +699,19 @@ srcNew: "new"
 					setView((prev) => ({ ...prev, error: e && e.message ? e.message : String(e) }));
 				} finally { setBusy(""); }
 			};
-			const setField = (key) => (event) => {
-				const value = event && event.target ? event.target.value : "";
-				setForm((prev) => ({ ...prev, [key]: value }));
-			};
-			const pickMode = (mode) => () => setForm((prev) => ({ ...prev, mode: mode }));
-			const openAdd = () => {
-				setForm(emptyForm());
-				setProbe({ phase: "idle", data: null, error: "" });
-				setSaveState({ phase: "idle", error: "", name: "" });
-				setAdding(true);
-			};
-			const closeAdd = () => {
-				setAdding(false);
-				setSaveState({ phase: "idle", error: "", name: "" });
-			};
-			const runProbe = async () => {
-				if (!String(form.cmd || "").trim()) {
-					setProbe({ phase: "error", data: null, error: tr("addNeedCmd") });
-					return;
-				}
-				setProbe({ phase: "running", data: null, error: "" });
+			const onAsk = (event) => setAsk(event && event.target ? event.target.value : "");
+			const sendAsk = async () => {
+				const blocker = sentenceBlocker(ask);
+				if (blocker) { setSend({ phase: "error", error: tr(blocker), target: "" }); return; }
+				setSend({ phase: "running", error: "", target: "" });
 				try {
-					setProbe({ phase: "ok", data: await reflexCall("probe", { cmd: form.cmd }), error: "" });
-				} catch (e) {
-					setProbe({ phase: "error", data: null, error: e && e.message ? e.message : String(e) });
-				}
-			};
-			const submit = async () => {
-				const blocker = formBlocker(form);
-				if (blocker) {
-					const fieldId = { addNeedName: "rfx-name", addNeedCmd: "rfx-cmd", addNeedKeywords: "rfx-keywords", addNeedCriteria: "rfx-criteria" }[blocker];
-					const el = fieldId && typeof document !== "undefined" && typeof document.getElementById === "function"
-						? document.getElementById(fieldId) : null;
-					if (el && typeof el.focus === "function") el.focus();
-					setSaveState({ phase: "error", error: tr(blocker), name: "" });
-					return;
-				}
-				setSaveState({ phase: "running", error: "", name: "" });
-				try {
-					const body = rememberList(await reflexCall("create", newSourceBody(form)));
-					setView({ phase: "ready", data: body, error: "" });
-					setAdding(false);
-					setForm(emptyForm());
-					setProbe({ phase: "idle", data: null, error: "" });
-					setSaveState({ phase: "ok", error: "", name: body && body.name ? body.name : "" });
+					const sent = await reflexCall("delegate", delegateBody(ask));
+					setSend({ phase: "ok", error: "", target: sent && sent.target ? sent.target : "Chief" });
+					setAsk("");
 				} catch (e) {
 					const why = e && e.message ? e.message : String(e);
-					// 宿主还是旧版插件时会回 "unknown op: create"：这句话对人没用，换成该做的事
-					const hint = /unknown op/.test(why) ? tr("addNeedReload") : why;
-					setSaveState({ phase: "error", error: hint, name: "" });
+					// 宿主还是旧版插件时会回 "unknown op: delegate"：这句话对人没用，换成该做的事
+					setSend({ phase: "error", error: /unknown op/.test(why) ? tr("addAskReload") : why, target: "" });
 				}
 			};
 
@@ -1046,10 +728,7 @@ srcNew: "new"
 				const st = stateOfRow(r);
 				return react_jsx_runtime.jsxs("tr", { children: [
 					react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsxs("span", { className: "rfx-nameRow", children: [
-						react_jsx_runtime.jsx("span", { className: "rfx-name", children: r.name }),
-						saveState.phase === "ok" && saveState.name === r.name
-							? react_jsx_runtime.jsx("span", { className: "rfx-chip", children: tr("srcNew") })
-							: null
+						react_jsx_runtime.jsx("span", { className: "rfx-name", children: r.name })
 					] }) }, "n"),
 					react_jsx_runtime.jsx("td", { className: "rfx-td rfx-muted", children: everyLabel(r.intervalMs, tr) }, "e"),
 					react_jsx_runtime.jsx("td", { className: "rfx-td rfx-num", children: String(r.factsToday || 0) }, "t"),
@@ -1066,16 +745,6 @@ srcNew: "new"
 				] }, r.name);
 			};
 
-			// ---------- 三段式（添加） ----------
-			if (adding) return AddSourcePage({
-				form, probe, saveState, tr,
-				onField: setField,
-				onMode: pickMode,
-				onProbe: () => void runProbe(),
-				onSubmit: () => void submit(),
-				onCancel: closeAdd,
-				onBack: closeAdd
-			});
 			return react_jsx_runtime.jsxs("div", { className: "rfx-page", children: [
 				react_jsx_runtime.jsx("style", { children: SRC_CSS }, "css"),
 				react_jsx_runtime.jsxs("div", { className: "rfx-inner", children: [
@@ -1085,14 +754,36 @@ srcNew: "new"
 							react_jsx_runtime.jsx("p", { className: "rfx-desc", children: tr("srcDesc") })
 						] }),
 						react_jsx_runtime.jsxs("div", { className: "rfx-headActions", children: [
-							react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: () => void load(), children: tr("srcRefresh") }),
-							react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn rfx-btnPrimary", onClick: openAdd, children: "＋ " + tr("srcAdd") })
+							react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: () => void load(), children: tr("srcRefresh") })
 						] })
 					] }),
 					react_jsx_runtime.jsxs("div", { className: "rfx-body", children: [
-						saveState.phase === "ok" && saveState.name
-							? react_jsx_runtime.jsx("div", { className: "rfx-ok", children: tr("createdOk").replace("{name}", saveState.name) })
-							: null,
+						react_jsx_runtime.jsxs("section", { className: "rfx-ask", "aria-labelledby": "rfx-ask-title", children: [
+							react_jsx_runtime.jsx("h2", { className: "rfx-askTitle", id: "rfx-ask-title", children: tr("addAskTitle") }),
+							react_jsx_runtime.jsxs("div", { className: "rfx-askRow", children: [
+								react_jsx_runtime.jsx("input", {
+									id: "rfx-ask", type: "text", className: "rfx-input rfx-askInput",
+									placeholder: tr("addAskPlaceholder"),
+									value: ask, maxLength: SENTENCE_MAX,
+									"aria-describedby": "rfx-ask-hint",
+									onChange: onAsk,
+									onKeyDown: (event) => { if (event && event.key === "Enter") void sendAsk(); }
+								}),
+								react_jsx_runtime.jsx("button", {
+									type: "button", className: "rfx-btn rfx-btnPrimary rfx-askSend",
+									disabled: send.phase === "running",
+									onClick: () => void sendAsk(),
+									children: send.phase === "running" ? tr("addAskSending") : tr("addAskSend")
+								})
+							] }),
+							react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-ask-hint", children: tr("addAskHint") }),
+							react_jsx_runtime.jsx("div", {
+								className: "rfx-saveMsg", role: "status", "aria-live": "polite",
+								children: send.phase === "error" ? send.error
+									: send.phase === "ok" ? tr("addAskSent").replace("{target}", send.target || "Chief")
+										: send.phase === "running" ? tr("addAskSending") : ""
+							})
+						] }),
 						react_jsx_runtime.jsx("div", { className: "rfx-bar", children: data ? summary + (apiMs > 150 ? " · " + apiMs + " ms" : "") : tr("srcLoading") }),
 						view.error ? react_jsx_runtime.jsxs("div", { className: "rfx-error", children: [
 							react_jsx_runtime.jsx("span", { children: tr("srcLoadFail") + "：" + view.error }),
@@ -1101,7 +792,7 @@ srcNew: "new"
 						data && rows.length === 0 && !view.error
 							? react_jsx_runtime.jsx("p", { className: "rfx-muted", children: tr("srcEmpty") })
 							: null,
-						rows.length > 0 ? react_jsx_runtime.jsxs("table", { className: "rfx-table", children: [
+						rows.length > 0 ? react_jsx_runtime.jsxs("table", { className: "rfx-table rfx-sources", children: [
 							react_jsx_runtime.jsx("thead", { children: react_jsx_runtime.jsxs("tr", { children: [
 								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColName") }),
 								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColEvery") }),
@@ -1191,11 +882,8 @@ srcNew: "new"
 		exports.reflexCall = reflexCall;
 		exports.SourcesPage = SourcesPage;
 		exports.TriggerIcon = TriggerIcon;
-		exports.newSourceBody = newSourceBody;
-		exports.splitKeywords = splitKeywords;
-		exports.formBlocker = formBlocker;
-		exports.NewSourceForm = NewSourceForm;
-		exports.AddSourcePage = AddSourcePage;
+		exports.delegateBody = delegateBody;
+		exports.sentenceBlocker = sentenceBlocker;
 		exports.SRC_CSS = SRC_CSS;
 		exports.zh = zh;
 		exports.en = en;
