@@ -32,13 +32,22 @@ const CASES = [
   'P20 无障碍底座在渲染树里齐着（标注 + 播报）',
   'P21 浅/深主题下主按钮与错误文字都够对比',
   'P22 预热过的 list 让首帧直接出表（不再进 loading）',
+  'P31 行的 L1 按钮跟着 hasTarget 走（只采集与内置源不给可点的按钮）',
 ]
 
 let code
 try { code = readFileSync(FILE, 'utf8') } catch { console.error(`未判定：读不到 ${FILE}`); process.exit(2) }
 
 const fetches = []
-let nextReply = { ok: true, sources: [{ name: 'a', paused: false, factsToday: 1, lastFactAt: Date.now() }], builtin: [], scannedAt: Date.now() }
+let nextReply = {
+  ok: true,
+  sources: [
+    { name: 'alpha', paused: false, factsToday: 1, lastFactAt: Date.now(), intervalMs: 900000, hasTarget: true },
+    { name: 'beta', paused: false, factsToday: 0, lastFactAt: 0, intervalMs: 900000, hasTarget: false },
+  ],
+  builtin: [{ name: 'disk', builtin: true, enabled: true }],
+  scannedAt: Date.now(),
+}
 const sandbox = {
   console,
   fetch: async (url, init) => {
@@ -335,6 +344,45 @@ const runAsync = async () => {
     assert(classes.some((c) => /rfx-table/.test(c)), '预热过了首帧仍没有表格（说明首帧还在等网络）')
     results.push([CASES[11], true, ''])
   } catch (e) { results.push([CASES[11], false, e.message]) }
+
+  // P31 逐行「L1 调优」按钮：有 target 才可点；只采集的置灰并说清原因；内置源那一行根本不给按钮。
+  try {
+    const walk = (n, out = []) => {
+      if (!n || typeof n !== 'object') return out
+      if (Array.isArray(n)) { for (const x of n) walk(x, out); return out }
+      out.push(n)
+      const p = n.props || {}
+      if (typeof n.type === 'function') walk(n.type(p), out)
+      if ('children' in p) walk(p.children, out)
+      return out
+    }
+    const trs = walk(mod.SourcesPage({ t: (key) => key })).filter((n) => n.type === 'tr')
+    assert(trs.length >= 4, `渲染出来的行太少（${trs.length}），这条等于没跑`)
+    const rows = trs.slice(1)                       // 首行是表头
+    const rowOf = (name) => rows.find((tr) => textOf(tr).trim().startsWith(name))
+    const tuneBtnOf = (tr) => walk(tr).find((n) => n.type === 'button' && /rfx-tune/.test(String(n.props.className || '')))
+
+    const alpha = rowOf('alpha'), beta = rowOf('beta'), disk = rowOf('disk')
+    assert(alpha && beta && disk, `三个样例行没渲染齐：${rows.map((r) => textOf(r).trim().slice(0, 8)).join(' / ')}`)
+    const aBtn = tuneBtnOf(alpha)
+    assert(aBtn, '有 L1 的行没有调优按钮')
+    assert(!aBtn.props.disabled, '有 L1 的行按钮却是灰的')
+    assert(typeof aBtn.props.title === 'string' && aBtn.props.title.length > 0, '按钮没有说明自己做什么')
+    const bBtn = tuneBtnOf(beta)
+    assert(bBtn, '只采集的行也应留一个按钮位（置灰 + 说明）')
+    assert(bBtn.props.disabled === true, '只采集的行按钮竟然可点')
+    assert(/只采集|only collects/i.test(String(bBtn.props.title ?? '')), `置灰原因没写清：${String(bBtn.props.title)}`)
+    assert(!tuneBtnOf(disk), '内置源那一行不该有调优按钮')
+    const all = walk(mod.SourcesPage({ t: (key) => key })).filter((n) => n.type === 'button' && /rfx-tune/.test(String(n.props.className || '')))
+    assert(all.length === 2, `全页调优按钮 ${all.length} 个（应恰好 2 个脚本源）`)
+
+    // 成功回执不能用错误红：两个状态区（建源 / 调优）都要有成功态修饰类，CSS 也要定义它
+    const src = readFileSync(FILE, 'utf8')
+    const okUses = (src.match(/rfx-saveMsg--ok/g) || []).length
+    assert(okUses >= 3, `成功态修饰类只出现 ${okUses} 次（两处状态区 + 一条 CSS 规则，至少 3 次）`)
+    assert(/\.rfx-saveMsg--ok\{[^}]*color:var\(--rfx-ink2\)/.test(src), 'CSS 里没有 .rfx-saveMsg--ok 的颜色规则')
+    results.push([CASES[12], true, ''])
+  } catch (e) { results.push([CASES[12], false, e.message]) }
 }
 
 await runAsync()

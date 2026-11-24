@@ -39,7 +39,9 @@ function runTests(cwd, kind) {
     ? ['tests/check-sources-panel.mjs']
     : kind === 'delegate'
       ? ['tests/delegate-route.mjs']
-      : ['--test', 'sources.test.mjs', 'tests/create-source.test.mjs']
+      : kind === 'tune'
+        ? ['tests/tune-route.mjs']
+        : ['--test', 'sources.test.mjs', 'tests/create-source.test.mjs']
   const r = spawnSync(NODE, args, { cwd, encoding: 'utf8' })
   return { rc: r.status, out: `${r.stdout || ''}${r.stderr || ''}` }
 }
@@ -176,8 +178,8 @@ const MUTATIONS = [
     prop: 'P20',
     file: 'client.js',
     runner: 'panel',
-    from: 'className: \"rfx-saveMsg\", role: \"status\", \"aria-live\": \"polite\"',
-    to: 'className: \"rfx-saveMsg\", role: \"status\"',
+    from: 'className: send.phase === "ok" ? "rfx-saveMsg rfx-saveMsg--ok" : "rfx-saveMsg",\n\t\t\t\t\t\t\t\trole: "status", "aria-live": "polite",',
+    to: 'className: send.phase === "ok" ? "rfx-saveMsg rfx-saveMsg--ok" : "rfx-saveMsg",\n\t\t\t\t\t\t\t\trole: "status",',
   },
   {
     name: 'P21 主按钮文字色写死 #fff（深色主题下隐形）',
@@ -218,6 +220,34 @@ const MUTATIONS = [
     runner: 'delegate',
     from: "source: { kind: 'bot', form: 'relay', role: 'post',",
     to: "source: { kind: 'bot', form: 'relay', role: 'request',",
+  },
+  {
+    name: 'P27 调优提示词不再要求加载 reflex-tuning',
+    prop: 'P27',
+    from: '1. 加载 skill reflex-tuning',
+    to: '1. 加载 skill reflex-anything',
+  },
+  {
+    name: 'P28 调优请求不再校验源名',
+    prop: 'P28',
+    from: "if (!NAME.test(target)) throw new Error(`名字不合法：${JSON.stringify(target)}`)",
+    to: 'if (false) throw new Error(`名字不合法：${JSON.stringify(target)}`)',
+  },
+  {
+    name: 'P30 没有 L1 的源也放行（跳过 target 存在性检查）',
+    prop: 'P30',
+    file: 'index.js',
+    runner: 'tune',
+    from: "if (!existsSync(join(targetsDir, `${name}.sh`))) {",
+    to: "if (false) {",
+  },
+  {
+    name: 'P31 只采集的行按钮也可点（去掉 hasTarget 判断）',
+    prop: 'P31',
+    file: 'client.js',
+    runner: 'panel',
+    from: 'disabled: !r.hasTarget || tuning === r.name,',
+    to: 'disabled: tuning === r.name,',
   },
   {
     name: 'P6 没有 manifest 就返回空',
@@ -276,7 +306,7 @@ try {
       continue
     }
     // node --test 用 ✖ 前缀报失败名；bundle 冒烟用 FAIL。
-    const marker = mutation.runner === 'panel' || mutation.runner === 'delegate'
+    const marker = mutation.runner === 'panel' || mutation.runner === 'delegate' || mutation.runner === 'tune'
       ? `FAIL ${mutation.prop}`
       : `✖ ${mutation.prop}`
     if (r.out.includes(marker)) {

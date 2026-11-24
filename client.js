@@ -125,6 +125,13 @@ window.__ModuleLoader__.load({
 			addAskNeedSentence: "先写一句话：监控什么、什么情况叫你。",
 			addAskTooLong: "那句话太长了（上限 500 字），拆成两个监控更清楚。",
 			addAskReload: "宿主里的插件还是旧版（不认识 delegate）：重启 DSH 之后这个按钮才真的把话交给 Chief。",
+			// 逐行 L1 调优
+			tuneBtn: "L1",
+			tuneTitle: "让 Chief 按 reflex-tuning 调这个源的 L1（阈值 / 判据）",
+			tuneNoTarget: "这个源只采集，没有 L1 可调",
+			tuneRunning: "投递中…",
+			tuneSent: "已把 {name} 的 L1 调优请求交给 {target}",
+			tuneReload: "宿主里的插件还是旧版（不认识 tune）：重启 DSH 之后这个按钮才生效。",
 			srcNew: "新"
 		};
 
@@ -242,6 +249,13 @@ window.__ModuleLoader__.load({
 			addAskNeedSentence: "Write one line: what to watch, and when to tell you.",
 			addAskTooLong: "That line is too long (max 500 characters); two smaller monitors are clearer.",
 			addAskReload: "The loaded plugin is older than this page (it does not know delegate). Restart DSH, then this button really hands the line to Chief.",
+			// per-row L1 tuning
+			tuneBtn: "L1",
+			tuneTitle: "Ask Chief to tune this source's L1 (threshold / criteria) via reflex-tuning",
+			tuneNoTarget: "This source only collects; there is no L1 to tune",
+			tuneRunning: "Sending…",
+			tuneSent: "L1 tuning request for {name} handed to {target}",
+			tuneReload: "The loaded plugin is older than this page (it does not know tune). Restart DSH, then this button works.",
 			srcNew: "new"
 		};
 
@@ -592,6 +606,12 @@ addAskHint: "No fields: your words go to Chief verbatim, and it follows reflex-d
 addAskNeedSentence: "Write one line: what to watch, and when to tell you.",
 addAskTooLong: "That line is too long (max 500 characters); two smaller monitors are clearer.",
 addAskReload: "The loaded plugin is older than this page (it does not know delegate). Restart DSH, then this button really hands the line to Chief.",
+tuneBtn: "L1",
+tuneTitle: "Ask Chief to tune this source's L1 (threshold / criteria) via reflex-tuning",
+tuneNoTarget: "This source only collects; there is no L1 to tune",
+tuneRunning: "Sending…",
+tuneSent: "L1 tuning request for {name} handed to {target}",
+tuneReload: "The loaded plugin is older than this page (it does not know tune). Restart DSH, then this button works.",
 srcNew: "new"
 		};
 		/** 取一条文案：当前语言没有就回退英文，再没有才回 key。 */
@@ -616,7 +636,7 @@ srcNew: "new"
 .rfx-askInput{flex:1;min-width:0}
 .rfx-hint{margin:7px 0 0;font-size:11.5px;line-height:1.55;color:var(--rfx-ink2);text-wrap:pretty}
 .rfx-saveMsg{font-size:12px;line-height:1.45;color:var(--rfx-err)}
-.rfx-saveMsg:empty{display:none}
+.rfx-saveMsg:empty{display:none}.rfx-saveMsg--ok{color:var(--rfx-ink2)}
 .rfx-btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;flex:none;border:1px solid var(--rfx-line2);background:var(--rfx-card);color:inherit;border-radius:var(--dsw-radius-sm,8px);padding:0 12px;min-height:32px;font:inherit;font-size:12.5px;cursor:pointer;transition:background-color 140ms ease,border-color 140ms ease,transform 120ms ease,color 140ms ease}
 .rfx-btn:hover:not(:disabled){background:var(--rfx-panel);border-color:var(--rfx-ink3)}
 .rfx-btn:active:not(:disabled){transform:translateY(1px)}
@@ -638,6 +658,7 @@ srcNew: "new"
 .rfx-secTitle{margin:0;font-size:13px;font-weight:600}
 .rfx-secHint{margin:3px 0 4px;font-size:12px;color:var(--rfx-ink2)}
 .rfx-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.06);color:var(--rfx-err);font-size:13px}
+.rfx-rowBtns{display:inline-flex;align-items:center;gap:6px}.rfx-tune{min-width:44px}.rfx-tuneMsg{margin:8px 0 0}
 @container (max-width:560px){.rfx-askRow{flex-wrap:wrap}.rfx-askSend{width:100%}}
 @media (max-width:640px){.rfx-head{flex-wrap:wrap;align-items:flex-start}.rfx-askRow{flex-wrap:wrap}.rfx-askSend{width:100%}}
 @container (max-width:560px){.rfx-sources .rfx-th,.rfx-sources .rfx-td{padding-left:6px;padding-right:6px}.rfx-sources thead th:nth-child(3),.rfx-sources thead th:nth-child(4),.rfx-sources tbody td:nth-child(3),.rfx-sources tbody td:nth-child(4){display:none}.rfx-sources .rfx-btn{padding:0 8px;font-size:12px}.rfx-sources .rfx-name{word-break:break-all}.rfx-sources .rfx-th:last-child,.rfx-sources .rfx-td:last-child{white-space:nowrap}}
@@ -653,6 +674,13 @@ srcNew: "new"
 		 */
 		function delegateBody(sentence) {
 			return { op: "delegate", sentence: String(sentence || "").trim() };
+		}
+		/**
+		 * 逐行「L1 调优」→ 请求体。只发一个源名：有没有这个源、有没有 L1 由宿主判
+		 * （只有宿主手里有 collectors/targets 两个目录）。
+		 */
+		function tuneBody(name) {
+			return { op: "tune", name: String(name || "").trim() };
 		}
 		/** 本地只挡「还没写」和「长得离谱」；其余交给宿主，错了它给准话。上限与宿主同一个数。 */
 		const SENTENCE_MAX = 500;
@@ -678,6 +706,10 @@ srcNew: "new"
 			// 「点了没反应」这种最坏的观感 —— 用户不知道是坏了还是在排队。
 			const [ask, setAsk] = react.useState("");
 			const [send, setSend] = react.useState({ phase: "idle", error: "", target: "" });
+			// 逐行调优：调哪个源、投递结果。按钮就在行里，失败原因必须回到同一个源上，
+			// 不能只在页面顶部飘一句「投递失败」——用户不知道是哪一行。
+			const [tuning, setTuning] = react.useState("");
+			const [tuneMsg, setTuneMsg] = react.useState({ phase: "idle", name: "", error: "", target: "" });
 			const load = react.useCallback(async () => {
 				setView((prev) => ({ phase: prev.data ? "ready" : "loading", data: prev.data, error: "" }));
 				const t0 = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
@@ -715,6 +747,19 @@ srcNew: "new"
 				}
 			};
 
+			const tuneRow = async (row) => {
+				setTuning(row.name);
+				setTuneMsg({ phase: "running", name: row.name, error: "", target: "" });
+				try {
+					const r = await reflexCall("tune", tuneBody(row.name));
+					setTuneMsg({ phase: "ok", name: row.name, error: "", target: (r && r.target) || "Chief" });
+				} catch (e) {
+					const why = e && e.message ? e.message : String(e);
+					// 宿主还是旧版插件时会回 "unknown op: tune"：这句话对人没用，换成该做的事
+					setTuneMsg({ phase: "error", name: row.name, error: /unknown op/.test(why) ? tr("tuneReload") : why, target: "" });
+				} finally { setTuning(""); }
+			};
+
 			// ---------- 列表 ----------
 			const data = view.data;
 			const rows = (data && data.sources) || [];
@@ -737,11 +782,20 @@ srcNew: "new"
 						react_jsx_runtime.jsx("span", { className: "rfx-dot", style: { background: st.color } }, "d"),
 						st.text
 					] }) }, "s"),
-					react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsx("button", {
+					react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsxs("span", { className: "rfx-rowBtns", children: [
+						react_jsx_runtime.jsx("button", {
+							type: "button", className: "rfx-btn rfx-tune",
+							disabled: !r.hasTarget || tuning === r.name,
+							title: r.hasTarget ? tr("tuneTitle") : tr("tuneNoTarget"),
+							onClick: () => void tuneRow(r),
+							children: tuning === r.name ? tr("tuneRunning") : tr("tuneBtn")
+						}),
+						react_jsx_runtime.jsx("button", {
 						type: "button", className: "rfx-btn", disabled: busy === r.name,
 						onClick: () => void toggle(r),
 						children: busy === r.name ? tr("srcWorking") : (r.paused ? tr("srcResume") : tr("srcPause"))
-					}) }, "a")
+						})
+					] }) }, "a")
 				] }, r.name);
 			};
 
@@ -778,12 +832,20 @@ srcNew: "new"
 							] }),
 							react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-ask-hint", children: tr("addAskHint") }),
 							react_jsx_runtime.jsx("div", {
-								className: "rfx-saveMsg", role: "status", "aria-live": "polite",
+								className: send.phase === "ok" ? "rfx-saveMsg rfx-saveMsg--ok" : "rfx-saveMsg",
+								role: "status", "aria-live": "polite",
 								children: send.phase === "error" ? send.error
 									: send.phase === "ok" ? tr("addAskSent").replace("{target}", send.target || "Chief")
 										: send.phase === "running" ? tr("addAskSending") : ""
 							})
 						] }),
+						tuneMsg.phase === "idle" ? null : react_jsx_runtime.jsx("div", {
+							className: (tuneMsg.phase === "ok" ? "rfx-saveMsg rfx-tuneMsg rfx-saveMsg--ok" : "rfx-saveMsg rfx-tuneMsg"),
+							role: "status", "aria-live": "polite",
+							children: tuneMsg.phase === "error" ? tuneMsg.error
+								: tuneMsg.phase === "running" ? tuneMsg.name + " · " + tr("tuneRunning")
+									: tr("tuneSent").split("{name}").join(tuneMsg.name).split("{target}").join(tuneMsg.target || "Chief")
+						}),
 						react_jsx_runtime.jsx("div", { className: "rfx-bar", children: data ? summary + (apiMs > 150 ? " · " + apiMs + " ms" : "") : tr("srcLoading") }),
 						view.error ? react_jsx_runtime.jsxs("div", { className: "rfx-error", children: [
 							react_jsx_runtime.jsx("span", { children: tr("srcLoadFail") + "：" + view.error }),

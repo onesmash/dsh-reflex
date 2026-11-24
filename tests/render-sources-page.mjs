@@ -26,11 +26,12 @@ try { code = readFileSync(FILE, 'utf8') } catch { console.error(`未判定：读
 const SAMPLE = {
   ok: true,
   sources: [
-    { name: 'x-timeline', paused: false, factsToday: 37, lastFactAt: Date.now() - 6 * 60000, intervalMs: 2700000 },
-    { name: 'arxiv', paused: false, factsToday: 8, lastFactAt: Date.now() - 32 * 60000, intervalMs: 1800000 },
-    { name: 'live-asr', paused: false, factsToday: 3, lastFactAt: Date.now() - 90 * 1000, intervalMs: 60000 },
-    { name: 'screen-ocr', paused: true, factsToday: 0, lastFactAt: 0, intervalMs: 20000 },
-    { name: 'jev-comp', paused: false, factsToday: 2, lastFactAt: Date.now() - 55 * 60000, intervalMs: 1800000 },
+    { name: 'x-timeline', paused: false, factsToday: 37, lastFactAt: Date.now() - 6 * 60000, intervalMs: 2700000, hasTarget: true },
+    { name: 'arxiv', paused: false, factsToday: 8, lastFactAt: Date.now() - 32 * 60000, intervalMs: 1800000, hasTarget: true },
+    { name: 'live-asr', paused: false, factsToday: 3, lastFactAt: Date.now() - 90 * 1000, intervalMs: 60000, hasTarget: true },
+    { name: 'screen-ocr', paused: true, factsToday: 0, lastFactAt: 0, intervalMs: 20000, hasTarget: true },
+    { name: 'jev-comp', paused: false, factsToday: 2, lastFactAt: Date.now() - 55 * 60000, intervalMs: 1800000, hasTarget: true },
+    { name: 'tidemark', paused: false, factsToday: 1, lastFactAt: Date.now() - 3 * 60000, intervalMs: 3600000, hasTarget: false },
   ],
   builtin: [{ name: 'disk', enabled: true }, { name: 'cpu', enabled: false }],
   scannedAt: Date.now(),
