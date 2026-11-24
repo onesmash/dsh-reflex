@@ -8,12 +8,12 @@
 
 | 编号 | 性质（一句话，可被反例证伪） | owner | 覆盖的文件/函数 | 范围 | 证据等级 | 破坏变体 / 证据命令 | 退出码 | S4 日志 | 状态 | sync commit |
 |---|---|---|---|---|---|---|---|---|---|---|
-| T1 | 读者读到的登记表派生指标，恒等于同版本计数算出来的值 | Chief | `docs/verification/registry-consistency/Registry.tla`（模型）、`skill/reflex-tuning/scripts/shadow_targets_io.py`（真实读层，运行时文件在 REFLEX_HOME/tools/ 下，不在仓库） | 单进程、单写者 | L2（模型 + 真实文件回放） | 模型两卡成对：`docs/verification/registry-consistency/two-step.cfg` 必须报红、`single-source.cfg` 必须绿；回放：把 TLC 的 `WriteCounts → Read` 打到真实副本上，「取副本」读法须判红而读层须读对。命令 `bash docs/verification/registry-consistency/check.sh` 与 `python3 tests/test-reflex-targets-invariants.py` | 0 | 未做：无 CI 面，断言以守门测试形式存在（`--check` 子命令 + `tests/test-reflex-targets-invariants.py`），尚未挂到定时/提交钩子 | 守住（单写者） | ec39e30 |
-| T2 | 任何工具读取标签文件前都要求它带 `state_hash`，缺失则拒绝读取并指名拒绝原因 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `load_labels` | 单进程 | 不建模：入口校验，一次检查就够；由守门测试覆盖 | 变体：真实标签文件缺 `state_hash` 时 `load_labels` 必须抛 `LabelsMissingStateHash` 并报出缺失计数；显式豁免必须回报计数与模式；契约检查要求每个 `LA.load(` 调用都写着 `require_state_hash=True`。解析只有一份实现（`skill/reflex-tuning/scripts/labels_any.py`），读层转调它。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | ec39e30 |
-| T3 | `threshold` 变更时登记表里必须存在可机检的 `whyNotBatch` 引用，且该 artifact 路径真实存在 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `check_why_not_batch` | 单进程 | 不建模：写盘前置条件，一次检查就够；由守门测试覆盖 | 变体：填不存在的 artifact 路径 → 必须 `WriteRefused`；不写 `whyNotBatch` → 同样拒写；写一句话（无路径无 id）→ 拒写。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | ec39e30 |
-| T4 | `citable` 恒等于由 `pc.noiseAppendNear` / `positives` / `calibration` 派生的值，手写值与派生值不符即红 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `derive_citable` | 单进程 | 不建模：纯函数，输入定了输出就定了；由守门测试覆盖 | 变体：登记表里出现手写 `citable` → 必须判红（当前零样本：没有手写值，故另有 T4-b 用真实字段现算，不许当成已覆盖）。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | ec39e30 |
-| T5 | 被标注为截断的拟合值（`fitTruncated`）不出现在「取最优阈值」的读取路径里 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `get_fit`、`skill/reflex-tuning/scripts/threshold_fit.py` | 单进程 | 不建模：静态字段契约，由 schema 级校验覆盖 | 变体：`fitTruncated` 里的 `R8`/`R16` 被当 `fit` 读 → 必须抛 `TruncatedFitMisuse`；真实登记表已把两者的 0.70 移入 `fitTruncated`。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | ec39e30 |
-| T6 | 登记表里的证书计数（tp/fp/fn/n_labeled）可由 labelsFile + shadow + 工作点现算复现，不可复现时必须显式声明过期 | Chief | `skill/reflex-tuning/scripts/risk_certificate.py` 的 `--json` 输出、`skill/reflex-tuning/scripts/shadow_targets_io.py` | 单进程、同一数据目录 | 不建模：外部数据随标注增长，属版本问题不是交错；由守门测试 T1-e 覆盖 | 变体：把 `certificate.countsStale` 删掉后必须判红（同一段代码路径已实测两次：先红于缺声明，后绿于声明）。重拟合要动阈值，属需决策项，未自动执行。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 未判定（存量属 442 条旧样本，现存 487，未重拟合） | ec39e30 |
+| T1 | 读者读到的登记表派生指标，恒等于同版本计数算出来的值 | Chief | `docs/verification/registry-consistency/Registry.tla`（模型）、`skill/reflex-tuning/scripts/shadow_targets_io.py`（真实读层，运行时文件在 REFLEX_HOME/tools/ 下，不在仓库） | 单进程、单写者 | L2（模型 + 真实文件回放） | 模型两卡成对：`docs/verification/registry-consistency/two-step.cfg` 必须报红、`single-source.cfg` 必须绿；回放：把 TLC 的 `WriteCounts → Read` 打到真实副本上，「取副本」读法须判红而读层须读对。命令 `bash docs/verification/registry-consistency/check.sh` 与 `python3 tests/test-reflex-targets-invariants.py` | 0 | 未做：无 CI 面，断言以守门测试形式存在（`--check` 子命令 + `tests/test-reflex-targets-invariants.py`），尚未挂到定时/提交钩子 | 守住（单写者） | 5357561bc728 |
+| T2 | 任何工具读取标签文件前都要求它带 `state_hash`，缺失则拒绝读取并指名拒绝原因 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `load_labels` | 单进程 | 不建模：入口校验，一次检查就够；由守门测试覆盖 | 变体：真实标签文件缺 `state_hash` 时 `load_labels` 必须抛 `LabelsMissingStateHash` 并报出缺失计数；显式豁免必须回报计数与模式；契约检查要求每个 `LA.load(` 调用都写着 `require_state_hash=True`。解析只有一份实现（`skill/reflex-tuning/scripts/labels_any.py`），读层转调它。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | 5357561bc728 |
+| T3 | `threshold` 变更时登记表里必须存在可机检的 `whyNotBatch` 引用，且该 artifact 路径真实存在 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `check_why_not_batch` | 单进程 | 不建模：写盘前置条件，一次检查就够；由守门测试覆盖 | 变体：填不存在的 artifact 路径 → 必须 `WriteRefused`；不写 `whyNotBatch` → 同样拒写；写一句话（无路径无 id）→ 拒写。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | 5357561bc728 |
+| T4 | `citable` 恒等于由 `pc.noiseAppendNear` / `positives` / `calibration` 派生的值，手写值与派生值不符即红 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `derive_citable` | 单进程 | 不建模：纯函数，输入定了输出就定了；由守门测试覆盖 | 变体：登记表里出现手写 `citable` → 必须判红（当前零样本：没有手写值，故另有 T4-b 用真实字段现算，不许当成已覆盖）。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | 5357561bc728 |
+| T5 | 被标注为截断的拟合值（`fitTruncated`）不出现在「取最优阈值」的读取路径里 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `get_fit`、`skill/reflex-tuning/scripts/threshold_fit.py` | 单进程 | 不建模：静态字段契约，由 schema 级校验覆盖 | 变体：`fitTruncated` 里的 `R8`/`R16` 被当 `fit` 读 → 必须抛 `TruncatedFitMisuse`；真实登记表已把两者的 0.70 移入 `fitTruncated`。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | 5357561bc728 |
+| T6 | 登记表里的证书计数（tp/fp/fn/n_labeled）可由 labelsFile + shadow + 工作点现算复现，不可复现时必须显式声明过期 | Chief | `skill/reflex-tuning/scripts/risk_certificate.py` 的 `--json` 输出、`skill/reflex-tuning/scripts/shadow_targets_io.py` | 单进程、同一数据目录 | 不建模：外部数据随标注增长，属版本问题不是交错；由守门测试 T1-e 覆盖 | 变体：把 `certificate.countsStale` 删掉后必须判红（同一段代码路径已实测两次：先红于缺声明，后绿于声明）。重拟合要动阈值，属需决策项，未自动执行。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 未判定（存量属 442 条旧样本，现存 487，未重拟合） | 5357561bc728 |
 
 ## S0：哪些性质建模、哪些不建模（决策留痕）
 
@@ -49,6 +49,21 @@ TLC 只证明「模型里有这条路径」；这一步证明真实文件上也�
 2. **第二次红（预期理由）**：`FAIL T1-a … [x-timeline.precisionPoint 存 0.348 ≠ 算 0.3529; x-timeline.recallPoint 存 0.856 ≠ 算 0.9167]`。
 3. **变绿**：删掉副本、`fit` 里的截断值移进 `fitTruncated` 之后 → `16 PASS / 0 FAIL / 0 UNVERIFIED`，exit 0。
 4. **它有没有分辨力**：同一条断言换「取副本」的读法必须判红（`T1-c`：副本给 0.856、读层给 0.9172）；读层返回 `None` 时必须判红（`T1-d`）。两条都在同一份测试里常开。
+
+## S5 收口：三句话
+
+1. **这条性质是什么**：读者读到的登记表派生指标，恒等于同版本计数现算出来的值（T1）；证书里的计数必须能由 labelsFile + shadow + 工作点复现，不能复现就得显式声明过期（T6）。
+2. **哪个命令重跑**：`bash docs/verification/registry-consistency/check-all.sh`——模型两卡 + 守门二十项 + 登记表机器核对，一次跑完，按 0/1/2 三态退出。
+3. **覆盖到哪个 commit**：git sha `5357561bc728`（12 位前缀，与表内 sync commit 列同一提交）。代码再改就把 sync commit 列标 pending 并重跑，别让表上的数比代码新。
+
+六条可重跑判据的自检（都实测过，不是推断）：
+
+- 干净 shell：`env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/local/bin bash docs/verification/registry-consistency/check-all.sh` → exit 0。
+- 不靠调用方变量：运行时目录走 `RVCA_HOME → REFLEX_HOME → 默认`，工具名走 `RVCA_NODE` / `RVCA_PYTHON`；前置检查找不到目录时报「找错目录」而不是「数据不足」。
+- 三态分开：把 `RVCA_HOME` 指向空目录重跑 → exit 2（未判定），不是 0。
+- 从零跑一次就有结论：脚本不写仓库、模型与守门都用临时目录，跑两遍结果一致。
+- 观察值不算证据：「可复算 tag：1」「标签 487 唯一」这类只作快照记录，不挂在「守住」下面。
+- 证据命令落成脚本：就是上面那条命令，不是聊天里的一段。
 
 ## 模型自身踩过的坑（记下来，免得下一个人重踩）
 
