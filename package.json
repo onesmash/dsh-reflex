@@ -47,6 +47,6 @@
   },
   "scripts": {
     "test:sources": "node --test sources.test.mjs tests/create-source.test.mjs",
-    "check:sources": "node tests/sources-invariants.mjs && node tests/check-sources-panel.mjs && node tests/create-source-route.mjs && node tests/delegate-route.mjs && node tests/check-client-bundle.mjs"
+    "check:sources": "node tests/sources-invariants.mjs && node tests/check-sources-panel.mjs && node tests/create-source-route.mjs && node tests/delegate-route.mjs && node tests/tune-route.mjs && node tests/check-client-bundle.mjs"
   }
 }

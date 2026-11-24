@@ -28,8 +28,10 @@ const NAME = /^[a-z0-9][a-z0-9._-]*$/
  * @param {string} dir
  * @returns {Array<{name:string, paused:boolean, intervalMs:number|null, hasEnv:boolean, metric:string|null}>}
  */
-export function scanSources(dir) {
+export function scanSources(dir, options = {}) {
   if (!existsSync(dir)) return []
+  // 逐行「L1 调优」按钮要知道这一行有没有判据可调：只看文件在不在，不猜。
+  const targetsDir = typeof options.targetsDir === 'string' ? options.targetsDir : ''
   let entries
   try { entries = readdirSync(dir) } catch { return [] }
   const names = entries.filter((f) => f.endsWith('.sh')).map((f) => f.slice(0, -3)).sort()
@@ -49,7 +51,14 @@ export function scanSources(dir) {
     if (existsSync(schemaFile)) {
       try { metric = JSON.parse(readFileSync(schemaFile, 'utf8'))?.metric ?? null } catch {}
     }
-    return { name, paused: existsSync(join(dir, `${name}.paused`)), intervalMs, hasEnv, metric }
+    return {
+      name,
+      paused: existsSync(join(dir, `${name}.paused`)),
+      intervalMs,
+      hasEnv,
+      metric,
+      hasTarget: Boolean(targetsDir) && existsSync(join(targetsDir, `${name}.sh`)),
+    }
   })
 }
 
@@ -113,6 +122,14 @@ export function respondToOp(op, body, io) {
       return Promise.reject(new Error('一句话建源未接线：宿主没有提供 delegate'))
     }
     return Promise.resolve(io.delegate(body)).then((result) => ({ ok: true, ...(result ?? {}) }))
+  }
+  // 逐行 L1 调优：同样只接线。合法性（有没有这个源、有没有 target）由宿主判，
+  // 因为只有宿主手里有 collectors/targets 两个目录。
+  if (op === 'tune') {
+    if (typeof io?.tune !== 'function') {
+      return Promise.reject(new Error('L1 调优未接线：宿主没有提供 tune'))
+    }
+    return Promise.resolve(io.tune(body)).then((result) => ({ ok: true, ...(result ?? {}) }))
   }
   return { ok: false, error: `unknown op: ${op || '(empty)'}` }
 }
@@ -191,6 +208,46 @@ export function buildDelegatePrompt(sentence) {
 回报
 一句话结论（建了什么 / 多久抓一次 / 什么情况叫你）+ 写了哪几个文件 + 上面三项的实际数字。
 任一步不过：不落盘或回滚，直接说哪步不过、原话报错是什么。`
+}
+
+/**
+ * 逐行「L1 调优」：把源名拼进固定的调优提示词，交给 bot 按 reflex-tuning 走四层。
+ *
+ * 为什么不把门槛留给现场判断：0 标签拟合阈值就是拟合噪声。样本量分档、A/B、重拟合、
+ * 语义不许自动转正这几条必须写在提示词里，否则每次调优的可靠性都取决于当天谁在处理。
+ */
+export function buildTunePrompt(name) {
+  const target = String(name ?? '').trim()
+  if (!target) throw new Error('先给一个数据源名字')
+  if (!NAME.test(target)) throw new Error(`名字不合法：${JSON.stringify(target)}`)
+  return `[L1 调优请求] 目标数据源：${target}
+
+先读现场，再决定改不改。不许凭印象调参数。
+
+## 一、先把基线读出来（这一步不做完，后面一律不许动文件）
+1. 加载 skill reflex-tuning，按它的四层机制走：影子 → 回放 → 拟合/证书 → 策略。
+2. 读 $REFLEX_HOME/tools/shadow_targets.json 里 ${target} 的当前条目（阈值、标签数、note、回滚说明）。
+   没有条目 = 这个源从没调过，先只做诊断。
+3. 数样本：shadow/${target}-*.jsonl 的条数、能对上标签的条数。
+4. 读 targets/${target}.sh 与 targets/${target}.env.json，把当前判据原文、阈值、去重/冷却/合并参数抄进报告。
+
+## 二、按样本量分档，不许越档
+- 标签 ≥ 100：可做完整调优（threshold_fit 拟合 + risk_certificate 给 CP 下界 + 与同量随机基线对比）。
+- 标签 30–99：只做保守调整——只动阈值或去重，不改判据措辞；结论必须写明 CP 区间宽到什么程度。
+- 标签 < 30（含 0）：不许改任何文件。只出诊断：缺多少样本、建议怎么攒、哪几个维度该先标。
+
+## 三、硬规矩（skill 里写着，这里再写一遍，违反就算没做完）
+- 改判据 ⟹ 必须先 A/B（shadow_ab.py），且改完重拟合阈值、重跑 pc_inject.py 看判据指纹。
+  判据一改，分数尺度整体漂移，旧阈值直接失效。
+- 改阈值 ⟹ 必须用 threshold_fit.py 按期望效用拟合，并把新值 + 依据写回 tools/shadow_targets.json。
+  阈值不许硬编码在脚本里。
+- 语义判据的 target（只记账不叫醒）：只能给出「建议阈值 + 转正条件」，不许自动转成叫醒。转正要人点。
+- 不动 collectors/${target}.sh，不动采集间隔（要改必须单列一节说明理由与证据）。
+- 标签读不到必须报错，不许当作「没有负面样本」。
+
+## 四、回报
+一句话结论（调了没调、为什么）+ 改前/改后对照（阈值、P/R、CP 下界、同量随机基线）+
+改了哪几行（路径:行号）+ 回滚方式（一行命令）。分档为「只看不改」时，明确写「本轮未改任何文件」。`
 }
 
 const TRIGGER_MODES = Object.freeze(['all', 'match', 'semantic', 'off'])

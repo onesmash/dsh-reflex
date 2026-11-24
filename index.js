@@ -28,6 +28,7 @@ import {
   summarizeProbe,
   NEW_SOURCE_LIMITS,
   buildDelegatePrompt,
+  buildTunePrompt,
   SOURCE_ROUTE,
 } from './sources.mjs'
 import { promisify, format } from 'node:util'
@@ -1514,7 +1515,8 @@ function install(rt, ctx, cfg) {
   }
   const builtinNames = () => Object.keys(BUILTIN_SOURCES)
   function sourceRows() {
-    return scanSources(collectorsDir).map((row) => ({ ...row, ...factsStat(row.name) }))
+    // 带上 targetsDir：界面要靠 hasTarget 决定哪一行给「L1 调优」按钮、哪一行置灰。
+    return scanSources(collectorsDir, { targetsDir }).map((row) => ({ ...row, ...factsStat(row.name) }))
   }
   function builtinRows() {
     const declared = new Set(cfg.l0.sources ?? [])
@@ -1576,6 +1578,30 @@ function install(rt, ctx, cfg) {
     return { target, chars: prompt.length }
   }
 
+  /**
+   * 逐行「L1 调优」：校验源存在且有判据，把调优提示词投给 Chief。
+   *
+   * 三个拒绝都必须说人话，因为按钮就在用户眼前，报「not found」等于没报：
+   *   内置源（profile 控制）/ 没有这个源 / 这个源只采集没有 L1。
+   * 不写盘：调优的落盘动作在 Chief 那边按 reflex-tuning 的分档规则决定。
+   */
+  async function tuneSourceRequest(body) {
+    const name = String(body?.name ?? '').trim()
+    const prompt = buildTunePrompt(name)          // 先过名字校验（纯函数，报错直接给人话）
+    if (builtinNames().includes(name)) {
+      throw new Error(`内置源由 profile 控制，不支持一键调优：${name}`)
+    }
+    if (!existsSync(join(collectorsDir, `${name}.sh`))) throw new Error(`没有这个数据源：${name}`)
+    if (!existsSync(join(targetsDir, `${name}.sh`))) {
+      throw new Error(`${name} 没有 L1 判定（只采集），没有可调的东西`)
+    }
+    const target = cfg.l1.targetBot
+    const delivered = await wakeL2(prompt, undefined, 'followup')
+    if (!delivered) throw new Error(`没投到 ${target}：会话没找到或插件没连上（详见日志 L2 wake）`)
+    log(`sources: tune ${name} → ${target}（${prompt.length} 字符）`)
+    return { target, name }
+  }
+
   /** 试跑：跑一次采集命令，把 stdout 翻成「几行 / 几行合法 / 前几行」。不写任何文件。 */
   function probeCommand(body) {
     const cmd = String(body?.cmd ?? '').replace(/\r\n/g, '\n').trim()
@@ -1623,6 +1649,7 @@ function install(rt, ctx, cfg) {
       create: (payload) => createSourceFromRequest(payload),
       probe: (payload) => probeCommand(payload),
       delegate: (payload) => delegateCreate(payload),
+      tune: (payload) => tuneSourceRequest(payload),
     })
   }
   try {

@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
-import { scanSources, setPaused, respondToOp, buildDelegatePrompt, BUILTIN_SOURCES, SOURCE_ROUTE, SOURCE_ROUTE_CLIENT } from './sources.mjs'
+import { scanSources, setPaused, respondToOp, buildDelegatePrompt, buildTunePrompt, BUILTIN_SOURCES, SOURCE_ROUTE, SOURCE_ROUTE_CLIENT } from './sources.mjs'
 
 const tempRoot = () => mkdtempSync(join(tmpdir(), 'reflex-sources-'))
 
@@ -160,4 +160,42 @@ test('P25 delegate 只负责接线：交给注入的投递函数，没接线就�
     async () => { await respondToOp('delegate', { sentence: '看 b.com' }, {}) },
     /未接线/,
   )
+})
+
+// ---------------------------------------------------------------------------
+// 逐行「L1 调优」：按钮只发请求，调优由 Chief 按 reflex-tuning 走四层。
+// 提示词是这条路上唯一的契约载体：门槛不写进去，就等于靠现场的人现场拍脑袋。
+// ---------------------------------------------------------------------------
+
+test('P27 调优提示词：带标记、原样带源名、门槛与硬规矩都在', () => {
+  const p = buildTunePrompt('x-timeline')
+  assert.ok(p.startsWith('[L1 调优请求]'), `没带标记：${p.slice(0, 40)}`)
+  assert.ok(p.includes('x-timeline'), '源名没进提示词')
+  assert.ok(p.includes('reflex-tuning'), '没让 bot 加载调优 skill')
+  assert.ok(p.includes('shadow_targets.json'), '没让先读阈值登记表（拍脑袋换阈值的源头）')
+  assert.ok(/100/.test(p) && /30/.test(p), '没有样本量分档（100 / 30）')
+  assert.ok(/不许改任何文件/.test(p), '没有「样本太少不许改文件」这条')
+  assert.ok(/A\/B|shadow_ab/.test(p), '没要求改判据先 A/B')
+  assert.ok(/pc_inject/.test(p), '没要求重跑判据指纹')
+  assert.ok(/不许自动转成叫醒|不许自动转正/.test(p), '没禁止语义 target 自动转正')
+  assert.ok(/回滚/.test(p), '回报里没要求给回滚方式')
+})
+
+test('P28 调优请求的名字不合法就拒绝（不做兜底猜测）', () => {
+  assert.throws(() => buildTunePrompt(''), /数据源/)
+  assert.throws(() => buildTunePrompt('   '), /数据源/)
+  assert.throws(() => buildTunePrompt('X-Timeline'), /名字/)
+  assert.throws(() => buildTunePrompt('../etc'), /名字/)
+})
+
+test('P29 tune 只负责接线：交给注入的投递函数，没接线就明确失败', async () => {
+  let seen = null
+  const ok = await respondToOp('tune', { name: 'x-timeline' }, {
+    tune: async (body) => { seen = body; return { target: 'Chief', name: body.name } },
+  })
+  assert.equal(ok.ok, true)
+  assert.equal(ok.target, 'Chief')
+  assert.equal(seen.name, 'x-timeline')
+
+  await assert.rejects(async () => { await respondToOp('tune', { name: 'x' }, {}) }, /未接线/)
 })
