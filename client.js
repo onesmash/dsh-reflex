@@ -442,6 +442,22 @@ window.__ModuleLoader__.load({
 			}
 			return body;
 		}
+		/**
+		 * 上一次成功的 list 结果。
+		 * 数据源页每次挂载都会重跑 load()，没有这份缓存，用户点开侧栏要先看一屏空白、
+		 * 再等一个网络来回；有它，首帧直接铺上次的表，新数据在后台补上。
+		 */
+		let listCache = null;
+		/** 一次成功的返回同时写进缓存 —— 缓存只有这一个写入口，不和界面各走一条路。 */
+		const rememberList = (data) => { listCache = data; return data; };
+		/**
+		 * 预热：插件加载时先取一次，这样第一次点开侧栏也不必等网络。
+		 * 失败静默 —— 真正打开页面时 load() 还会再试一次并把原因显示出来，
+		 * 预热失败不该拖垮插件加载。
+		 */
+		void (async () => {
+			try { rememberList(await reflexCall("list")); } catch (e) { /* 预热失败留给页面去报 */ }
+		})();
 		function everyLabel(ms, t) {
 			const tr = typeof t === "function" ? t : (k) => k;
 			if (!Number.isFinite(ms) || ms <= 0) return tr("srcFollowing");
@@ -932,7 +948,12 @@ srcNew: "new"
 		function SourcesPage(props) {
 			const t = typeof props.t === "function" ? props.t : (k) => k;
 			const tr = (k) => srcText(t, k);
-			const [view, setView] = react.useState({ phase: "loading", data: null, error: "" });
+			// 首帧就用缓存：useState 只认第一次传进去的值，所以这里不是「每次渲染都新建」的浪费，
+			// 而是「挂载时把上次的表直接铺出来」。写成惰性初始化（传函数）在宿主与测试桩里语义不一致，不划算。
+			const [view, setView] = react.useState(listCache
+				? { phase: "ready", data: listCache, error: "" }
+				: { phase: "loading", data: null, error: "" });
+			const [apiMs, setApiMs] = react.useState(0);
 			const [busy, setBusy] = react.useState("");
 			const [adding, setAdding] = react.useState(false);
 			const [form, setForm] = react.useState(EMPTY_FORM);
@@ -940,8 +961,12 @@ srcNew: "new"
 			const [saveState, setSaveState] = react.useState({ phase: "idle", error: "", name: "" });
 			const load = react.useCallback(async () => {
 				setView((prev) => ({ phase: prev.data ? "ready" : "loading", data: prev.data, error: "" }));
+				const t0 = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
 				try {
-					setView({ phase: "ready", data: await reflexCall("list"), error: "" });
+					const data = rememberList(await reflexCall("list"));
+					const ms = Math.round((typeof performance !== "undefined" && performance.now ? performance.now() : Date.now()) - t0);
+					setApiMs(ms);
+					setView({ phase: "ready", data, error: "" });
 				} catch (e) {
 					setView({ phase: "error", data: null, error: e && e.message ? e.message : String(e) });
 				}
@@ -950,7 +975,7 @@ srcNew: "new"
 			const toggle = async (row) => {
 				setBusy(row.name);
 				try {
-					setView({ phase: "ready", data: await reflexCall(row.paused ? "resume" : "pause", { name: row.name }), error: "" });
+					setView({ phase: "ready", data: rememberList(await reflexCall(row.paused ? "resume" : "pause", { name: row.name })), error: "" });
 				} catch (e) {
 					setView((prev) => ({ ...prev, error: e && e.message ? e.message : String(e) }));
 				} finally { setBusy(""); }
@@ -994,7 +1019,7 @@ srcNew: "new"
 				}
 				setSaveState({ phase: "running", error: "", name: "" });
 				try {
-					const body = await reflexCall("create", newSourceBody(form));
+					const body = rememberList(await reflexCall("create", newSourceBody(form)));
 					setView({ phase: "ready", data: body, error: "" });
 					setAdding(false);
 					setForm(emptyForm());
@@ -1068,7 +1093,7 @@ srcNew: "new"
 						saveState.phase === "ok" && saveState.name
 							? react_jsx_runtime.jsx("div", { className: "rfx-ok", children: tr("createdOk").replace("{name}", saveState.name) })
 							: null,
-						react_jsx_runtime.jsx("div", { className: "rfx-bar", children: data ? summary : tr("srcLoading") }),
+						react_jsx_runtime.jsx("div", { className: "rfx-bar", children: data ? summary + (apiMs > 150 ? " · " + apiMs + " ms" : "") : tr("srcLoading") }),
 						view.error ? react_jsx_runtime.jsxs("div", { className: "rfx-error", children: [
 							react_jsx_runtime.jsx("span", { children: tr("srcLoadFail") + "：" + view.error }),
 							react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: () => void load(), children: tr("srcRetry") })

@@ -26,6 +26,7 @@ const CASES = [
   'P18 三段式表单能真的渲染出来',
   'P20 无障碍底座在渲染树里齐着（原生控件 + 标注 + 播报）',
   'P21 浅/深主题下主按钮与错误文字都够对比',
+  'P22 预热过的 list 让首帧直接出表（不再进 loading）',
 ]
 
 let code
@@ -405,6 +406,35 @@ const runAsync = async () => {
     assert(body.name === 'nope' && body.op === 'pause', 'pause 请求没带 name/op')
     results.push([CASES[4], true, ''])
   } catch (e) { results.push([CASES[4], false, e.message]) }
+
+  // P22 首帧不等网络：插件加载时预热过一次 list，点开侧栏就该直接有表。
+  // 判据用「bar 里是 summary 还是 loading」——这两段文案互斥，且都在渲染树里，
+  // 比断言某个源名更稳（源名是单字母，includes 会假绿）。
+  try {
+    const textOf = (node) => {
+      if (node == null || node === false) return ''
+      if (typeof node === 'string' || typeof node === 'number') return String(node) + ' '
+      if (Array.isArray(node)) return node.map(textOf).join('')
+      const props = node.props || {}
+      if (typeof node.type === 'function') return textOf(node.type(props))
+      return 'children' in props ? textOf(props.children) : ''
+    }
+    await new Promise((r) => setTimeout(r, 0))   // 让预热那次 fetch 落地
+    // 不按文案断言：tr() 走的是英文兜底，取不到 key；按结构断言更稳——
+    // 有数据才渲染出 <table class="rfx-table">，没数据只有一行 loading 文案。
+    const classes = []
+    const walkCls = (n) => {
+      if (!n || typeof n !== 'object') return
+      if (Array.isArray(n)) { n.forEach(walkCls); return }
+      const p = n.props || {}
+      if (typeof p.className === 'string') classes.push(p.className)
+      if (typeof n.type === 'function') walkCls(n.type(p))
+      if ('children' in p) walkCls(p.children)
+    }
+    walkCls(mod.SourcesPage({ t: (key) => key }))
+    assert(classes.some((c) => /rfx-table/.test(c)), '预热过了首帧仍没有表格（说明首帧还在等网络）')
+    results.push([CASES[11], true, ''])
+  } catch (e) { results.push([CASES[11], false, e.message]) }
 }
 
 await runAsync()
