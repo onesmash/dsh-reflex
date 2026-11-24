@@ -79,9 +79,9 @@ export function setPaused(dir, name, paused, options = {}) {
 
 /**
  * 把一次面板请求翻成动作。纯逻辑：IO 全部由调用方注入，便于测试与破坏变体。
- * @param {string} op 'list' | 'pause' | 'resume' | 'create' | 'probe'
- * @param {object} body 面板请求体（含 name / 三段式字段）
- * @param {object} io { list(), commit(name,paused), refresh(), log(msg), create(body), probe(body) }
+ * @param {string} op 'list' | 'pause' | 'resume' | 'create' | 'probe' | 'delegate'
+ * @param {object} body 面板请求体（含 name / 三段式字段 / 一句话建源的 sentence）
+ * @param {object} io { list(), commit(name,paused), refresh(), log(msg), create(body), probe(body), delegate(body) }
  * @returns {{ok:boolean, error?:string}|Promise<{ok:boolean}>} probe 恒返回 Promise（见下）
  */
 export function respondToOp(op, body, io) {
@@ -104,6 +104,15 @@ export function respondToOp(op, body, io) {
   // 所以 io.probe 返回 Promise，这里也【恒】返回 Promise —— 调用方 await 一次即可。
   if (op === 'probe') {
     return Promise.resolve(io.probe?.(body) ?? {}).then((result) => ({ ok: true, ...result }))
+  }
+  // 一句话建源：把原话拼成提示词投给 bot。投递是异步的（要等会话控制器），
+  // 所以和 probe 一样恒返回 Promise；投不出去必须 reject —— 界面要看到「没交出去」，
+  // 而不是一个 ok:true 之后什么都没有发生。
+  if (op === 'delegate') {
+    if (typeof io?.delegate !== 'function') {
+      return Promise.reject(new Error('一句话建源未接线：宿主没有提供 delegate'))
+    }
+    return Promise.resolve(io.delegate(body)).then((result) => ({ ok: true, ...(result ?? {}) }))
   }
   return { ok: false, error: `unknown op: ${op || '(empty)'}` }
 }
@@ -132,10 +141,57 @@ export const NEW_SOURCE_LIMITS = Object.freeze({
   intervalMinMs: 10_000,
   intervalMaxMs: 7 * 24 * 3600_000,
   intervalDefaultMs: 900_000,
+  sentenceMax: 500,
 })
 
 /** 采集命令自己那条汇总行的固定后缀：target 据此把它排除，不当数据。 */
 export const SCAN_METRIC_SUFFIX = '-scan'
+
+/**
+ * 一句话建源：把用户原话拼进固定提示词，交给 bot（默认 L1 的 targetBot）执行。
+ *
+ * 为什么不再让界面去填字段：真正难的从来不是那六个框，而是「采集命令」——它必须自己
+ * 输出 JSONL。把这件事交给读过 reflex-datasource 的 bot，用户就只需要说清「盯着什么、
+ * 什么情况叫我」。代价是每次产出不完全一致，所以提示词里把验收写成硬要求：
+ * 报不出数字就当没做完。
+ *
+ * @param {string} sentence 用户原话（一句话）
+ * @returns {string} 可以被直接投递的完整提示词
+ */
+export function buildDelegatePrompt(sentence) {
+  const said = String(sentence ?? '').trim()
+  if (!said) throw new Error('先写一句话：监控什么、什么情况叫你')
+  if (said.length > NEW_SOURCE_LIMITS.sentenceMax) {
+    throw new Error(`那句话太长：${said.length} 字（上限 ${NEW_SOURCE_LIMITS.sentenceMax}）`)
+  }
+  return `[建源请求] 用户要加一个监控，原话如下：
+
+「${said}」
+
+把它变成一个 dsh-reflex 数据源，并验证它真能出数据。
+
+先做两件事
+1. 加载 skill reflex-datasource —— 契约、脚手架、验证清单都在里面，不要凭记忆写。
+2. ls $REFLEX_HOME/collectors/ 看现有源；能复用（x-timeline / arxiv / futu-baba /
+   screen-ocr 这类）就复用，不要重造。
+
+硬约束
+- 名字 ^[a-z0-9][a-z0-9._-]*$，不重名、不与内置源撞。
+- 采集器 stdout 每行一个 JSON 对象；首跑只建水位、不发存量。
+- 落盘顺序：env / schema / target 先写，collectors/<name>.sh 最后落 —— 它才是提交点，
+  中途失败不许留半个源。
+- 间隔 10s~7d，默认 15 分钟；采集命令 ≤4000 字符。
+- 判定用 all 或 match(关键词)；不要用 semantic —— 它现在只记账不叫醒，建出来是哑的。
+
+验收（拿不到证据就算没做完）
+1. 手工跑一次：退出码 0、有行、每行合法 JSON，贴「N 行 / 前 3 条摘要」。
+2. 连跑第二次：应为 0 条（水位幂等）。
+3. 确认热发现已认出该源（面板列表或日志里出现该源）。
+
+回报
+一句话结论（建了什么 / 多久抓一次 / 什么情况叫你）+ 写了哪几个文件 + 上面三项的实际数字。
+任一步不过：不落盘或回滚，直接说哪步不过、原话报错是什么。`
+}
 
 const TRIGGER_MODES = Object.freeze(['all', 'match', 'semantic', 'off'])
 

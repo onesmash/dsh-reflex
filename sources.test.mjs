@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
-import { scanSources, setPaused, respondToOp, BUILTIN_SOURCES, SOURCE_ROUTE, SOURCE_ROUTE_CLIENT } from './sources.mjs'
+import { scanSources, setPaused, respondToOp, buildDelegatePrompt, BUILTIN_SOURCES, SOURCE_ROUTE, SOURCE_ROUTE_CLIENT } from './sources.mjs'
 
 const tempRoot = () => mkdtempSync(join(tmpdir(), 'reflex-sources-'))
 
@@ -121,4 +121,43 @@ test('P9 宿主路由与客户端地址指向同一端点（差一个前导斜�
   const m = clientSrc.match(/const SRC_ROUTE = "([^"]+)"/)
   assert.ok(m, 'client.js 里找不到 SRC_ROUTE')
   assert.equal(m[1], SOURCE_ROUTE_CLIENT, `客户端 ${m[1]} 与宿主 ${SOURCE_ROUTE} 不是同一个端点`)
+})
+
+// ---------------------------------------------------------------------------
+// 一句话建源：用户只说一句，建源交给 bot 按 reflex-datasource 落盘。
+// 这里守的是【提示词本身】——它是这条路上唯一的契约载体，缺一句就是一次隐性失败。
+// ---------------------------------------------------------------------------
+
+test('P23 一句话建源：原句原样进提示词，带标记与三条硬约束', () => {
+  const sentence = '盯着 https://a.com 有更新就叫我'
+  const p = buildDelegatePrompt(`  ${sentence}  `)
+  assert.equal(typeof p, 'string')
+  assert.ok(p.startsWith('[建源请求]'), `提示词没带标记（和 L1 告警混在一个收件箱里）：${p.slice(0, 40)}`)
+  assert.ok(p.includes(sentence), '原句没原样进提示词（换了措辞就等于替用户改需求）')
+  assert.ok(p.includes('reflex-datasource'), '没让 bot 加载 skill：契约在 skill 里，不加载就只能凭记忆写')
+  assert.ok(/collectors\/<name>\.sh/.test(p) && /最后/.test(p), '没写「采集器最后落盘」这个提交点')
+  assert.ok(/semantic/.test(p) && /(不叫醒|只记账)/.test(p), '没写语义判据的禁令与原因')
+  assert.ok(/第二次|幂等/.test(p), '没要求双跑验幂等')
+  assert.equal(p.includes('{{SENTENCE}}'), false, '占位符没替换干净')
+})
+
+test('P24 空句子与超长句子都建不出来（不做「帮用户兜一下」的猜测）', () => {
+  assert.throws(() => buildDelegatePrompt('   '), /一句话/)
+  assert.throws(() => buildDelegatePrompt('x'.repeat(501)), /太长/)
+  assert.doesNotThrow(() => buildDelegatePrompt('x'.repeat(500)))
+})
+
+test('P25 delegate 只负责接线：交给注入的投递函数，没接线就明确失败', async () => {
+  let seen = null
+  const ok = await respondToOp('delegate', { sentence: '看 b.com' }, {
+    delegate: async (body) => { seen = body; return { target: 'Chief' } },
+  })
+  assert.equal(ok.ok, true)
+  assert.equal(ok.target, 'Chief')
+  assert.equal(seen.sentence, '看 b.com')
+
+  await assert.rejects(
+    async () => { await respondToOp('delegate', { sentence: '看 b.com' }, {}) },
+    /未接线/,
+  )
 })

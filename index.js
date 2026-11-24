@@ -27,6 +27,7 @@ import {
   planSourceFiles,
   summarizeProbe,
   NEW_SOURCE_LIMITS,
+  buildDelegatePrompt,
   SOURCE_ROUTE,
 } from './sources.mjs'
 import { promisify, format } from 'node:util'
@@ -1557,6 +1558,24 @@ function install(rt, ctx, cfg) {
     }
   }
 
+  /**
+   * 一句话建源：把用户原话拼成提示词，投给 L1 的目标 bot（默认 Chief）去落盘。
+   *
+   * 为什么不在这里直接写文件：真正难的是「采集命令」——它必须自己输出 JSONL。让读过
+   * reflex-datasource 的 bot 现场写并自验，比在界面上逼用户填六个字段现实。宿主只负责
+   * 三件事：拼（纯函数在 sources.mjs）、投（复用 wakeL2 同一条通道）、把失败原因说清楚。
+   *
+   * 投不出去必须抛错 —— 界面回 ok:true 而消息没送到，是最坏的一种"以为做了"。
+   */
+  async function delegateCreate(body) {
+    const prompt = buildDelegatePrompt(body?.sentence)
+    const target = cfg.l1.targetBot
+    const delivered = await wakeL2(prompt, undefined, 'followup')
+    if (!delivered) throw new Error(`没投到 ${target}：会话没找到或插件没连上（详见日志 L2 wake）`)
+    log(`sources: delegate → ${target}（${prompt.length} 字符）`)
+    return { target, chars: prompt.length }
+  }
+
   /** 试跑：跑一次采集命令，把 stdout 翻成「几行 / 几行合法 / 前几行」。不写任何文件。 */
   function probeCommand(body) {
     const cmd = String(body?.cmd ?? '').replace(/\r\n/g, '\n').trim()
@@ -1603,6 +1622,7 @@ function install(rt, ctx, cfg) {
       log,
       create: (payload) => createSourceFromRequest(payload),
       probe: (payload) => probeCommand(payload),
+      delegate: (payload) => delegateCreate(payload),
     })
   }
   try {
