@@ -21,11 +21,11 @@ dsh-reflex 是一个 DSH 插件，只有一个图形界面：插进 DSH Web GUI 
 
 | 做法 | 在哪 | 怎么核对 |
 |---|---|---|
-| 表单控件用原生元素：`input` / `select`，四个触发方式是**原生 `radio`**，只上 `accent-color`，不自绘控件 | `client.js: NewSourceForm` | 机器：断言 4 个原生 `radio`、界面上不出现 `role="radio"` |
+| 控件用原生元素：一句话输入框是**原生 `input`**、发送按钮是**原生 `button`**，不做自绘控件（自绘就要自己实现键盘与读屏行为） | `client.js: SourcesPage` | 机器：P18/P20 断言原生 `input`/`button`，且树里不出现自绘控件 |
 | 三段各是可命名的区域：`<section aria-labelledby>` 指向段内标题的 `id` | 同上 | 机器：断言三段都在，且引用指向存在的 id |
 | 输入框的提示用 `aria-describedby` 关联，不靠视觉位置 | 同上 | 机器：断言名字/命令/关键词/判据四个输入框都挂了提示，且提示 id 存在 |
 | 保存失败由**常驻**的 `role="status"` + `aria-live="polite"` 区播报（idle 时也在，读屏才有地方接话） | 同上 | 机器：断言播报区与 `aria-live` |
-| 提交被拦下时把焦点送到缺的那一格（不是弹一个提示了事） | `client.js: submit / formBlocker` | 人眼 + 代码：焦点目标由 `formBlocker` 的返回值决定 |
+| 投递失败时原因落在常驻播报区（`role="status"` + `aria-live="polite"`），不弹窗、不让用户去猜 | `client.js: sendAsk / rfx-saveMsg` | 机器：P20 断言播报区常驻；失败文案由 `addAsk*` 词典给 |
 | 键盘焦点可见：输入框、按钮、触发卡片选中态都有 3px `:focus-visible` 环 | `client.js: SRC_CSS` | 机器：断言 CSS 里有 `:focus-visible`（只验规则在，不验视觉） |
 | 触摸目标：按钮桌面 32px，`pointer: coarse` 下 44px | 同上 | 机器：断言 CSS 里有 `pointer:coarse` 下的 `min-height:44px` |
 | `prefers-reduced-motion: reduce` 时关掉过渡与动画 | 同上 | 机器：断言规则在 |
@@ -55,13 +55,13 @@ dsh-reflex 是一个 DSH 插件，只有一个图形界面：插进 DSH Web GUI 
 
 - **优先原生控件。** 新增或改表单控件时用原生元素；一定要自绘时，必须给出键盘路径并写 `@supports` 兜底。
 - **改界面文案要三处都加**：zh / en / 英文兜底（P17 断言会拦）。
-- **别删掉**：`:focus-visible` 焦点环、`prefers-reduced-motion` 规则、触屏 44px 目标、常驻的 `role="status"` 播报区、三段的 `aria-labelledby` 与输入框的 `aria-describedby`。P20 会拦。
+- **别删掉**：`:focus-visible` 焦点环、`prefers-reduced-motion` 规则、触屏 44px 目标、常驻的 `role="status"` 播报区（投递结果就靠它播报）、一句话输入框的 `aria-describedby`。P20 会拦。
 - **不要在交互前报错。** 提交后再报缺哪一项，并把焦点送过去。
 - **改完跑这三条**（干净 shell 里都能跑）：
   ```
   node tests/check-sources-panel.mjs    # 含 P20 无障碍底座断言
   node tests/sources-invariants.mjs     # 生成物与开关的破坏变体
-  node tests/render-add-source.mjs      # 静态渲染，人眼看 1440 / 900 / 390
+  node tests/delegate-route.mjs         # 一句话投给 Chief 的端到端（消息形状 / 失败回执）
   ```
 
 ## 报告障碍

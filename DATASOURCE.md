@@ -193,17 +193,20 @@ exit 0
 校准用现成工具链（不必自研）：`shadow_replay.py --target <name>` 全量回放 →
 `calibration.py` 工作点换算与阈值拟合 → 阈值写回 target。
 
-## 5.0 界面新增（三段式：give / when / trigger）
+## 5.0 界面新增（一句话，交给 Chief）
 
-侧栏 **Trigger** 页右上角「＋ 添加数据源」把 §1–§4 那五件事压成三句话
-（三段徽标 **FEED / EVERY / TRIGGER**，连起来就是 `feed X, every 15m, trigger when Y`），生成的文件全部是可读的普通
-shell 与 JSON —— 界面只是脚手架，事后照旧可以直接改脚本（改完落盘即生效，不用重启）。
+侧栏 **Trigger** 页只有一个输入框：写一句「盯着什么、什么情况叫我」，点「交给 Chief」。
+宿主把原话原样拼进一段固定提示词（`sources.mjs: buildDelegatePrompt`），经
+`POST api/reflex {op:"delegate"}` 投给 `l1.targetBot`（默认 Chief）；它加载 `reflex-datasource`
+skill，按 §1–§4 落盘并自验，最后回报「建了什么 / 多久抓一次 / 什么情况叫你」+ 文件清单 + 实测数字。
 
-| 段 | 界面上填什么 | 落到哪 |
-|---|---|---|
-| **FEED** | 名称、一句话用途、采集命令（stdout 每行一个 JSON 对象） | `collectors/<name>.sh`、`<name>.schema.json` |
-| **EVERY** | 采集间隔（1 min ~ 6 h） | `collectors/<name>.env.json` 的 `intervalMs`（`timeoutMs` 固定 120s） |
-| **TRIGGER** | 任何新条目 / 命中关键词 / 语义判据（影子）/ 只采集 | `targets/<name>.sh`、`targets/<name>.env.json`；选「只采集」就一个都不生成 |
+**为什么不在界面里填字段**：真正难的从来不是那几项参数，而是采集命令 —— 它必须自己输出 JSONL。
+让读过本契约的 bot 现场写并验证，比逼用户写 shell 现实；代价是同一条话两次执行结果不完全一致，
+所以提示词把验收写成硬要求（跑一次报行数、连跑第二次应为 0 条、热发现认得出该源）。投不出去时
+界面明确报错，绝不回 `ok:true`（`tests/delegate-route.mjs` 守着这条）。
+
+提示词里固定带四条硬约束（改提示词等于改契约，改动要连 `sources.test.mjs` 的 P23 一起改）：
+名字正则、`collectors/<name>.sh` 最后落盘、避开 semantic（只记账不叫醒）、双跑验幂等。
 
 **生成的采集器替你守了三条契约**（对应 §4.1 的三个坑）：
 
@@ -236,8 +239,11 @@ shell 与 JSON —— 界面只是脚手架，事后照旧可以直接改脚本�
 
 > 这条链路 2026-11-23 起有三级证据：纯函数与生成脚本的行为（`tests/create-source.test.mjs`）、
 > 路由到磁盘再真跑一遍采集器与 target（`tests/create-source-route.mjs`）、界面渲染与接线
-> （`tests/check-sources-panel.mjs`）；版面另有静态渲染核对（`tests/render-add-source.mjs`，
-> 生成 1440 / 900 / 390 三个宽度的页面交给人眼和 headless Chrome 看）。
+> （`tests/check-sources-panel.mjs`）。
+>
+> 2026-11-25 起界面不再是三段式表单：一句话投给 Chief 的端到端链路另有证据
+> `tests/delegate-route.mjs`（消息角色 `post`、失败回执 400、一个字不写盘）；`op:"create"`
+> 保留给脚本与测试直接生成五件套。
 
 ## 5. 启用（配置层，不改代码）
 
