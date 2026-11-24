@@ -6,7 +6,7 @@
 // SRC_CSS），交给 headless Chrome 截图 —— 1440 / 820 / 390 各看一眼再提交。
 //
 // 用法：node tests/render-add-source.mjs [--out-dir /tmp/rfx-design]
-// 产物：idle.html、filled.html、filled-narrow.html、match.html
+// 产物：idle.html、filled.html、filled-narrow.html、match.html、dark-filled.html、dark-match.html（主题快照见 HOST_THEME）
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -105,16 +105,50 @@ const PROBE_BAD = { phase: 'ok', data: { lines: 4, valid: 2, bad: 2, code: 0, ti
 const SAVE_ERR = { phase: 'error', error: '已存在：collectors/x-timeline.sh', name: '' }
 const SAVE_OK = { phase: 'ok', error: '', name: 'x-timeline' }
 
-const shell = (inner, pane) => `<!doctype html>
+// 宿主主题快照（2026-11-24 从 DSH app.asar 的 token 定义里读出）：静态渲染不接宿主，
+// 必须把真实 token 注进来，否则 CSS 里的 light 兜底值会把 dark 下的问题（白底白字）藏起来。
+const HOST_THEME = {
+  light: {
+    base: '#ffffff', frame: '#f2f2f3', fg: '#0f1115',
+    vars: {
+      '--dsw-alias-label-primary': '#0f1115',
+      '--dsw-alias-label-secondary': '#6b7280',
+      '--dsw-alias-label-tertiary': '#9ca3af',
+      '--dsw-alias-border-l1': 'rgba(0,0,0,.06)',
+      '--dsw-alias-border-l2': 'rgba(0,0,0,.12)',
+      '--dsw-alias-bg-layer-1': '#ffffff',
+      '--dsw-alias-bg-layer-2': '#f6f7f8',
+      '--dsw-alias-brand-primary': '#0f1115',
+      '--dsw-alias-label-primary-inverted': '#ffffff',
+    },
+  },
+  dark: {
+    base: '#151517', frame: '#0b0b0c', fg: '#f9fafb',
+    vars: {
+      '--dsw-alias-label-primary': '#f9fafb',
+      '--dsw-alias-label-secondary': '#cfd3d6',
+      '--dsw-alias-label-tertiary': '#adb2b8',
+      '--dsw-alias-border-l1': 'rgba(255,255,255,.06)',
+      '--dsw-alias-border-l2': 'rgba(255,255,255,.12)',
+      '--dsw-alias-bg-layer-1': '#232324',
+      '--dsw-alias-bg-layer-2': '#2c2c2e',
+      '--dsw-alias-brand-primary': '#f9fafb',
+      '--dsw-alias-label-primary-inverted': '#353638',
+    },
+  },
+}
+
+const shell = (inner, pane, theme = 'light') => `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Trigger · 添加数据源（静态渲染）</title>
 <style>
-html,body{margin:0;height:100%;background:#f2f2f3;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"PingFang SC","Hiragino Sans GB",sans-serif;-webkit-font-smoothing:antialiased;color:#1a1a1a}
+html,body{margin:0;height:100%;background:${HOST_THEME[theme].frame};font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"PingFang SC","Hiragino Sans GB",sans-serif;-webkit-font-smoothing:antialiased;color:${HOST_THEME[theme].fg}}
 body{display:flex;justify-content:center}
-.demo-pane{width:${pane}px;max-width:100vw;height:${pane <= 420 ? 'auto' : '100vh'};background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.05);display:flex;flex-direction:column;overflow:hidden}
+:root{${Object.entries(HOST_THEME[theme].vars).map(([k, v]) => `${k}:${v};`).join('')}}
+.demo-pane{width:${pane}px;max-width:100vw;height:${pane <= 420 ? 'auto' : '100vh'};background:${HOST_THEME[theme].base};box-shadow:0 0 0 1px rgba(127,127,127,.18);display:flex;flex-direction:column;overflow:hidden}
 </style>
 <style>
 ${mod.SRC_CSS}
@@ -125,18 +159,20 @@ ${mod.SRC_CSS}
 `
 
 const pages = {
-  'idle.html': [EMPTY, { phase: 'idle', data: null, error: '' }, { phase: 'idle', error: '', name: '' }, 1120],
-  'filled.html': [FILLED, PROBE_OK, { phase: 'idle', error: '', name: '' }, 1120],
-  'filled-narrow.html': [FILLED, PROBE_OK, { phase: 'idle', error: '', name: '' }, 760],
-  'match.html': [{ ...FILLED, mode: 'match' }, PROBE_BAD, SAVE_ERR, 1120],
-  'all-done.html': [{ ...FILLED, mode: 'all' }, { phase: 'idle', data: null, error: '' }, SAVE_OK, 1120],
-  'mobile.html': [FILLED, PROBE_OK, { phase: 'idle', error: '', name: '' }, 390],
+  'idle.html': [EMPTY, { phase: 'idle', data: null, error: '' }, { phase: 'idle', error: '', name: '' }, 1120, 'light'],
+  'filled.html': [FILLED, PROBE_OK, { phase: 'idle', error: '', name: '' }, 1120, 'light'],
+  'filled-narrow.html': [FILLED, PROBE_OK, { phase: 'idle', error: '', name: '' }, 760, 'light'],
+  'match.html': [{ ...FILLED, mode: 'match' }, PROBE_BAD, SAVE_ERR, 1120, 'light'],
+  'all-done.html': [{ ...FILLED, mode: 'all' }, { phase: 'idle', data: null, error: '' }, SAVE_OK, 1120, 'light'],
+  'mobile.html': [FILLED, PROBE_OK, { phase: 'idle', error: '', name: '' }, 390, 'light'],
+  'dark-filled.html': [FILLED, PROBE_OK, { phase: 'idle', error: '', name: '' }, 1120, 'dark'],
+  'dark-match.html': [{ ...FILLED, mode: 'match' }, PROBE_BAD, SAVE_ERR, 1120, 'dark'],
 }
 
 mkdirSync(OUT, { recursive: true })
-for (const [name, [form, probe, save, pane]] of Object.entries(pages)) {
+for (const [name, [form, probe, save, pane, theme]] of Object.entries(pages)) {
   const out = join(OUT, name)
-  writeFileSync(out, shell(page(form, probe, save), pane))
+  writeFileSync(out, shell(page(form, probe, save), pane, theme || 'light'))
   const body = readFileSync(out, 'utf8')
   if (body.includes('{name}') || body.includes('{lines}') || body.includes('{code}')) {
     console.error(`FAIL ${name}: 占位符没替换干净`)

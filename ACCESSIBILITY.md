@@ -40,7 +40,7 @@ dsh-reflex 是一个 DSH 插件，只有一个图形界面：插进 DSH Web GUI 
 
 1. **没有屏幕阅读器实测。** VoiceOver（macOS）与 NVDA（Windows）都没跑过。上面的 ARIA 只保证"写进去了"，不保证"读出来是对的"——顺序、播报时机、重复朗读都要真听才知道。
 2. **没有自动化审计。** axe-core / Lighthouse 都没接进来，仓库也没有 CI。对比度、可访问名称、ARIA 合法性都没有第三方校验。
-3. **对比度没量过。** 品牌色跟随宿主主题（CSS 变量 `--rfx-brand`），浅色/深色主题下与背景的对比度没有用工具量过，也没有记录具体数值。
+3. **对比度只量了两处。** 主按钮文字（品牌填充）与保存失败的错误文字，按宿主 light / dark 两套 token 快照算过，两种主题都 ≥4.5:1（`tests/check-sources-panel.mjs` 的 P21 守着）；其余文字（提示、次要标签）没有逐个量，也没有用 axe / Lighthouse 核。
 4. **宿主不归本项目管。** 面板跑在 DSH Web GUI 里，宿主的布局、焦点管理、快捷键、主题切换都在本项目控制之外；宿主改版可能让这里的假设失效。
 5. **小屏只在静态渲染里看过。** 1440 / 900 / 390 三个宽度用 headless 渲染核对过，但没在运行中的 DSH 里把窗口缩到 560px 以下试过。
 6. **键盘顺序没有逐帧记录。** Tab 顺序就是 DOM 顺序，没做过打乱测试，也没有纯键盘走查的日志。
@@ -87,6 +87,6 @@ dsh-reflex has exactly one graphical surface: the Trigger page inside the DSH We
 
 **Verified** (asserted by `tests/check-sources-panel.mjs`, case P20): native form controls including four native radios rather than custom widgets; `aria-labelledby` on each of the three sections, pointing at ids that exist; `aria-describedby` on the name, command, keyword and criteria inputs; a persistent `role="status"` + `aria-live="polite"` region for save errors; and three CSS rules (a `:focus-visible` ring, 44px targets under `pointer: coarse`, transitions off under `prefers-reduced-motion`). Focus is moved to the missing field when submission is blocked.
 
-**Not verified**: no screen-reader pass (VoiceOver/NVDA), no automated audit (axe/Lighthouse), no measured contrast ratios, no logged keyboard-only walkthrough, no testing in Safari, Firefox, mobile browsers, zoomed or high-contrast modes. The panel also inherits whatever the host DSH GUI does.
+**Not verified**: no screen-reader pass (VoiceOver/NVDA), no automated audit (axe/Lighthouse), contrast measured only for the primary-button text and the save-error message, no logged keyboard-only walkthrough, no testing in Safari, Firefox, mobile browsers, zoomed or high-contrast modes. The panel also inherits whatever the host DSH GUI does.
 
 This is an accessibility statement, **not** a claim of WCAG conformance.

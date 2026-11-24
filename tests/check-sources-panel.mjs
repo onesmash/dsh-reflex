@@ -25,6 +25,7 @@ const CASES = [
   'P17 界面用到的文案三处词典都齐',
   'P18 三段式表单能真的渲染出来',
   'P20 无障碍底座在渲染树里齐着（原生控件 + 标注 + 播报）',
+  'P21 浅/深主题下主按钮与错误文字都够对比',
 ]
 
 let code
@@ -334,6 +335,48 @@ checkStack(CASES[9], () => {
   const coarseAt = mod.SRC_CSS.indexOf('pointer:coarse')
   assert(coarseAt >= 0, 'CSS 里没有 @media (pointer:coarse)')
   assert(mod.SRC_CSS.slice(coarseAt, coarseAt + 200).includes('min-height:44px'), '触屏下的 44px 触摸目标没了')
+})
+
+// ⑩ 主题对比度：宿主有两套 token，同一份 CSS 要在两边都读得清。
+//    下面是 2026-11-24 从 DSH app.asar 的 token 定义里读出的快照（light: brand=bluish-1000 #0f1115，
+//    dark: brand=bluish-50 #f9fafb、inverted=bluish-800 #353638、layer-1=bluish-875 #232324）。
+//    宿主换主题调色板时这组值要重核，否则算得再对也只是旧世界的对比度。
+checkStack(CASES[10], () => {
+  const HOST = {
+    light: { brand: '#0f1115', onBrand: '#ffffff', labelPrimary: '#0f1115', layer1: '#ffffff' },
+    dark: { brand: '#f9fafb', onBrand: '#353638', labelPrimary: '#f9fafb', layer1: '#232324' },
+  }
+  const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  const lin = (c) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }
+  const luminance = (hex) => { const [r, g, b] = rgbOf(hex); return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) }
+  const ratio = (a, b) => { const x = luminance(a); const y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) }
+  const blend = (base, onto, pct) => '#' + rgbOf(base).map((c, i) => Math.round(c * pct + rgbOf(onto)[i] * (1 - pct)).toString(16).padStart(2, '0')).join('')
+
+  // 1) 品牌填充上的文字必须绑宿主反向色：dark 下 brand=#f9fafb，写死 #fff 就是 1.03:1 的白底白字
+  assert(/--rfx-on-brand:var\(--dsw-alias-label-primary-inverted/.test(mod.SRC_CSS),
+    '--rfx-on-brand 没绑到 --dsw-alias-label-primary-inverted')
+  assert(/\.rfx-btnPrimary\{[^}]*color:var\(--rfx-on-brand\)/.test(mod.SRC_CSS),
+    '.rfx-btnPrimary 的文字色没走 --rfx-on-brand')
+  assert(!/\.rfx-btnPrimary[^}]*color:#fff/.test(mod.SRC_CSS),
+    '.rfx-btnPrimary 又写死了 color:#fff（dark 主题下隐形）')
+  for (const [theme, t] of Object.entries(HOST)) {
+    const r = ratio(t.brand, t.onBrand)
+    assert(r >= 4.5, `${theme} 主题下主按钮文字对比度只有 ${r.toFixed(2)}:1（< 4.5）`)
+  }
+
+  // 2) 错误文字：单一写死的红在浅/深里必有一边不够，必须是「基色 + 当前主题主文字色」的混合
+  assert(/\.rfx-saveMsg\{[^}]*color:var\(--rfx-err\)/.test(mod.SRC_CSS),
+    '.rfx-saveMsg 没走 --rfx-err（token 定义了但没人用）')
+  assert(!/\.rfx-saveMsg\{[^}]*color:#[0-9a-f]{3,6}/.test(mod.SRC_CSS),
+    '.rfx-saveMsg 又写死了颜色')
+  const mix = /--rfx-err:color-mix\(in srgb,#([0-9a-f]{6}) (\d+)%,var\(--dsw-alias-label-primary/.exec(mod.SRC_CSS)
+  assert(mix, '--rfx-err 不是「基色 + 主题主文字色」的 color-mix')
+  const pct = Number(mix[2]) / 100
+  for (const [theme, t] of Object.entries(HOST)) {
+    const colour = blend('#' + mix[1], t.labelPrimary, pct)
+    const r = ratio(colour, t.layer1)
+    assert(r >= 4.5, `${theme} 主题下错误文字（${colour} on ${t.layer1}）只有 ${r.toFixed(2)}:1（< 4.5）`)
+  }
 })
 
 const runAsync = async () => {
