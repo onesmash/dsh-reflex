@@ -29,16 +29,30 @@ from __future__ import annotations
 import glob
 import json
 import os
+import sys
 
 
 class LabelsError(RuntimeError):
     """标签不可用。带可核计数的消息，便于贴进报告。"""
 
 
-class Labels:
-    __slots__ = ("labs", "dialect", "lines", "usable", "duplicates", "conflicts", "counts", "path")
+class LabelsMissingStateHash(LabelsError):
+    """标签记录没有 state_hash：join 回分数不可能，读进来只会得到假结论。"""
 
-    def __init__(self, labs, dialect, lines, usable, duplicates, conflicts, counts, path):
+    def __init__(self, path, missing, total):
+        self.path, self.missing, self.total = path, missing, total
+        super().__init__(
+            "标签文件缺 state_hash：%s（%d/%d 行）。缺哈希就无法 join 回 shadow 分数，"
+            "阈值/证书/校准都会变成不可复算的数。"
+            "要按旧格式继续，请显式传 allow_legacy=True（会打印 LEGACY-NOHASH 并计数）。"
+            % (path, missing, total))
+
+
+class Labels:
+    __slots__ = ("labs", "dialect", "lines", "usable", "duplicates", "conflicts", "counts", "path",
+                 "no_hash")
+
+    def __init__(self, labs, dialect, lines, usable, duplicates, conflicts, counts, path, no_hash=0):
         self.labs = labs
         self.dialect = dialect          # 'idx' | 'key' | 'item' | 'empty'
         self.lines = lines              # 文件里的有效行数
@@ -47,6 +61,7 @@ class Labels:
         self.conflicts = conflicts      # 同键但标签不一致的键数
         self.counts = counts
         self.path = path
+        self.no_hash = no_hash          # 没有 state_hash 的记录数（key 方言的 key 本身就是哈希，不计）
 
     def __repr__(self):
         return (f"Labels(dialect={self.dialect}, unique={self.usable}/{self.lines}, "
@@ -95,7 +110,8 @@ def _key_of(o, dialect):
         return None
 
 
-def load(path: str, *, require_usable: bool = True) -> Labels:
+def load(path: str, *, require_usable: bool = True,
+         require_state_hash: bool = False, allow_legacy: bool = False) -> Labels:
     """读任意方言的标签文件。不可用时抛 LabelsError（不静默返回空）。"""
     if not os.path.exists(path):
         raise LabelsError(f"标签文件不存在：{path}")
@@ -105,6 +121,7 @@ def load(path: str, *, require_usable: bool = True) -> Labels:
     lines = 0
     duplicates = 0
     conflicts = 0
+    no_hash = 0
 
     for raw in open(path, encoding="utf-8", errors="replace"):
         raw = raw.strip()
@@ -117,7 +134,12 @@ def load(path: str, *, require_usable: bool = True) -> Labels:
         lines += 1
         lab = _lab(o.get("label"))
         dialect = _dialect_of(o)
-        if lab is None or dialect is None:
+        if dialect is None:
+            continue
+        # key 方言的 key 就是 state_hash；其余方言必须自带 state_hash 才能 join 回分数
+        if dialect != "key" and not str(o.get("state_hash") or "").strip():
+            no_hash += 1
+        if lab is None:
             continue
         k = _key_of(o, dialect)
         if k is None:
@@ -149,7 +171,13 @@ def load(path: str, *, require_usable: bool = True) -> Labels:
             f"现在改成硬失败。要跳过请显式传 require_usable=False。"
         )
 
-    return Labels(labs, dialect, lines, usable, duplicates, conflicts, counts, path)
+    if no_hash and require_state_hash:
+        if not allow_legacy:
+            raise LabelsMissingStateHash(path, no_hash, lines)
+        print("LEGACY-NOHASH  %s：%d/%d 行缺 state_hash（已显式豁免，须在报告里记一笔）"
+              % (os.path.basename(path), no_hash, lines), file=sys.stderr)
+
+    return Labels(labs, dialect, lines, usable, duplicates, conflicts, counts, path, no_hash)
 
 
 # ---------- 对齐层：任意方言 → key(state_hash) → label ----------

@@ -34,10 +34,23 @@ class ReadLayerError(Exception):
     """读层拒绝：宁可报错，不静默回落成旧副本。"""
 
 
-class LabelsMissingStateHash(ReadLayerError):
-    def __init__(self, path, missing, total):
-        self.path, self.missing, self.total = path, missing, total
-        super().__init__('标签文件缺 state_hash：%s（%d/%d 行）' % (path, missing, total))
+# 三方言标签的唯一实现是 labels_any.py；本模块只做「读层」的其余部分（登记表派生、
+# whyNotBatch、citable、fitTruncated）。标签解析绝不在这里再写一份。
+_D = os.path.dirname(os.path.abspath(__file__))
+if _D not in sys.path:
+    sys.path.insert(0, _D)
+try:
+    import labels_any as _LABELS_ANY
+except Exception:                               # noqa: BLE001
+    _LABELS_ANY = None
+
+if _LABELS_ANY is not None:
+    LabelsMissingStateHash = _LABELS_ANY.LabelsMissingStateHash
+else:                                           # labels_any 缺失时保留同名异常，读层照常拒绝
+    class LabelsMissingStateHash(ReadLayerError):
+        def __init__(self, path, missing, total):
+            self.path, self.missing, self.total = path, missing, total
+            super().__init__('标签文件缺 state_hash：%s（%d/%d 行）' % (path, missing, total))
 
 
 class WriteRefused(ReadLayerError):
@@ -224,42 +237,21 @@ def check_why_not_batch(new_obj, old_obj=None, home=None):
 
 
 def load_labels(path, require_state_hash=True, allow_legacy=False):
-    """标签读取层：缺 state_hash 拒读；豁免必须计数并回报。
+    """标签读取的单一入口：解析交给 labels_any，这里只补「门禁 + 计数回报」。
 
-    返回 (labels:dict, report:dict)
+    返回 (labels:dict, report:dict)；缺 state_hash 且未显式豁免时抛
+    LabelsMissingStateHash（labels_any 的同一个类，不另造一个）。
     """
-    total = 0
-    missing = 0
-    labels = {}
-    with open(path, encoding='utf-8', errors='replace') as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            total += 1
-            try:
-                o = json.loads(line)
-            except Exception:                   # noqa: BLE001
-                continue
-            if not (o.get('state_hash') or '').strip():
-                missing += 1
-            lab = o.get('label')
-            if lab not in (0, 1, '0', '1', True, False):
-                continue
-            if o.get('key'):
-                labels[str(o['key'])] = int(lab)
-            elif o.get('id') is not None:
-                labels[str(o['id'])] = int(lab)
-            elif o.get('idx') is not None:
-                labels[str(o['idx'])] = int(lab)
-    if missing:
-        if require_state_hash and not allow_legacy:
-            raise LabelsMissingStateHash(path, missing, total)
-        report = {'mode': 'legacy-exempt', 'legacy_nohash': missing, 'total': total}
-        print('LEGACY-NOHASH  %s：%d/%d 行缺 state_hash（已显式豁免，须在报告里记一笔）'
-              % (os.path.basename(path), missing, total), file=sys.stderr)
-        return labels, report
-    return labels, {'mode': 'strict', 'legacy_nohash': 0, 'total': total}
+    if _LABELS_ANY is None:
+        raise ReadLayerError('labels_any.py 不在同目录：拒绝退回到自带的第二份解析')
+    L = _LABELS_ANY.load(path, require_state_hash=require_state_hash,
+                         allow_legacy=allow_legacy)
+    return dict(L.labs), {
+        'mode': 'legacy-exempt' if (L.no_hash and allow_legacy) else 'strict',
+        'legacy_nohash': L.no_hash,
+        'total': L.lines,
+        'dialect': L.dialect,
+    }
 
 
 def main():

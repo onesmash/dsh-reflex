@@ -9,10 +9,11 @@
 | 编号 | 性质（一句话，可被反例证伪） | owner | 覆盖的文件/函数 | 范围 | 证据等级 | 破坏变体 / 证据命令 | 退出码 | S4 日志 | 状态 | sync commit |
 |---|---|---|---|---|---|---|---|---|---|---|
 | T1 | 读者读到的登记表派生指标，恒等于同版本计数算出来的值 | Chief | `docs/verification/registry-consistency/Registry.tla`（模型）、`skill/reflex-tuning/scripts/shadow_targets_io.py`（真实读层，运行时文件在 REFLEX_HOME/tools/ 下，不在仓库） | 单进程、单写者 | L2（模型 + 真实文件回放） | 模型两卡成对：`docs/verification/registry-consistency/two-step.cfg` 必须报红、`single-source.cfg` 必须绿；回放：把 TLC 的 `WriteCounts → Read` 打到真实副本上，「取副本」读法须判红而读层须读对。命令 `bash docs/verification/registry-consistency/check.sh` 与 `python3 tests/test-reflex-targets-invariants.py` | 0 | 未做：无 CI 面，断言以守门测试形式存在（`--check` 子命令 + `tests/test-reflex-targets-invariants.py`），尚未挂到定时/提交钩子 | 守住（单写者） | ec39e30 |
-| T2 | 任何工具读取标签文件前都要求它带 `state_hash`，缺失则拒绝读取并指名拒绝原因 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `load_labels` | 单进程 | 不建模：入口校验，一次检查就够；由守门测试覆盖 | 变体：真实标签文件缺 `state_hash` 时 `load_labels` 必须抛 `LabelsMissingStateHash` 并报出缺失计数；显式豁免必须回报计数与模式。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | ec39e30 |
+| T2 | 任何工具读取标签文件前都要求它带 `state_hash`，缺失则拒绝读取并指名拒绝原因 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `load_labels` | 单进程 | 不建模：入口校验，一次检查就够；由守门测试覆盖 | 变体：真实标签文件缺 `state_hash` 时 `load_labels` 必须抛 `LabelsMissingStateHash` 并报出缺失计数；显式豁免必须回报计数与模式；契约检查要求每个 `LA.load(` 调用都写着 `require_state_hash=True`。解析只有一份实现（`skill/reflex-tuning/scripts/labels_any.py`），读层转调它。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | ec39e30 |
 | T3 | `threshold` 变更时登记表里必须存在可机检的 `whyNotBatch` 引用，且该 artifact 路径真实存在 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `check_why_not_batch` | 单进程 | 不建模：写盘前置条件，一次检查就够；由守门测试覆盖 | 变体：填不存在的 artifact 路径 → 必须 `WriteRefused`；不写 `whyNotBatch` → 同样拒写；写一句话（无路径无 id）→ 拒写。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | ec39e30 |
 | T4 | `citable` 恒等于由 `pc.noiseAppendNear` / `positives` / `calibration` 派生的值，手写值与派生值不符即红 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `derive_citable` | 单进程 | 不建模：纯函数，输入定了输出就定了；由守门测试覆盖 | 变体：登记表里出现手写 `citable` → 必须判红（当前零样本：没有手写值，故另有 T4-b 用真实字段现算，不许当成已覆盖）。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | ec39e30 |
 | T5 | 被标注为截断的拟合值（`fitTruncated`）不出现在「取最优阈值」的读取路径里 | Chief | `skill/reflex-tuning/scripts/shadow_targets_io.py` 的 `get_fit`、`skill/reflex-tuning/scripts/threshold_fit.py` | 单进程 | 不建模：静态字段契约，由 schema 级校验覆盖 | 变体：`fitTruncated` 里的 `R8`/`R16` 被当 `fit` 读 → 必须抛 `TruncatedFitMisuse`；真实登记表已把两者的 0.70 移入 `fitTruncated`。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 守住（单写者） | ec39e30 |
+| T6 | 登记表里的证书计数（tp/fp/fn/n_labeled）可由 labelsFile + shadow + 工作点现算复现，不可复现时必须显式声明过期 | Chief | `skill/reflex-tuning/scripts/risk_certificate.py` 的 `--json` 输出、`skill/reflex-tuning/scripts/shadow_targets_io.py` | 单进程、同一数据目录 | 不建模：外部数据随标注增长，属版本问题不是交错；由守门测试 T1-e 覆盖 | 变体：把 `certificate.countsStale` 删掉后必须判红（同一段代码路径已实测两次：先红于缺声明，后绿于声明）。重拟合要动阈值，属需决策项，未自动执行。命令 `python3 tests/test-reflex-targets-invariants.py` | 0 | — | 未判定（存量属 442 条旧样本，现存 487，未重拟合） | ec39e30 |
 
 ## S0：哪些性质建模、哪些不建模（决策留痕）
 
@@ -61,4 +62,5 @@ TLC 只证明「模型里有这条路径」；这一步证明真实文件上也�
 1. **4/5 个 tag 不可复算**：只有 `x-timeline` 声明了 `tp/fp/fn`；`jev-friction` 的 `certificate` 只有两个下界、没有计数，无法现算。`--check` 只统计「可复算 tag 数」，零样本不会被当成通过。
 2. **三处标签计数并存**：`labels: 531`（全部标注）、`thresholdExtended.n: 487`、`labelDuplicates` 里的唯一 442 —— 三个分母各自成立，但文件里没有一处声明「谁是哪个口径」。优化清单第 ③ 条。
 3. **`state_hash` 全缺**：实测 `item-labels-x-timeline-20261119.jsonl` 与 `labels-jev-friction.jsonl` 都是 100% 缺 `state_hash`，当前只能走显式豁免（读层会打印 `LEGACY-NOHASH` 并计数）。优化清单第 ⑦ 条。
-4. **S4 无面**：没有 CI，断言靠人跑一条命令；收口时要挂到能自动跑的地方，否则「守住」只到 L2。
+4. **原件覆盖事故（2026-11-24）**：复跑 `risk_certificate.py` 默认落盘路径，把 11-19 的证书 md 冲掉，内容不可得，只剩本表的 tp/fp/fn。已把「不覆盖」做成纯函数 `dated_report_path`（T6 守门），但原文件的损失收不回来。
+5. **S4 无面**：没有 CI，断言靠人跑一条命令；收口时要挂到能自动跑的地方，否则「守住」只到 L2。

@@ -229,6 +229,26 @@ def fmt(x, digits=1):
     return "-" if x is None else f"{x*100:.{digits}f}%"
 
 
+def dated_report_path(base, exists=None, day=None):
+    """证书落盘路径：既有文件存在就改成带日期副本，绝不静默覆盖。
+
+    2026-11-24 踩过：一次复跑把 11-19 的原件冲掉，无法恢复。这里把「别覆盖」
+    做成纯函数，守门测试能直接验它，而不是靠人记得传 --report。
+    """
+    import datetime
+    exists = os.path.exists if exists is None else exists
+    day = day or datetime.date.today().strftime("%Y%m%d")
+    if not exists(base):
+        return base
+    stem = base[:-3] if base.endswith(".md") else base
+    cand = f"{stem}-{day}.md"
+    n = 2
+    while exists(cand):
+        cand = f"{stem}-{day}-{n}.md"
+        n += 1
+    return cand
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag", default="x-timeline")
@@ -286,7 +306,9 @@ def main():
         # 所以 weights 置空 —— 后面 .get(key, 1.0) 会全部取 1.0，即不加权。
         LA = _import_labels_any()
         try:
-            L = LA.load(a.labels)
+            # 显式豁免旧格式：allow_legacy=True 会打印 LEGACY-NOHASH 并计数；
+            # state_hash 落地后把这个参数删掉，门禁自然收紧（=strict）。
+            L = LA.load(a.labels, require_state_hash=True, allow_legacy=True)
         except LA.LabelsError as e:
             raise SystemExit(f"risk_certificate: {e}")
         weights = {}
@@ -427,7 +449,10 @@ def main():
             "- 标签是**分层抽样** (边界带优先), 上表 CP 区间严格来说只对抽样分布成立, 不能直接当总体指标。",
             "- 要拿到总体证书: 改用均匀随机抽样标注, 或按**唤醒级**做自然抽样标注 (wake_ledger 已支持)。",
             "- 加权点估计是总体近似, 没有置信保证; 两者要分开读。"]
-    report_path = a.report or os.path.join(a.home, "shadow", f"risk-certificate-{a.tag}.md")
+    base_report = a.report or os.path.join(a.home, "shadow", f"risk-certificate-{a.tag}.md")
+    report_path = a.report or dated_report_path(base_report)
+    if report_path != base_report:
+        print(f"[report] 既有证书存在，改写带日期副本：{os.path.basename(report_path)}", file=sys.stderr)
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
     open(report_path, "w", encoding="utf-8").write("\n".join(rep) + "\n")
     out["report"] = report_path

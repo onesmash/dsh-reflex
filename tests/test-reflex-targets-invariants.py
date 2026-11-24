@@ -18,6 +18,7 @@ import importlib.util
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -139,6 +140,59 @@ def main():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # T1-e 证书计数必须能由 raw 复现（同 labelsFile、同 mode、同 operating）
+    print('\n-- T1-e 证书计数可由 raw 复现 --')
+    obj = raw.get('x-timeline') or {}
+    cert = obj.get('certificate') or {}
+    if not cert or not obj.get('labelsFile'):
+        unverified('T1-e 证书计数可复现', '没有 certificate 块或 labelsFile')
+    else:
+        outdir = tempfile.mkdtemp(prefix='reflex-t1e-')
+        try:
+            out_json = os.path.join(outdir, 'rc.json')
+            cmd = [sys.executable, os.path.join(SCRIPTS, 'risk_certificate.py'),
+                   '--tag', 'x-timeline',
+                   '--mode', obj.get('mode') or 'live',
+                   '--operating', str(obj.get('threshold')),
+                   '--labels', os.path.join(a.home, obj['labelsFile']),
+                   '--home', a.home, '--json', '--report', out_json]
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if proc.returncode != 0:
+                unverified('T1-e 证书计数可复现', '复算工具退出 %d：%s'
+                           % (proc.returncode, (proc.stderr or '')[-200:]))
+            else:
+                d = json.loads(proc.stdout)
+                conf = d['confusion']
+                stored = (cert.get('tp'), cert.get('fp'), cert.get('fn'), cert.get('n_labeled'))
+                got = (conf.get('tp'), conf.get('fp'), conf.get('fn'), d.get('n_labeled'))
+                print('   存 %s ／ 现算 %s（正例 %s ／ %s）' % (stored, got, cert.get('tp', 0) + cert.get('fn', 0),
+                                                          conf.get('tp', 0) + conf.get('fn', 0)))
+                if stored == got:
+                    check('T1-e 证书计数与现算一致', True)
+                elif cert.get('countsStale'):
+                    unverified('T1-e 证书计数与现算一致',
+                               '已声明过期（countsStale.asOf=%s）：存量属旧样本，现算见 countsStale.observed'
+                               % cert['countsStale'].get('asOf'))
+                else:
+                    check('T1-e 证书计数与现算不一致，且没有声明过期', False,
+                          '存 %s ≠ 算 %s（要更新计数，或显式写 countsStale）' % (stored, got))
+        finally:
+            shutil.rmtree(outdir, ignore_errors=True)
+
+    # T6 证书落盘不许覆盖既有文件
+    print('\n-- T6 证书落盘不覆盖 --')
+    rc = load_mod('risk_certificate.py')
+    tmpd = tempfile.mkdtemp(prefix='reflex-t6-')
+    try:
+        base = os.path.join(tmpd, 'risk-certificate-x-timeline.md')
+        open(base, 'w', encoding='utf-8').write('11-19 original')
+        p2 = rc.dated_report_path(base)
+        check('T6-a 既有证书存在时改写到带日期副本', p2 != base and not os.path.exists(p2), p2)
+        check('T6-b 原文件内容不被改动', open(base, encoding='utf-8').read() == '11-19 original')
+        check('T6-c 没有既有文件时仍用原名', rc.dated_report_path(os.path.join(tmpd, 'new.md')) == os.path.join(tmpd, 'new.md'))
+    finally:
+        shutil.rmtree(tmpd, ignore_errors=True)
+
     # ---- T2：标签文件缺 state_hash 必须拒读 ----
     print('\n-- T2 标签读取：state_hash 门禁 --')
     label_files = []
@@ -183,6 +237,25 @@ def main():
         except Exception:                        # noqa: BLE001
             passed = False
         check('T2-c 带 state_hash 的标签文件正常读入', passed)
+
+    # T2-d 契约：任何 LA.load( 调用都必须显式要求 state_hash（豁免也得写着）
+    print('\n-- T2-d 调用契约：一个口进 --')
+    sites, bad = [], []
+    for root, _, files in os.walk(SCRIPTS):
+        for fn in files:
+            if not fn.endswith('.py') or fn == 'labels_any.py':
+                continue
+            fp = os.path.join(root, fn)
+            for i, line in enumerate(open(fp, encoding='utf-8', errors='replace'), 1):
+                if 'LA.load(' in line:
+                    sites.append((fn, i))
+                    if 'require_state_hash=True' not in line:
+                        bad.append('%s:%d' % (fn, i))
+    print('   候选：%d 处 LA.load( 调用 -> %s' % (len(sites), sites or '(无)'))
+    if not sites:
+        unverified('T2-d 每个 LA.load 调用都显式要求 state_hash', '没有任何调用点')
+    else:
+        check('T2-d 每个 LA.load 调用都显式要求 state_hash', not bad, '缺参数：' + ', '.join(bad))
 
     # ---- T3：whyNotBatch 必须是可机检引用 ----
     print('\n-- T3 阈值变更必须有可机检 whyNotBatch --')
