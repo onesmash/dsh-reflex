@@ -1,6 +1,6 @@
 # 数据源开关与新增：性质登记表（S0 产出，S5 收口时再核）
 
-范围：Trigger 页的六件事 —— 开关既有源（P1–P9）、创建事务与生成物（P10–P14、P19）、一句话建源（P15–P18、P23–P26）、界面无障碍底座（P20）、浅/深主题对比度（P21）、首帧不等网络（P22）。
+范围：Trigger 页的六件事 —— 开关既有源（P1–P9）、创建事务与生成物（P10–P14、P19）、一句话建源（P15–P18、P23–P26）、界面无障碍底座（P20）、浅/深主题对比度（P21）、首帧不等网络（P22）、逐行调优与投递对象（P27–P33）。
 
 形态变更（2026-11-25）：专用的「添加数据源」三段式页面已删除，首页只留一个输入框 —— 用户说一句，宿主把原话拼成提示词投给 Chief，由它按 `reflex-datasource` 写采集器并自验。P15–P18、P20 因此按新形态重写；`op:"create"` 仍保留给脚本与测试用。
 
@@ -84,3 +84,5 @@
    从干净 shell（`env -i`）一次跑完即 exit 0。
 3. **覆盖到哪个 commit、哪里没覆盖**：见各行的 sync commit；未覆盖的是运行期（S4 日志，要重载宿主插件后在
    页面里点一次）与窄屏下的表格几何。
+| P32 | 宿主是旧版（列表整排没有 `hasTarget` 字段）时页面必须显式喊「重启 DSH」；有字段但为 false 属合法「只采集」，不许误报 | Chief | `client.js: SourcesPage hostTooOld` | 单进程、仅 bundle | 不建模：渲染冒烟 | 变体：把 `hostTooOld` 写死 false → P32 红；命令 `node tests/check-sources-panel.mjs` | 0 | 未做 | 守住 | 2c550f3 |
+| P33 | 建源/调优的投递对象可由请求指定：选了 A 就投到 A 的会话；不存在的 Bot 必须 400「没有这个 Bot」；指定目标投不出去时**不许**退回默认目标；响应里的实际目标与所选不一致时客户端必须能识别（旧宿主假成功） | Chief | `index.js: botTargets / resolveRequestTarget / delegateCreate / tuneSourceRequest`、`client.js: delegateBody / tuneBody / targetMismatch` | 单进程 | 不建模：投递目标由纯函数校验 + 假 sessionController 端到端 | 三个变体：忽略请求里的目标、目标不存在也放行、客户端不把目标放进请求体 —— 各自必须让 P33 报红；命令 `node tests/delegate-route.mjs && node tests/tune-route.mjs && node tests/check-sources-panel.mjs` | 0 | 未做：未在运行中的 DSH 里点过 | 守住 | 待回填 |
