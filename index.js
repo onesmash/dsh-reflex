@@ -367,6 +367,34 @@ function install(rt, ctx, cfg) {
     return undefined
   }
 
+  // ---------- 可投递对象清单（界面下拉用） ----------
+  // 与 botSessionId 读同一个文件：界面上能选到的名字，必须是投得出去的名字。
+  // 读失败返回空表 —— 页面降级成「没有下拉、按默认目标投」，不要让整页报错。
+  function botTargets() {
+    try {
+      const state = JSON.parse(readFileSync(cfg.statePath, 'utf8'))
+      const seen = new Set()
+      const out = []
+      for (const b of Object.values(state.bots ?? {})) {
+        const name = typeof b?.name === 'string' ? b.name.trim() : ''
+        if (!name || seen.has(name)) continue
+        seen.add(name)
+        out.push({ name, isDefault: name === cfg.l1.targetBot })
+      }
+      out.sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name))
+      return out
+    } catch (e) { log(`botTargets error: ${e.message}`); return [] }
+  }
+
+  // 请求里带的投递对象：没带/空串 = 用配置默认（保持旧行为）；带了就必须真的存在。
+  // 为什么不在失败时退回默认：用户手选了 A，悄悄投给 Chief 等于改了他的决定，而界面还会显示成功。
+  function resolveRequestTarget(raw) {
+    const picked = typeof raw === 'string' ? raw.trim() : ''
+    if (!picked) return cfg.l1.targetBot
+    if (!botSessionId(picked)) throw new Error(`没有这个 Bot：${picked}`)
+    return picked
+  }
+
   // ---------- L2 投递目标解析 ----------
   // 默认投 cfg.l1.targetBot 的私聊（Chief）。target 自己的 <name>.env.json 可用 wakeTo 覆盖：
   //   {"kind":"group","name":"昇腾Jev大赛"}     → 投进该群（rooms 的 key 就是群 session id）
@@ -1571,8 +1599,10 @@ function install(rt, ctx, cfg) {
    */
   async function delegateCreate(body) {
     const prompt = buildDelegatePrompt(body?.sentence)
-    const target = cfg.l1.targetBot
-    const delivered = await wakeL2(prompt, undefined, 'followup')
+    const target = resolveRequestTarget(body?.target)
+    // 用 wakeL2Once 而不是 wakeL2：后者会为目标失败自动退回默认目标，
+    // 对"用户手选的收件人"是错的（选了 A 却投给 Chief，界面还显示交给了 A）。
+    const delivered = await wakeL2Once(prompt, target, 'followup')
     if (!delivered) throw new Error(`没投到 ${target}：会话没找到或插件没连上（详见日志 L2 wake）`)
     log(`sources: delegate → ${target}（${prompt.length} 字符）`)
     return { target, chars: prompt.length }
@@ -1595,8 +1625,8 @@ function install(rt, ctx, cfg) {
     if (!existsSync(join(targetsDir, `${name}.sh`))) {
       throw new Error(`${name} 没有 L1 判定（只采集），没有可调的东西`)
     }
-    const target = cfg.l1.targetBot
-    const delivered = await wakeL2(prompt, undefined, 'followup')
+    const target = resolveRequestTarget(body?.target)
+    const delivered = await wakeL2Once(prompt, target, 'followup')
     if (!delivered) throw new Error(`没投到 ${target}：会话没找到或插件没连上（详见日志 L2 wake）`)
     log(`sources: tune ${name} → ${target}（${prompt.length} 字符）`)
     return { target, name }
@@ -1642,7 +1672,7 @@ function install(rt, ctx, cfg) {
   async function reflexRoute(op, body) {
     // probe 恒返回 Promise（起子进程不能阻塞宿主的事件循环），await 一次两种形态都收。
     return await respondToOp(op, body, {
-      list: () => ({ sources: sourceRows(), builtin: builtinRows(), scannedAt: Date.now() }),
+      list: () => ({ sources: sourceRows(), builtin: builtinRows(), scannedAt: Date.now(), targetBot: cfg.l1.targetBot, targets: botTargets() }),
       commit: (name, paused) => setPaused(collectorsDir, name, paused, { builtins: builtinNames() }),
       refresh: () => refreshDiscovery(),
       log,
