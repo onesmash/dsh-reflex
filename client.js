@@ -129,6 +129,7 @@ window.__ModuleLoader__.load({
 			tuneBtn: "调优",
 			tuneTitle: "调这个源的判定：阈值与判据（交给 Chief 按 reflex-tuning 执行）",
 			tuneNoTarget: "这个源只采集、不判定，没有可调的东西",
+			staleHost: "宿主里的插件是旧版（列表里没有 hasTarget）：重启 DSH 之后「调优」按钮才可点。",
 			tuneRunning: "投递中…",
 			tuneSent: "已把 {name} 的判定调优请求交给 {target}",
 			tuneReload: "宿主里的插件还是旧版（不认识 tune）：重启 DSH 之后这个按钮才生效。",
@@ -253,6 +254,7 @@ window.__ModuleLoader__.load({
 			tuneBtn: "Tune",
 			tuneTitle: "Tune this source's judgement (threshold / criteria); Chief runs it via reflex-tuning",
 			tuneNoTarget: "This source only collects and never judges; nothing to tune",
+			staleHost: "The loaded plugin is older than this page (the list has no hasTarget). Restart DSH to enable the Tune buttons.",
 			tuneRunning: "Sending…",
 			tuneSent: "Judgement tuning request for {name} handed to {target}",
 			tuneReload: "The loaded plugin is older than this page (it does not know tune). Restart DSH, then this button works.",
@@ -609,6 +611,7 @@ addAskReload: "The loaded plugin is older than this page (it does not know deleg
 tuneBtn: "Tune",
 tuneTitle: "Tune this source's judgement (threshold / criteria); Chief runs it via reflex-tuning",
 tuneNoTarget: "This source only collects and never judges; nothing to tune",
+staleHost: "The loaded plugin is older than this page (the list has no hasTarget). Restart DSH to enable the Tune buttons.",
 tuneRunning: "Sending…",
 tuneSent: "Judgement tuning request for {name} handed to {target}",
 tuneReload: "The loaded plugin is older than this page (it does not know tune). Restart DSH, then this button works.",
@@ -658,7 +661,7 @@ srcNew: "new"
 .rfx-secTitle{margin:0;font-size:13px;font-weight:600}
 .rfx-secHint{margin:3px 0 4px;font-size:12px;color:var(--rfx-ink2)}
 .rfx-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.06);color:var(--rfx-err);font-size:13px}
-.rfx-rowBtns{display:inline-flex;align-items:center;gap:6px}.rfx-tune{min-width:52px}.rfx-tuneMsg{margin:8px 0 0}
+.rfx-staleMsg{margin:0 0 12px}.rfx-rowBtns{display:inline-flex;align-items:center;gap:6px}.rfx-tune{min-width:52px}.rfx-tuneMsg{margin:8px 0 0}
 @container (max-width:560px){.rfx-askRow{flex-wrap:wrap}.rfx-askSend{width:100%}}
 @media (max-width:640px){.rfx-head{flex-wrap:wrap;align-items:flex-start}.rfx-askRow{flex-wrap:wrap}.rfx-askSend{width:100%}}
 @container (max-width:560px){.rfx-sources .rfx-th,.rfx-sources .rfx-td{padding-left:6px;padding-right:6px}.rfx-sources thead th:nth-child(3),.rfx-sources thead th:nth-child(4),.rfx-sources tbody td:nth-child(3),.rfx-sources tbody td:nth-child(4){display:none}.rfx-sources .rfx-btn{padding:0 8px;font-size:12px}.rfx-sources .rfx-name{word-break:break-all}.rfx-sources .rfx-th:last-child,.rfx-sources .rfx-td:last-child{white-space:nowrap}}
@@ -763,6 +766,8 @@ srcNew: "new"
 			// ---------- 列表 ----------
 			const data = view.data;
 			const rows = (data && data.sources) || [];
+			// 旧版宿主不返回 hasTarget：整排「调优」按钮会变灰且没有一个字解释，用户只会说"点不动"。
+			const hostTooOld = rows.length > 0 && rows.every((r) => typeof r.hasTarget !== "boolean");
 			const builtin = (data && data.builtin) || [];
 			const pausedCount = rows.filter((r) => r.paused).length;
 			const summary = tr("srcSummary")
@@ -786,7 +791,7 @@ srcNew: "new"
 						react_jsx_runtime.jsx("button", {
 							type: "button", className: "rfx-btn rfx-tune",
 							disabled: !r.hasTarget || tuning === r.name,
-							title: r.hasTarget ? tr("tuneTitle") : tr("tuneNoTarget"),
+							title: hostTooOld ? tr("staleHost") : (r.hasTarget ? tr("tuneTitle") : tr("tuneNoTarget")),
 							onClick: () => void tuneRow(r),
 							children: tuning === r.name ? tr("tuneRunning") : tr("tuneBtn")
 						}),
@@ -811,6 +816,7 @@ srcNew: "new"
 							react_jsx_runtime.jsx("button", { type: "button", className: "rfx-btn", onClick: () => void load(), children: tr("srcRefresh") })
 						] })
 					] }),
+					hostTooOld ? react_jsx_runtime.jsx("p", { className: "rfx-saveMsg rfx-staleMsg", role: "status", children: tr("staleHost") }) : null,
 					react_jsx_runtime.jsxs("div", { className: "rfx-body", children: [
 						react_jsx_runtime.jsxs("section", { className: "rfx-ask", "aria-labelledby": "rfx-ask-title", children: [
 							react_jsx_runtime.jsx("h2", { className: "rfx-askTitle", id: "rfx-ask-title", children: tr("addAskTitle") }),

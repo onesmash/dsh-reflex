@@ -33,6 +33,7 @@ const CASES = [
   'P21 浅/深主题下主按钮与错误文字都够对比',
   'P22 预热过的 list 让首帧直接出表（不再进 loading）',
   'P31 行的「调优」按钮跟着 hasTarget 走（文案是动作、够宽、只采集与内置源不给可点的按钮）',
+  'P32 宿主是旧版（列表没有 hasTarget）时必须喊「重启 DSH」，不许只把按钮变灰一声不吭',
 ]
 
 let code
@@ -394,6 +395,35 @@ const runAsync = async () => {
     assert(/\.rfx-saveMsg--ok\{[^}]*color:var\(--rfx-ink2\)/.test(src), 'CSS 里没有 .rfx-saveMsg--ok 的颜色规则')
     results.push([CASES[12], true, ''])
   } catch (e) { results.push([CASES[12], false, e.message]) }
+
+  // P32 旧宿主兼容：DSH 没重启时列表里没有 hasTarget 字段，按钮会整排变灰。
+  // 「灰着不说话」和「坏了」在用户眼里是同一件事——必须自己喊出来该重启。
+  try {
+    const oldSandbox = {
+      console,
+      fetch: async () => ({ ok: true, status: 200, json: async () => ({
+        ok: true,
+        sources: [
+          { name: 'alpha', paused: false, factsToday: 1, lastFactAt: Date.now(), intervalMs: 900000 },
+          { name: 'beta', paused: false, factsToday: 0, lastFactAt: 0, intervalMs: 900000 },
+        ],
+        builtin: [], scannedAt: Date.now(),
+      }) }),
+      window: { __ModuleLoader__: { load: (d) => { oldSandbox.__def = d } } },
+      document: { documentElement: { dataset: {} }, createElement: () => ({ dataset: {}, textContent: '' }), head: { appendChild() {} } },
+    }
+    vm.createContext(oldSandbox)
+    vm.runInContext(code, oldSandbox)
+    const oldMod = oldSandbox.__def.factory(requireFn)
+    await new Promise((r) => setTimeout(r, 0))     // 让预热那次 list 落地
+    const tree = oldMod.SourcesPage({ t: (k) => oldMod.zh[k] ?? k })
+    const txt = textOf(tree)
+    assert(/重启 DSH/.test(txt), `旧宿主下界面没有提示重启：${txt.trim().slice(0, 80)}`)
+    const btns = nodesOf(tree).filter((n) => n.type === 'button' && /rfx-tune/.test(String(n.props.className || '')))
+    assert(btns.length >= 2, `旧宿主下没渲染出调优按钮（${btns.length} 个）`)
+    assert(btns.every((b) => b.props.disabled === true), '旧宿主下按钮竟然冒充可点')
+    results.push([CASES[13], true, ''])
+  } catch (e) { results.push([CASES[13], false, e.message]) }
 }
 
 await runAsync()
