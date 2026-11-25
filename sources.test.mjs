@@ -169,7 +169,7 @@ test('P25 delegate 只负责接线：交给注入的投递函数，没接线就�
 
 test('P27 调优提示词：带标记、原样带源名、门槛与硬规矩都在', () => {
   const p = buildTunePrompt('x-timeline')
-  assert.ok(p.startsWith('[L1 调优请求]'), `没带标记：${p.slice(0, 40)}`)
+  assert.ok(p.startsWith('[调优请求]'), `没带标记：${p.slice(0, 40)}`)
   assert.ok(p.includes('x-timeline'), '源名没进提示词')
   assert.ok(p.includes('reflex-tuning'), '没让 bot 加载调优 skill')
   assert.ok(p.includes('shadow_targets.json'), '没让先读阈值登记表（拍脑袋换阈值的源头）')

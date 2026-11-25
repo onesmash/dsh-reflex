@@ -220,7 +220,7 @@ export function buildTunePrompt(name) {
   const target = String(name ?? '').trim()
   if (!target) throw new Error('先给一个数据源名字')
   if (!NAME.test(target)) throw new Error(`名字不合法：${JSON.stringify(target)}`)
-  return `[L1 调优请求] 目标数据源：${target}
+  return `[调优请求] 目标数据源：${target}
 
 先读现场，再决定改不改。不许凭印象调参数。
 
