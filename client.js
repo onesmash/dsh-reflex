@@ -118,7 +118,10 @@ window.__ModuleLoader__.load({
 			// 一句话建源（2026-11-25 起界面只剩这一个入口）
 			addAskTitle: "一句话加监控",
 			addAskPlaceholder: "例：盯着 arxiv cs.SE 有新论文就叫我",
-			addAskSend: "交给 Chief",
+			addAskSend: "交给 {target}",
+			targetLabel: "投给",
+			targetDefault: "默认",
+			targetMismatch: "宿主是旧版：实际投给了 {actual}，不是 {want}。重启 DSH 之后才会按你选的投。",
 			addAskSending: "投递中…",
 			addAskSent: "已交给 {target}：它去写采集器并自验，建好后列表里会出现这一行（它正忙时会排队）。",
 			addAskHint: "不用填字段：原话会原样交给 Chief，由它按 reflex-datasource 写采集器并跑一遍验证。",
@@ -243,7 +246,10 @@ window.__ModuleLoader__.load({
 			// one-line creation (the only entry point since 2026-11-25)
 			addAskTitle: "Add a monitor in one line",
 			addAskPlaceholder: "e.g. tell me when arxiv cs.SE has a new paper",
-			addAskSend: "Send to Chief",
+			addAskSend: "Send to {target}",
+			targetLabel: "Deliver to",
+			targetDefault: "default",
+			targetMismatch: "The loaded plugin is older: it delivered to {actual}, not {want}. Restart DSH to honor your choice.",
 			addAskSending: "Sending…",
 			addAskSent: "Handed to {target}: it writes the collector and verifies it; the row shows up here once created (it queues while busy).",
 			addAskHint: "No fields: your words go to Chief verbatim, and it follows reflex-datasource to write the collector and verify it.",
@@ -601,7 +607,10 @@ addNeedCriteria: "Semantic mode needs one sentence",
 createdOk: "Created {name}: collecting now; the first run only builds the watermark (no backlog).",
 addAskTitle: "Add a monitor in one line",
 addAskPlaceholder: "e.g. tell me when arxiv cs.SE has a new paper",
-addAskSend: "Send to Chief",
+addAskSend: "Send to {target}",
+targetLabel: "Deliver to",
+targetDefault: "default",
+targetMismatch: "The loaded plugin is older: it delivered to {actual}, not {want}. Restart DSH to honor your choice.",
 addAskSending: "Sending…",
 addAskSent: "Handed to {target}: it writes the collector and verifies it; the row shows up here once created (it queues while busy).",
 addAskHint: "No fields: your words go to Chief verbatim, and it follows reflex-datasource to write the collector and verify it.",
@@ -632,7 +641,7 @@ srcNew: "new"
 .rfx-body{flex:1;min-height:0;overflow:auto;padding:0 0 8px}
 .rfx-ask{margin:16px 0 4px;padding:14px;border:1px solid var(--rfx-line);border-radius:var(--dsw-radius-md,10px);background:var(--rfx-panel)}
 .rfx-askTitle{margin:0 0 9px;font-size:13px;font-weight:600}
-.rfx-askRow{display:flex;align-items:center;gap:8px}
+.rfx-askRow{display:flex;align-items:center;gap:8px}.rfx-targetWrap{display:inline-flex;align-items:center;gap:6px;flex:none}.rfx-targetLabel{font-size:12.5px;color:var(--rfx-ink3);white-space:nowrap}.rfx-target{width:auto;min-width:132px;max-width:220px;padding-right:26px;cursor:pointer}
 .rfx-input{box-sizing:border-box;width:100%;font:inherit;font-size:13px;padding:8px 10px;min-height:36px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--rfx-line2);background:var(--rfx-card);color:inherit;transition:border-color 140ms ease,box-shadow 140ms ease}
 .rfx-input::placeholder{color:var(--rfx-ink3)}
 .rfx-input:focus-visible{outline:none;border-color:var(--rfx-brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--rfx-brand) 16%,transparent)}
@@ -663,7 +672,7 @@ srcNew: "new"
 .rfx-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.06);color:var(--rfx-err);font-size:13px}
 .rfx-staleMsg{margin:0 0 12px}.rfx-rowBtns{display:inline-flex;align-items:center;gap:6px}.rfx-tune{min-width:52px}.rfx-tuneMsg{margin:8px 0 0}
 @container (max-width:560px){.rfx-askRow{flex-wrap:wrap}.rfx-askSend{width:100%}}
-@media (max-width:640px){.rfx-head{flex-wrap:wrap;align-items:flex-start}.rfx-askRow{flex-wrap:wrap}.rfx-askSend{width:100%}}
+@media (max-width:640px){.rfx-head{flex-wrap:wrap;align-items:flex-start}.rfx-askRow{flex-wrap:wrap}.rfx-askSend{width:100%}.rfx-targetWrap{width:100%}.rfx-target{width:100%;max-width:none}}
 @container (max-width:560px){.rfx-sources .rfx-th,.rfx-sources .rfx-td{padding-left:6px;padding-right:6px}.rfx-sources thead th:nth-child(3),.rfx-sources thead th:nth-child(4),.rfx-sources tbody td:nth-child(3),.rfx-sources tbody td:nth-child(4){display:none}.rfx-sources .rfx-btn{padding:0 8px;font-size:12px}.rfx-sources .rfx-name{word-break:break-all}.rfx-sources .rfx-th:last-child,.rfx-sources .rfx-td:last-child{white-space:nowrap}}
 @media (pointer:coarse){.rfx-btn{min-height:44px}.rfx-input{min-height:44px}}
 @media (prefers-reduced-motion:reduce){.rfx-page *{transition:none!important;animation:none!important}}
@@ -675,15 +684,31 @@ srcNew: "new"
 		 * 由它按 reflex-datasource 落盘。这里只做 trim，绝不"帮用户改写需求"——
 		 * 改写过的原话，建出来的就是另一个监控。
 		 */
-		function delegateBody(sentence) {
-			return { op: "delegate", sentence: String(sentence || "").trim() };
+		function delegateBody(sentence, target) {
+			const body = { op: "delegate", sentence: String(sentence || "").trim() };
+			const to = String(target || "").trim();
+			if (to) body.target = to;          // 不传 = 让宿主用它自己的默认目标，别在这里替它编一个
+			return body;
 		}
 		/**
 		 * 逐行「L1 调优」→ 请求体。只发一个源名：有没有这个源、有没有 L1 由宿主判
 		 * （只有宿主手里有 collectors/targets 两个目录）。
 		 */
-		function tuneBody(name) {
-			return { op: "tune", name: String(name || "").trim() };
+		function tuneBody(name, target) {
+			const body = { op: "tune", name: String(name || "").trim() };
+			const to = String(target || "").trim();
+			if (to) body.target = to;
+			return body;
+		}
+		/**
+		 * 响应里的实际投递目标与用户选的不一致 —— 只有一个原因：宿主是旧版，它不认 target，
+		 * 照旧投给了默认目标却回 ok:true。返回实际目标（非空 = 不一致），由调用方显式告警。
+		 */
+		function targetMismatch(chosen, actual) {
+			const want = String(chosen || "").trim();
+			const got = String(actual || "").trim();
+			if (!want || !got || want === got) return "";
+			return got;
 		}
 		/** 本地只挡「还没写」和「长得离谱」；其余交给宿主，错了它给准话。上限与宿主同一个数。 */
 		const SENTENCE_MAX = 500;
@@ -709,6 +734,16 @@ srcNew: "new"
 			// 「点了没反应」这种最坏的观感 —— 用户不知道是坏了还是在排队。
 			const [ask, setAsk] = react.useState("");
 			const [send, setSend] = react.useState({ phase: "idle", error: "", target: "" });
+			// 投给谁："" = 还没选，跟随宿主给的默认目标。选择不持久化——每次打开都回到默认，
+			// 免得「上次选了谁」变成界面上看不见的隐形状态。
+			const [target, setTarget] = react.useState("");
+			// 当前要投给谁：用户选过就用它，否则跟随宿主给的默认目标。
+			// 写成函数而不是常量，是因为它要在 sendAsk/tuneRow 这两个先定义的闭包里用。
+			const pickTarget = () => {
+				const picked = String(target || "").trim();
+				if (picked) return picked;
+				return String((view.data && view.data.targetBot) || "Chief");
+			};
 			// 逐行调优：调哪个源、投递结果。按钮就在行里，失败原因必须回到同一个源上，
 			// 不能只在页面顶部飘一句「投递失败」——用户不知道是哪一行。
 			const [tuning, setTuning] = react.useState("");
@@ -735,13 +770,22 @@ srcNew: "new"
 				} finally { setBusy(""); }
 			};
 			const onAsk = (event) => setAsk(event && event.target ? event.target.value : "");
+			const onTarget = (event) => setTarget(event && event.target ? event.target.value : "");
 			const sendAsk = async () => {
 				const blocker = sentenceBlocker(ask);
 				if (blocker) { setSend({ phase: "error", error: tr(blocker), target: "" }); return; }
 				setSend({ phase: "running", error: "", target: "" });
+				const to = pickTarget();
 				try {
-					const sent = await reflexCall("delegate", delegateBody(ask));
-					setSend({ phase: "ok", error: "", target: sent && sent.target ? sent.target : "Chief" });
+					const sent = await reflexCall("delegate", delegateBody(ask, to));
+					const actual = sent && sent.target ? String(sent.target) : "";
+					const wrong = targetMismatch(to, actual);
+					if (wrong) {
+						// 投出去了，但投给了别人：旧宿主不认 target。原话留在框里，别让用户重打一遍。
+						setSend({ phase: "error", error: tr("targetMismatch").split("{actual}").join(actual).split("{want}").join(to), target: actual });
+						return;
+					}
+					setSend({ phase: "ok", error: "", target: actual || to });
 					setAsk("");
 				} catch (e) {
 					const why = e && e.message ? e.message : String(e);
@@ -753,9 +797,16 @@ srcNew: "new"
 			const tuneRow = async (row) => {
 				setTuning(row.name);
 				setTuneMsg({ phase: "running", name: row.name, error: "", target: "" });
+				const to = pickTarget();
 				try {
-					const r = await reflexCall("tune", tuneBody(row.name));
-					setTuneMsg({ phase: "ok", name: row.name, error: "", target: (r && r.target) || "Chief" });
+					const r = await reflexCall("tune", tuneBody(row.name, to));
+					const actual = r && r.target ? String(r.target) : "";
+					const wrong = targetMismatch(to, actual);
+					if (wrong) {
+						setTuneMsg({ phase: "error", name: row.name, error: tr("targetMismatch").split("{actual}").join(actual).split("{want}").join(to), target: actual });
+						return;
+					}
+					setTuneMsg({ phase: "ok", name: row.name, error: "", target: actual || to });
 				} catch (e) {
 					const why = e && e.message ? e.message : String(e);
 					// 宿主还是旧版插件时会回 "unknown op: tune"：这句话对人没用，换成该做的事
@@ -768,6 +819,12 @@ srcNew: "new"
 			const rows = (data && data.sources) || [];
 			// 旧版宿主不返回 hasTarget：整排「调优」按钮会变灰且没有一个字解释，用户只会说"点不动"。
 			const hostTooOld = rows.length > 0 && rows.every((r) => typeof r.hasTarget !== "boolean");
+			// 投递对象下拉：宿主给了 targets 才渲染（旧版宿主没有这个字段，页面按默认目标投）。
+			const targets = (data && data.targets) || [];
+			const chosenTarget = pickTarget();
+			const targetOptions = targets.length && !targets.some((x) => x.name === chosenTarget)
+				? targets.concat([{ name: chosenTarget, isDefault: false }])
+				: targets;
 			const builtin = (data && data.builtin) || [];
 			const pausedCount = rows.filter((r) => r.paused).length;
 			const summary = tr("srcSummary")
@@ -829,11 +886,24 @@ srcNew: "new"
 									onChange: onAsk,
 									onKeyDown: (event) => { if (event && event.key === "Enter") void sendAsk(); }
 								}),
+								targets.length ? react_jsx_runtime.jsxs("label", { className: "rfx-targetWrap", children: [
+									react_jsx_runtime.jsx("span", { className: "rfx-targetLabel", children: tr("targetLabel") }),
+									react_jsx_runtime.jsx("select", {
+										className: "rfx-input rfx-target",
+										value: chosenTarget,
+										"aria-label": tr("targetLabel"),
+										onChange: onTarget,
+										children: targetOptions.map((x) => react_jsx_runtime.jsx("option", {
+											value: x.name,
+											children: x.isDefault ? x.name + "（" + tr("targetDefault") + "）" : x.name
+										}, x.name))
+									})
+								] }) : null,
 								react_jsx_runtime.jsx("button", {
 									type: "button", className: "rfx-btn rfx-btnPrimary rfx-askSend",
 									disabled: send.phase === "running",
 									onClick: () => void sendAsk(),
-									children: send.phase === "running" ? tr("addAskSending") : tr("addAskSend")
+									children: send.phase === "running" ? tr("addAskSending") : tr("addAskSend").split("{target}").join(chosenTarget)
 								})
 							] }),
 							react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-ask-hint", children: tr("addAskHint") }),
@@ -951,6 +1021,8 @@ srcNew: "new"
 		exports.SourcesPage = SourcesPage;
 		exports.TriggerIcon = TriggerIcon;
 		exports.delegateBody = delegateBody;
+		exports.tuneBody = tuneBody;
+		exports.targetMismatch = targetMismatch;
 		exports.sentenceBlocker = sentenceBlocker;
 		exports.SRC_CSS = SRC_CSS;
 		exports.zh = zh;

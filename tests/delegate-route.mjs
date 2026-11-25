@@ -19,11 +19,13 @@ mkdirSync(join(home, 'collectors'), { recursive: true })
 mkdirSync(join(home, 'targets'), { recursive: true })
 const statePath = join(home, 'state.json')
 writeFileSync(statePath, JSON.stringify({
-  bots: { b_chief: { name: 'Chief', sessionId: 's-chief' } },
+  bots: { b_chief: { name: 'Chief', sessionId: 's-chief' }, b_career: { name: '求职顾问', sessionId: 's-career' } },
   rooms: {},
 }), 'utf8')
 
 const captured = []
+const targeted = []          // resolveAgent 实际被问到的会话 id：用来抓「静默改投 Chief」
+const failSessions = new Set()
 const routes = []
 let agentReady = true          // 切成 false 模拟"投不出去"
 const noop = () => {}
@@ -50,9 +52,12 @@ const ctx = {
     }
     cb({
       sessionController: {
-        resolveAgent: async () => (agentReady
-          ? { agent: { followup: (msg) => { captured.push(msg) } } }
-          : { agent: {} }),
+        resolveAgent: async (sid) => {
+          targeted.push(sid)
+          // 指定目标投不出去的情形：只让某个会话失败，用来验证「不许悄悄改投 Chief」
+          if (failSessions.has(sid)) return { error: { message: 'no such session' } }
+          return agentReady ? { agent: { followup: (msg) => { captured.push(msg) } } } : { agent: {} }
+        },
       },
       effect: noop,
     })
@@ -135,6 +140,33 @@ ok('P26 失败原因说的是「没投到」，不是内部黑话',
   failed.body.ok === false && /没投|投不到|投递失败/.test(failed.body.error ?? ''),
   JSON.stringify(failed.body))
 agentReady = true
+
+// ---- ⑤ 指定投递对象：P33 ----
+// 为什么单列：目标一旦可选，「选了 A 却投给 Chief」就是最坏的失败——界面还显示成功。
+const sentTo = await call({ op: 'delegate', sentence: '盯着 c.com 有更新叫我', target: '求职顾问' })
+ok('P33 指定对象后投给的是那个 bot', sentTo.body.ok === true && sentTo.body.target === '求职顾问', JSON.stringify(sentTo.body))
+ok('P33 会话解析走的是被指定的那个', targeted.at(-1) === 's-career', String(targeted.at(-1)))
+ok('P33 指定对象时消息也确实投出去了', captured.length === before + 1, `captured=${captured.length}`)
+
+const beforeUnknown = { captured: captured.length, targeted: targeted.length }
+const unknown = await call({ op: 'delegate', sentence: '盯着 d.com', target: '没这个bot' })
+ok('P33 不存在的对象 → 400 且说清没有这个 Bot',
+  // 只认「没有这个 Bot」：放行后由投递层失败会写成「没投到…插件没连上」，那是骗人的原因
+  unknown.status === 400 && /没有这个 Bot/.test(unknown.body.error ?? '') && /没这个bot/.test(unknown.body.error ?? ''),
+  JSON.stringify(unknown.body))
+ok('P33 不存在的对象一条都没投',
+  captured.length === beforeUnknown.captured && targeted.length === beforeUnknown.targeted,
+  `captured ${beforeUnknown.captured}->${captured.length} targeted ${beforeUnknown.targeted}->${targeted.length}`)
+
+// 指定对象投不出去：必须报错，且【不许】退回 Chief —— 否则用户以为交给了 A，实际到 Chief 手上
+failSessions.add('s-career')
+const beforeFallback = { captured: captured.length, targeted: targeted.length }
+const noFallback = await call({ op: 'delegate', sentence: '盯着 e.com', target: '求职顾问' })
+failSessions.delete('s-career')
+ok('P33 指定对象投不出去 → 400', noFallback.status === 400, JSON.stringify(noFallback.body))
+ok('P33 投不出去时不改投 Chief', targeted.slice(beforeFallback.targeted).every((sid) => sid === 's-career'),
+  JSON.stringify(targeted.slice(beforeFallback.targeted)))
+ok('P33 投不出去时没有多投出一条', captured.length === beforeFallback.captured, `${beforeFallback.captured} -> ${captured.length}`)
 
 console.log(`\n结果: ${pass}/${total} 通过`)
 process.exit(pass === total ? 0 : 1)

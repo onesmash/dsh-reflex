@@ -17,11 +17,13 @@ const home = mkdtempSync(join(tmpdir(), 'reflex-tune-'))
 mkdirSync(join(home, 'collectors'), { recursive: true })
 mkdirSync(join(home, 'targets'), { recursive: true })
 writeFileSync(join(home, 'state.json'), JSON.stringify({
-  bots: { b_chief: { name: 'Chief', sessionId: 's-chief' } },
+  bots: { b_chief: { name: 'Chief', sessionId: 's-chief' }, b_career: { name: '求职顾问', sessionId: 's-career' } },
   rooms: {},
 }), 'utf8')
 
 const captured = []
+const targeted = []          // resolveAgent 实际问到的会话 id：抓「静默改投 Chief」
+const failSessions = new Set()
 const routes = []
 let agentReady = true
 const noop = () => {}
@@ -48,9 +50,11 @@ const ctx = {
     }
     cb({
       sessionController: {
-        resolveAgent: async () => (agentReady
-          ? { agent: { followup: (msg) => { captured.push(msg) } } }
-          : { agent: {} }),
+        resolveAgent: async (sid) => {
+          targeted.push(sid)
+          if (failSessions.has(sid)) return { error: { message: 'no such session' } }
+          return agentReady ? { agent: { followup: (msg) => { captured.push(msg) } } } : { agent: {} }
+        },
       },
       effect: noop,
     })
@@ -123,6 +127,32 @@ const failed = await call({ op: 'tune', name: 'demo' })
 ok('P30 投递失败 → 400', failed.status === 400, JSON.stringify(failed.body))
 ok('P30 失败原因说"没投到"', /没投|投不到|投递失败/.test(failed.body.error ?? ''), JSON.stringify(failed.body))
 agentReady = true
+
+// ---- ⑥ 指定投递对象：P33 ----
+// 与建源同一条性质：选了 A 就必须投到 A，投不到就报错，绝不悄悄改投默认目标。
+const beforePick = captured.length
+const sentTo = await call({ op: 'tune', name: 'demo', target: '求职顾问' })
+ok('P33 调优可以指定投递对象', sentTo.body.ok === true && sentTo.body.target === '求职顾问', JSON.stringify(sentTo.body))
+ok('P33 调优解析的是被指定的会话', targeted.at(-1) === 's-career', String(targeted.at(-1)))
+ok('P33 调优指定对象时真的投出去一条', captured.length === beforePick + 1, `${beforePick} -> ${captured.length}`)
+
+const beforeUnknown = { captured: captured.length, targeted: targeted.length }
+const unknownBot = await call({ op: 'tune', name: 'demo', target: '没这个bot' })
+ok('P33 调优投给不存在的 Bot → 400 且写清名字',
+  unknownBot.status === 400 && /没有这个 Bot/.test(unknownBot.body.error ?? '') && /没这个bot/.test(unknownBot.body.error ?? ''),
+  JSON.stringify(unknownBot.body))
+ok('P33 调优遇到不存在的 Bot 一条都不投',
+  captured.length === beforeUnknown.captured && targeted.length === beforeUnknown.targeted,
+  `${beforeUnknown.captured}->${captured.length}`)
+
+failSessions.add('s-career')
+const beforeFallback = { captured: captured.length, targeted: targeted.length }
+const noFallback = await call({ op: 'tune', name: 'demo', target: '求职顾问' })
+failSessions.delete('s-career')
+ok('P33 调优指定对象投不出去 → 400', noFallback.status === 400, JSON.stringify(noFallback.body))
+ok('P33 调优投不出去时不改投 Chief', targeted.slice(beforeFallback.targeted).every((sid) => sid === 's-career'),
+  JSON.stringify(targeted.slice(beforeFallback.targeted)))
+ok('P33 调优投不出去时没有多投出一条', captured.length === beforeFallback.captured, `${beforeFallback.captured} -> ${captured.length}`)
 
 console.log(`\n结果: ${pass}/${total} 通过`)
 process.exit(pass === total ? 0 : 1)

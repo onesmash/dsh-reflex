@@ -34,6 +34,8 @@ const SAMPLE = {
     { name: 'tidemark', paused: false, factsToday: 1, lastFactAt: Date.now() - 3 * 60000, intervalMs: 3600000, hasTarget: false },
   ],
   builtin: [{ name: 'disk', enabled: true }, { name: 'cpu', enabled: false }],
+  targetBot: 'Chief',
+  targets: [{ name: 'Chief', isDefault: true }, { name: '求职顾问', isDefault: false }, { name: 'Agent工程师', isDefault: false }],
   scannedAt: Date.now(),
 }
 

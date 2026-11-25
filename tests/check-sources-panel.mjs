@@ -34,6 +34,7 @@ const CASES = [
   'P22 预热过的 list 让首帧直接出表（不再进 loading）',
   'P31 行的「调优」按钮跟着 hasTarget 走（文案是动作、够宽、只采集与内置源不给可点的按钮）',
   'P32 宿主是旧版（列表没有 hasTarget）时必须喊「重启 DSH」，不许只把按钮变灰一声不吭',
+  'P33 投给谁可选：下拉默认当前目标、请求体带 target、响应目标不一致要能识别',
 ]
 
 let code
@@ -424,6 +425,43 @@ const runAsync = async () => {
     assert(btns.every((b) => b.props.disabled === true), '旧宿主下按钮竟然冒充可点')
     results.push([CASES[13], true, ''])
   } catch (e) { results.push([CASES[13], false, e.message]) }
+
+  // P33 投递对象可选：下拉要列出宿主给的 targets，默认选中当前 targetBot；
+  // 请求体必须真的带上 target（否则宿主只能投默认目标，界面却显示交给别人）。
+  try {
+    const pickSandbox = {
+      console,
+      fetch: async () => ({ ok: true, status: 200, json: async () => ({
+        ok: true,
+        sources: [{ name: 'alpha', paused: false, factsToday: 1, lastFactAt: Date.now(), intervalMs: 900000, hasTarget: true }],
+        builtin: [], scannedAt: Date.now(),
+        targetBot: 'Chief',
+        targets: [{ name: 'Chief', isDefault: true }, { name: '求职顾问', isDefault: false }],
+      }) }),
+      window: { __ModuleLoader__: { load: (d) => { pickSandbox.__def = d } } },
+      document: { documentElement: { dataset: {} }, createElement: () => ({ dataset: {}, textContent: '' }), head: { appendChild() {} } },
+    }
+    vm.createContext(pickSandbox)
+    vm.runInContext(code, pickSandbox)
+    const pickMod = pickSandbox.__def.factory(requireFn)
+    await new Promise((r) => setTimeout(r, 0))
+    const tree = pickMod.SourcesPage({ t: (k) => pickMod.zh[k] ?? k })
+    const sel = nodesOf(tree).find((n) => n.type === 'select' && /rfx-target/.test(String(n.props.className || '')))
+    assert(sel, '没有渲染出投递对象下拉')
+    assert(sel.props.value === 'Chief', `下拉默认值不是当前目标：${String(sel.props.value)}`)
+    const opts = (sel.props.children || []).filter(Boolean).map((o) => o.props?.value)
+    assert(opts.includes('Chief') && opts.includes('求职顾问'), `下拉选项不全：${JSON.stringify(opts)}`)
+    const label = String(sel.props['aria-label'] ?? '')
+    assert(label.trim().length > 0, '下拉没有可读标签')
+    // 请求体带 target；不传时不许凭空塞一个默认值进去（宿主会自己兜）
+    assert(pickMod.delegateBody('盯着 x.com', '求职顾问').target === '求职顾问', 'delegateBody 没带目标')
+    assert(!('target' in pickMod.delegateBody('盯着 x.com')), 'delegateBody 无目标时不该塞 target 字段')
+    assert(pickMod.tuneBody('arxiv', '求职顾问').target === '求职顾问', 'tuneBody 没带目标')
+    // 旧宿主会忽略 target 并投给默认目标：客户端必须能识别这种「假成功」
+    assert(pickMod.targetMismatch('求职顾问', 'Chief') === 'Chief', '目标不一致没被识别出来')
+    assert(pickMod.targetMismatch('Chief', 'Chief') === '', '目标一致却报了不一致')
+    results.push([CASES[14], true, ''])
+  } catch (e) { results.push([CASES[14], false, e.message]) }
 }
 
 await runAsync()
