@@ -32,7 +32,7 @@ const CASES = [
   'P20 无障碍底座在渲染树里齐着（标注 + 播报）',
   'P21 浅/深主题下主按钮与错误文字都够对比',
   'P22 预热过的 list 让首帧直接出表（不再进 loading）',
-  'P31 行的 L1 按钮跟着 hasTarget 走（只采集与内置源不给可点的按钮）',
+  'P31 行的「调优」按钮跟着 hasTarget 走（文案是动作、够宽、只采集与内置源不给可点的按钮）',
 ]
 
 let code
@@ -375,6 +375,17 @@ const runAsync = async () => {
     assert(!tuneBtnOf(disk), '内置源那一行不该有调优按钮')
     const all = walk(mod.SourcesPage({ t: (key) => key })).filter((n) => n.type === 'button' && /rfx-tune/.test(String(n.props.className || '')))
     assert(all.length === 2, `全页调优按钮 ${all.length} 个（应恰好 2 个脚本源）`)
+
+    // 按钮文案要像动作，不能是内部层号：用户第一次看到「L1」不知道那是干什么的。
+    const zhTune = String(mod.zh.tuneBtn || '')
+    assert(zhTune && !/^L1$/i.test(zhTune), `调优按钮还在拿内部代号当文案：「${zhTune}」`)
+    const zhTuneBtns = walk(mod.SourcesPage({ t: (k) => mod.zh[k] ?? k }))
+      .filter((n) => n.type === 'button' && /rfx-tune/.test(String(n.props.className || '')))
+    assert(zhTuneBtns.length === 2, `真文案下只找到 ${zhTuneBtns.length} 个调优按钮`)
+    assert(zhTuneBtns.every((b) => textOf(b).includes(zhTune)), `真文案下按钮上看不到「${zhTune}」`)
+    // 两字宽度像标签不像按钮：至少给到和「暂停采集」同一量级的存在感
+    const tuneCss = /\.rfx-tune\{min-width:(\d+)px\}/.exec(readFileSync(FILE, 'utf8'))
+    assert(tuneCss && Number(tuneCss[1]) >= 52, `调优按钮最小宽度 ${tuneCss ? tuneCss[1] : '缺失'}px，太窄会读成徽标`)
 
     // 成功回执不能用错误红：两个状态区（建源 / 调优）都要有成功态修饰类，CSS 也要定义它
     const src = readFileSync(FILE, 'utf8')

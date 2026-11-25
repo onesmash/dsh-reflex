@@ -37,7 +37,7 @@ window.__ModuleLoader__.load({
 			// —— 数据源页面（主列整页） ——
 			srcNav: "Trigger",
 			srcTitle: "Trigger",
-			srcDesc: "采集源就是 L1 的触发来源。这里开关每一路采集：暂停写的是磁盘上的 <name>.paused 标记，采集器下一轮读到，不用改 profile，也不用重启。",
+			srcDesc: "采集源负责抓数据；判定（L1）决定什么情况叫醒你。这里开关每一路采集：暂停写的是磁盘上的 <name>.paused 标记，采集器下一轮读到，不用改 profile，也不用重启。",
 			srcRefresh: "刷新",
 			srcLoading: "读取中…",
 			srcSummary: "{n} 个采集中 · {m} 个已暂停",
@@ -125,12 +125,12 @@ window.__ModuleLoader__.load({
 			addAskNeedSentence: "先写一句话：监控什么、什么情况叫你。",
 			addAskTooLong: "那句话太长了（上限 500 字），拆成两个监控更清楚。",
 			addAskReload: "宿主里的插件还是旧版（不认识 delegate）：重启 DSH 之后这个按钮才真的把话交给 Chief。",
-			// 逐行 L1 调优
-			tuneBtn: "L1",
-			tuneTitle: "让 Chief 按 reflex-tuning 调这个源的 L1（阈值 / 判据）",
-			tuneNoTarget: "这个源只采集，没有 L1 可调",
+			// 逐行判定调优
+			tuneBtn: "调优",
+			tuneTitle: "调这个源的判定：阈值与判据（交给 Chief 按 reflex-tuning 执行）",
+			tuneNoTarget: "这个源只采集、不判定，没有可调的东西",
 			tuneRunning: "投递中…",
-			tuneSent: "已把 {name} 的 L1 调优请求交给 {target}",
+			tuneSent: "已把 {name} 的判定调优请求交给 {target}",
 			tuneReload: "宿主里的插件还是旧版（不认识 tune）：重启 DSH 之后这个按钮才生效。",
 			srcNew: "新"
 		};
@@ -161,7 +161,7 @@ window.__ModuleLoader__.load({
 			// —— sources page (global main panel) ——
 			srcNav: "Trigger",
 			srcTitle: "Trigger",
-			srcDesc: "Collectors are what trigger L1. Each switch writes <name>.paused on disk, which the collector reads on its next round — no profile edit, no restart.",
+			srcDesc: "Collectors gather data; judgement (L1) decides what wakes you. Each switch writes <name>.paused on disk, which the collector reads on its next round — no profile edit, no restart.",
 			srcRefresh: "Refresh",
 			srcLoading: "Loading…",
 			srcSummary: "{n} collecting · {m} paused",
@@ -249,12 +249,12 @@ window.__ModuleLoader__.load({
 			addAskNeedSentence: "Write one line: what to watch, and when to tell you.",
 			addAskTooLong: "That line is too long (max 500 characters); two smaller monitors are clearer.",
 			addAskReload: "The loaded plugin is older than this page (it does not know delegate). Restart DSH, then this button really hands the line to Chief.",
-			// per-row L1 tuning
-			tuneBtn: "L1",
-			tuneTitle: "Ask Chief to tune this source's L1 (threshold / criteria) via reflex-tuning",
-			tuneNoTarget: "This source only collects; there is no L1 to tune",
+			// per-row judgement tuning
+			tuneBtn: "Tune",
+			tuneTitle: "Tune this source's judgement (threshold / criteria); Chief runs it via reflex-tuning",
+			tuneNoTarget: "This source only collects and never judges; nothing to tune",
 			tuneRunning: "Sending…",
-			tuneSent: "L1 tuning request for {name} handed to {target}",
+			tuneSent: "Judgement tuning request for {name} handed to {target}",
 			tuneReload: "The loaded plugin is older than this page (it does not know tune). Restart DSH, then this button works.",
 			srcNew: "new"
 		};
@@ -532,7 +532,7 @@ window.__ModuleLoader__.load({
 		 */
 		const SRC_FALLBACK = {
 			srcNav: "Trigger", srcTitle: "Trigger",
-			srcDesc: "Collectors are what trigger L1. Each switch writes <name>.paused on disk, which the collector reads on its next round — no profile edit, no restart.",
+			srcDesc: "Collectors gather data; judgement (L1) decides what wakes you. Each switch writes <name>.paused on disk, which the collector reads on its next round — no profile edit, no restart.",
 			srcRefresh: "Refresh", srcLoading: "Loading…", srcSummary: "{n} collecting · {m} paused",
 			srcColName: "Name", srcColEvery: "Every", srcColToday: "Today", srcColLast: "Last success",
 			srcColState: "State", srcColAction: "Action",
@@ -606,11 +606,11 @@ addAskHint: "No fields: your words go to Chief verbatim, and it follows reflex-d
 addAskNeedSentence: "Write one line: what to watch, and when to tell you.",
 addAskTooLong: "That line is too long (max 500 characters); two smaller monitors are clearer.",
 addAskReload: "The loaded plugin is older than this page (it does not know delegate). Restart DSH, then this button really hands the line to Chief.",
-tuneBtn: "L1",
-tuneTitle: "Ask Chief to tune this source's L1 (threshold / criteria) via reflex-tuning",
-tuneNoTarget: "This source only collects; there is no L1 to tune",
+tuneBtn: "Tune",
+tuneTitle: "Tune this source's judgement (threshold / criteria); Chief runs it via reflex-tuning",
+tuneNoTarget: "This source only collects and never judges; nothing to tune",
 tuneRunning: "Sending…",
-tuneSent: "L1 tuning request for {name} handed to {target}",
+tuneSent: "Judgement tuning request for {name} handed to {target}",
 tuneReload: "The loaded plugin is older than this page (it does not know tune). Restart DSH, then this button works.",
 srcNew: "new"
 		};
@@ -658,7 +658,7 @@ srcNew: "new"
 .rfx-secTitle{margin:0;font-size:13px;font-weight:600}
 .rfx-secHint{margin:3px 0 4px;font-size:12px;color:var(--rfx-ink2)}
 .rfx-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border-radius:var(--dsw-radius-md,10px);border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.06);color:var(--rfx-err);font-size:13px}
-.rfx-rowBtns{display:inline-flex;align-items:center;gap:6px}.rfx-tune{min-width:44px}.rfx-tuneMsg{margin:8px 0 0}
+.rfx-rowBtns{display:inline-flex;align-items:center;gap:6px}.rfx-tune{min-width:52px}.rfx-tuneMsg{margin:8px 0 0}
 @container (max-width:560px){.rfx-askRow{flex-wrap:wrap}.rfx-askSend{width:100%}}
 @media (max-width:640px){.rfx-head{flex-wrap:wrap;align-items:flex-start}.rfx-askRow{flex-wrap:wrap}.rfx-askSend{width:100%}}
 @container (max-width:560px){.rfx-sources .rfx-th,.rfx-sources .rfx-td{padding-left:6px;padding-right:6px}.rfx-sources thead th:nth-child(3),.rfx-sources thead th:nth-child(4),.rfx-sources tbody td:nth-child(3),.rfx-sources tbody td:nth-child(4){display:none}.rfx-sources .rfx-btn{padding:0 8px;font-size:12px}.rfx-sources .rfx-name{word-break:break-all}.rfx-sources .rfx-th:last-child,.rfx-sources .rfx-td:last-child{white-space:nowrap}}
