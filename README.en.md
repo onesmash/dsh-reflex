@@ -100,6 +100,42 @@ cd /absolute/path/to/dsh-reflex && pnpm install
 
 (Installing from GitHub does not have this issue — package and dependencies go into the profile together.)
 
+## How to verify
+
+After installing, or after touching the decision layer, run this one command — it checks the registry consistency, the guard assertions, and the destruct variants together:
+
+```bash
+bash docs/verification/registry-consistency/check-all.sh
+```
+
+> Run this in a **repository checkout**: the npm package ships the runtime only, without the verification evidence and TLA traces under `docs/verification/` (about 62 MB).
+
+**The exit code has three states. `2` does not mean failure.**
+
+| Exit | Meaning |
+|---|---|
+| `0` | Everything passed |
+| `1` | An assertion went red — something is actually wrong |
+| `2` | Cannot decide: runtime directory missing, guard script not where expected, or not enough data to judge |
+
+The third state is deliberate: **this project would rather report "cannot prove it" than report a pass.** On `2`, read the `未判定: ...` line on stderr — it says which link in the chain blocked the judgement.
+
+The output also contains standalone `UNVERIFIED` lines. That is a different thing from exit `2`: `2` means the whole round could not be judged, while `UNVERIFIED` means **one specific assertion has been explicitly declared stale** and does not block the rest. The usual one is the certificate count:
+
+```
+UNVERIFIED  T1-e 证书计数与现算一致
+            [已声明过期（countsStale.asOf=…）：存量属旧样本，现算见 countsStale.observed]
+```
+
+(Verbatim script output — the tooling prints Chinese. In English: *certificate counts match the current computation* / *declared stale, stored figures come from an older sample, current computation is under `countsStale.observed`*.)
+
+What that means: the certificate was computed at an **older working point**; the sample set has changed since, and the threshold has not been refitted on the new sample, so the certificate does not hold for the current data. **It will not turn green until it is refitted — and it should not be made green by editing the numbers.**
+
+stderr also prints `LEGACY-NOHASH` for historical label files that lack `state_hash`. Per the agreed rule these go through an explicit exemption that prints the missing-line count (e.g. `531/531`). That is **known and accounted for**, not a silent skip.
+
+> The number of `PASS` / `UNVERIFIED` lines and the exemption counts change with the code and the data. **Trust the output you get**, not a number written here; treat none of them as invariants.
+> Run on 2026-11-26: 20 PASS, 1 UNVERIFIED (the certificate count above), overall `exit 0`.
+
 ## Configuration
 
 Every option can be overridden under `dsh-reflex.config` in the profile patch. The important ones:
