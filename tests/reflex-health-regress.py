@@ -522,41 +522,76 @@ check('ledger: 清零后新事故正常报',
 
 print('== 采集器: 判定失败连续窗口升级 (2026-10-24 ai-policy 每小时1次x10h 隐身事故) ==')
 # 事故形态: 同源每小时 1 次 decision-failure, 60 分钟窗口内永远只有 1 次,
-# FAIL_MIN=2 的速率判据数学上永不触发 → 需要"连续 N 窗口"状态升级机制。
+# FAIL_MIN=2 的速率判据数学上永不触发 → 需要"连续 N 个窗口都出现同源失败"状态升级。
+#
+# ⚠️ "一个窗口" = 一次独立的失败事件(d['first'] 不同), 不是"自检又跑了一轮"。
+#    自检 5~10 分钟一轮, 同一批失败在一小时内会被连看十几轮; 若按轮累加,
+#    一次瞬断就会在第 3 轮(约 25 分钟后)被当成三次事故叫醒 L2。
+#    2026-11-27 02:01:45 disk 单次 `l1: fetch failed`(全日志 19829 次成功 / 71 次失败)
+#    就是这样在 02:16 / 02:21 / 02:26 三轮检查后升到第 3 窗的。
 DFL = lambda off=-120, src='ai-policy': (
     f'[{iso(off)}] L1[{src}] error: exit 1: '
     f'{src}: SemIf 打分脚本不存在: /x/scripts/scripts/shadow-semif.sh')
 ST3 = {'REFLEX_HEALTH_DECIDE_STREAK': '3'}
 
-h = fresh('d1')
-os.makedirs(os.path.join(h, 'collectors'), exist_ok=True)   # 源存在才报(防已删源刷屏守卫)
-open(os.path.join(h, 'collectors', 'ai-policy.sh'), 'w').write('#!/bin/bash\n')
+
+def _dfl_home(name):
+    h = fresh(name)
+    os.makedirs(os.path.join(h, 'collectors'), exist_ok=True)  # 源存在才报(防已删源刷屏守卫)
+    open(os.path.join(h, 'collectors', 'ai-policy.sh'), 'w').write('#!/bin/bash\n')
+    return h
+
+
+# A. 同一批失败(时间戳不变)被连查 4 轮 —— 是"同一个窗口", 必须一次都不报
+h = _dfl_home('d0')
 write_log(h, [DFL()])
+rounds = [run_col(h, ST3)[1] for _ in range(4)]
+check('streak: 同一批失败被连查 4 轮 → 只算 1 个窗口, 不报',
+      all(not f for f in rounds),
+      str([[x['meta']['key'] for x in f] for f in rounds]))
+check('streak: 连查 4 轮后 streak 仍是 1, 不是 4',
+      (json.load(open(os.path.join(h, 'reflex-health-state.json'))).get('dfailStreak') or {})
+      .get('ai-policy') == 1,
+      str(json.load(open(os.path.join(h, 'reflex-health-state.json'))).get('dfailStreak')))
+
+# B. 三个不同的失败事件(每小时 1 次) —— 第 3 个才升级
+h = _dfl_home('d1')
+write_log(h, [DFL(off=-3500)])
 rc, facts, _ = run_col(h, ST3)
-check('streak: 连续第 1 窗 → 不报', not facts, str([f['meta']['key'] for f in facts]))
-write_log(h, [DFL()])
+check('streak: 第 1 个失败事件 → 不报', not facts, str([f['meta']['key'] for f in facts]))
+write_log(h, [DFL(off=-120)])
 rc, facts, _ = run_col(h, ST3)
-check('streak: 连续第 2 窗 → 不报', not facts, str([f['meta']['key'] for f in facts]))
-write_log(h, [DFL()])
+check('streak: 第 2 个失败事件 → 不报', not facts, str([f['meta']['key'] for f in facts]))
+write_log(h, [DFL(off=-60)])
 rc, facts, _ = run_col(h, ST3)
 keys = sorted(f['meta']['key'] for f in facts)
-check('streak: 连续第 3 窗 → 升级报 decision-failure',
+check('streak: 第 3 个失败事件 → 升级报 decision-failure',
       keys == ['decision-failure:ai-policy'], str(keys))
+check('streak: 升级条目带连续窗口数 3',
+      bool(facts) and facts[0]['raw'].get('streakWindows') == 3,
+      str(facts[0]['raw']) if facts else '(无事实)')
+rc, o, _ = run_tgt(h, facts)
+check('streak: 标题写明连续 3 个窗口(不是"1 次")',
+      bool(o and o.get('wake') and o.get('items')
+           and '连续 3 个窗口' in o['items'][0]['title']),
+      str(o)[:220] if o else '(无输出)')
+
+# C. 恢复清账 → 重新累计
 write_log(h, [CLEAN])
 rc, facts, _ = run_col(h, ST3)
 check('streak: 恢复 → recovered 事实',
       any(f['metric'] == 'recovered' and f['raw'].get('problem') == 'decision-failure:ai-policy'
           for f in facts), str([(f['metric'], f['raw'].get('problem')) for f in facts]))
-write_log(h, [DFL()])
+write_log(h, [DFL(off=-3000)])
 rc, facts, _ = run_col(h, ST3)
-write_log(h, [DFL()])
+write_log(h, [DFL(off=-200)])
 rc, facts, _ = run_col(h, ST3)
-check('streak: 恢复后重新累计, 连续 2 窗仍不报', not facts,
+check('streak: 恢复后重新累计, 两个事件仍不报', not facts,
       str([f['meta']['key'] for f in facts]))
-write_log(h, [DFL()])
+write_log(h, [DFL(off=-100)])
 rc, facts, _ = run_col(h, ST3)
 keys = sorted(f['meta']['key'] for f in facts)
-check('streak: 重置后再满 3 窗 → 再报', keys == ['decision-failure:ai-policy'], str(keys))
+check('streak: 重置后再满 3 个事件 → 再报', keys == ['decision-failure:ai-policy'], str(keys))
 
 print('== 2026-10-26: 构建饱和期的采集失败不叫醒 ==')
 

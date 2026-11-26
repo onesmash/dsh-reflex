@@ -152,11 +152,22 @@ def describe(f):
                     "带去重窗口的源(如 mail)手工跑会烧掉本轮窗口。" % src)
 
     elif metric == 'decision-failure':
-        title = f"{cn} · L1[{src}] · {win} 分钟内 {raw.get('count')} 次"
+        # 升级上来的条目必须自己说明"为什么 1 次也要报" —— 只写"60 分钟内 1 次"会让人
+        # 以为报错了(2026-11-27 02:27 那条就是这样: 一次 flutter 的 fetch failed)。
+        streak = raw.get('streakWindows')
+        if streak:
+            title = (f"{cn} · L1[{src}] · 连续 {streak} 个窗口各有失败"
+                     f" · 本窗口 {raw.get('count')} 次")
+        else:
+            title = f"{cn} · L1[{src}] · {win} 分钟内 {raw.get('count')} 次"
         body += [f"最后错误: {raw.get('lastError') or '(无)'}",
                  f"时间: {raw.get('firstAt')} → {raw.get('lastAt')}"]
         body.append("这条源正在被采集, 但 L1 打不了分 —— 它的事实等于没进判断环节。"
                     "常见原因: SemIf/适配层不可用、决策后端缺 key、模型文件被删。")
+        if streak:
+            body.append(f"本窗口内只有 {raw.get('count')} 次, 没到速率阈值; 是「连续 {streak} 个"
+                        "窗口都出现同源失败」把这条升级上来的 —— 看的是同一路信息一直没进判断, "
+                        "不是某一次抖动。先看它现在是否已经恢复(日志里最近的 L1 正常判定)。")
 
     elif metric == 'wake-failed':
         title = f"{cn} · {win} 分钟内 {raw.get('count')} 次"

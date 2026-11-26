@@ -511,6 +511,12 @@ try:
     # 事故形态: 同源每小时 1 次 decision-failure, 60 分钟窗口内恒为 1 次,
     # FAIL_MIN 速率判据数学上永不触发 → 连续 STREAK_MIN 个窗口都出现同源
     # decision-failure 时, 即使 n<FAIL_MIN 也升级上报。某窗无该源失败即清零。
+    #
+    # 计数单位必须是"失败事件", 不是"自检跑了一轮": 自检 5~10 分钟一轮, 一次失败会在
+    # 60 分钟滚动窗口里被连看十几轮, 按轮累加等于把一次瞬断在第 3 轮(~25 分钟后)报成
+    # 三次事故 —— 2026-11-27 02:01:45 disk 单次 `l1: fetch failed` 就因此叫醒了 L2
+    # (全日志 19829 次成功 / 71 次失败, 该轮之后立刻恢复正常)。所以用失败事件的
+    # first 时间戳做身份: 同一批失败重复检查只算 1 个窗口, 新事件才 +1。
     STREAK_MIN = int(os.environ.get('REFLEX_HEALTH_DECIDE_STREAK', '3'))
     try:
         prev_state = json.load(open(STATE, encoding='utf-8')) or {}
@@ -518,7 +524,16 @@ try:
         prev_state = {}
     prev = prev_state.get('problems', {}) or {}
     _streak_prev = prev_state.get('dfailStreak', {}) or {}
-    dfail_streak = {s: (_streak_prev.get(s) or 0) + 1 for s in dfails}
+    _seen_prev = prev_state.get('dfailSeen', {}) or {}
+    dfail_streak, dfail_seen = {}, {}
+    for s, d in dfails.items():
+        ident = int(d.get('first') or 0)
+        seen = (_seen_prev.get(s) or {}).get('first') or 0
+        if ident and ident == seen:
+            dfail_streak[s] = _streak_prev.get(s) or 1   # 同一批失败: 重复检查不累加
+        else:
+            dfail_streak[s] = (_streak_prev.get(s) or 0) + 1   # 新失败事件: 记作下一个窗口
+        dfail_seen[s] = {'first': ident}
     for s, d in dfails.items():
         if d['n'] < FAIL_MIN and dfail_streak[s] >= STREAK_MIN \
                 and f'decision-failure:{s}' not in problems and source_exists(s):
@@ -560,6 +575,7 @@ try:
         fd = os.open(STATE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             json.dump({'problems': problems, 'dfailStreak': dfail_streak,
+                       'dfailSeen': dfail_seen,
                        'lastRunAt': now, 'lastRunAtIso': iso(now)}, f, ensure_ascii=False)
     except Exception:
         pass                                   # 状态写不进去就少产出事实, 不能因此报错
