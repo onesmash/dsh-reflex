@@ -296,6 +296,21 @@ def wake_key(e, items=None):
     return f"{e['target']}:{e['ts']}"
 
 
+def parse_wake_key(key):
+    """拆 wake_key: `<target>:i:<item_key>`(item 级) 或 `<target>:<任意>`(批级)。
+
+    item_key 自身可以带冒号 —— 例如 reflex-health 的问题是 `decision-failure:disk`,
+    整条 key 就成了 `reflex-health:i:decision-failure:disk`。所以第 2 段之后必须重新
+    拼回去: 原来写 `parts[2]` 只留下 `decision-failure`, 标签虽然照常落盘(标记者看得见
+    「已标注」), 但 export_item_labels 永远命不中 id 为 `decision-failure:disk` 的条目,
+    拟合那边静默少样本。拆 key 只有一个地方实现, 就在这里。
+    """
+    parts = (key or "").split(":")
+    if len(parts) >= 3 and parts[1] == "i":
+        return "item", parts[0], ":".join(parts[2:])
+    return "batch", (parts[0] if parts else ""), ""
+
+
 def load_labels(home):
     path = os.path.join(home, "shadow", "wake-labels.jsonl")
     out = {}
@@ -554,14 +569,11 @@ def main():
             lab = 0 if dims["action"] == "none" else 1
         rec = {"wake_key": key, "label": lab, "note": note,
                "labeled_by": "L2", "at": int(time.time() * 1000)}
-        parts = key.split(":")
-        if len(parts) >= 3 and parts[1] == "i":
-            rec["scope"] = "item"
-            rec["target"] = parts[0]
-            rec["item_key"] = parts[2]
-        else:
-            rec["scope"] = "batch"
-            rec["target"] = parts[0] if parts else ""
+        scope, target, ik = parse_wake_key(key)
+        rec["scope"] = scope
+        rec["target"] = target
+        if ik:
+            rec["item_key"] = ik
         if dims:
             rec["dims"] = dims
         if why:

@@ -89,8 +89,34 @@ def test_exact_and_sha1_paths_still_work():
     assert stats["by_reason"]["exact"] == 1 and stats["by_reason"]["sha1"] == 1, stats
 
 
+def test_colon_inside_item_key_survives_labeling():
+    """item_key 自身带冒号时, 标签必须仍能 join 回条目。
+
+    2026-11-27 实测: reflex-health 的 item_key 是 `decision-failure:disk`,
+    而 wake_key 是 `reflex-health:i:decision-failure:disk` —— 记录构造时
+    `key.split(':')[2]` 只留下 `decision-failure`, 于是这条标签永远命中不了
+    shadow 里 id 为 `decision-failure:disk` 的那条。落空是静默的:
+    标注命令回「已标注」, 拟合那边少一条样本, 没人看得出。
+    """
+    import subprocess
+    home = tempfile.mkdtemp(prefix="wake-ledger-colon-")
+    write(os.path.join(home, "shadow", "reflex-health-2026-11-27.jsonl"),
+          [{"id": "decision-failure:disk", "score": 0.83, "tag": "reflex-health"}])
+    p = subprocess.run([sys.executable, os.path.join(HERE, "wake_ledger.py"),
+                        "--home", home, "--label", "reflex-health:i:decision-failure:disk", "0"],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, (p.returncode, p.stdout, p.stderr)
+    recs = [json.loads(l) for l in
+            open(os.path.join(home, "shadow", "wake-labels.jsonl"), encoding="utf-8") if l.strip()]
+    assert recs and recs[0].get("item_key") == "decision-failure:disk", recs
+    rows, stats = wake_ledger.export_item_labels(home, "reflex-health")
+    assert stats["matched"] == 1, stats
+    assert rows[0]["id"] == "decision-failure:disk" and rows[0]["label"] == 0, rows
+
+
 if __name__ == "__main__":
     test_prefix_difference_joins_by_suffix()
     test_ambiguous_suffix_is_not_guessed()
     test_exact_and_sha1_paths_still_work()
-    print("item 标签 join 契约: 3/3 通过")
+    test_colon_inside_item_key_survives_labeling()
+    print("item 标签 join 契约: 4/4 通过")
