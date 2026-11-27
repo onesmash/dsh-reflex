@@ -7,7 +7,7 @@
 #   这份脚手架把三个坑的防法直接写进模板，并接好影子与校准链路。
 #
 # 用法
-#   bash tools/new-source.sh <name> [--no-target] [--force]
+#   bash tools/new-source.sh <name> [--no-target] [--no-semantic] [--force]
 #   name 只允许小写字母、数字、连字符（会成为文件名与 target tag）
 #
 # 产出（默认全部生成）
@@ -32,10 +32,11 @@ set -uo pipefail
 
 RH="${REFLEX_HOME:-$HOME/.dsh/dsh-reflex}"
 
-NAME=""; WANT_TARGET=1; FORCE=0
+NAME=""; WANT_TARGET=1; WANT_SEMANTIC=1; FORCE=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --no-target) WANT_TARGET=0; shift ;;
+    --no-target)   WANT_TARGET=0; shift ;;
+    --no-semantic) WANT_SEMANTIC=0; shift ;;
     --force)     FORCE=1; shift ;;
     -h|--help)   sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)          printf '[new-source] 未知参数: %s\n' "$1" >&2; exit 2 ;;
@@ -43,7 +44,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-[ -z "$NAME" ] && { printf '[new-source] 用法: %s <name> [--no-target] [--force]\n' "$0" >&2; exit 2; }
+[ -z "$NAME" ] && { printf '[new-source] 用法: %s <name> [--no-target] [--no-semantic] [--force]\n' "$0" >&2; exit 2; }
 case "$NAME" in
   *[!a-z0-9-]*) printf '[new-source] name 只允许小写字母、数字、连字符: %s\n' "$NAME" >&2; exit 2 ;;
 esac
@@ -189,10 +190,22 @@ put "$TGT" <<EOF
 #             "items":[{"id":"...","title":"...","body":"..."}]}
 #   items[].id 必须有（跨轮合并去重的唯一依据）。
 #
+EOF
+if [ "$WANT_SEMANTIC" = "1" ]; then
+cat >> "$TGT" <<EOF
 # 两层判定
 #   [确定性] 规则命中即唤醒 —— 快、可解释、不花钱
 #   [语义影子] SemIf/jev 逐条打分，只记账不唤醒 —— 攒样本后拟合阈值再转正
 #              分数由 options.description 驱动（不是 question），改描述等于改判据
+EOF
+else
+cat >> "$TGT" <<EOF
+# 单层判定（纯确定性，由 --no-semantic 生成）
+#   判据是确定规则：阈值、状态位、比值。不需要校准样本，也不起模型进程。
+#   将来要加语义层时再手工加，并在加之前想清楚「谁来校准、拿什么样本」。
+EOF
+fi
+cat >> "$TGT" <<EOF
 #
 # ⚠️ 三个坑（改本文件时不要破坏）
 #   1. stdin 必须先落临时文件 —— \`python3 - <<'PY'\` 会顶掉 stdin，读不到事实且不报错
@@ -208,10 +221,10 @@ trap 'rm -rf "\$WORK"' EXIT INT TERM
 cat > "\$WORK/facts.jsonl"        # 见坑1
 
 # ---------- 第一层：确定性规则 ----------
-python3 - "\$WORK/facts.jsonl" "\$WORK/decision.json" "\$WORK/rows.jsonl" <<'PY'
+python3 - "\$WORK/facts.jsonl" "\$WORK/decision.json" <<'PY'
 import json, sys
 
-facts_path, decision_path, rows_path = sys.argv[1], sys.argv[2], sys.argv[3]
+facts_path, decision_path = sys.argv[1], sys.argv[2]
 
 msgs, scanned = [], 0
 with open(facts_path) as f:
@@ -246,13 +259,38 @@ if items:
                    "fingerprint": {"ids": [i["id"] for i in items]},
                    "scanned": scanned,
                    "items": items}, f, ensure_ascii=False)
+PY
+EOF
+
+if [ "$WANT_SEMANTIC" = "1" ]; then
+cat >> "$TGT" <<EOF
 
 # ---------- 第二层：语义影子候选 ----------
 # 判据写进 description；改措辞分数会整体位移，阈值必须重拟合。
+python3 - "\$WORK/facts.jsonl" "\$WORK/rows.jsonl" <<'PY'
+import json, sys
+
+facts_path, rows_path = sys.argv[1], sys.argv[2]
+
 QUESTION = "TODO 这条内容是否值得打断读者？"
 SHADOW_YES = ("TODO 明确写出：满足哪些条件算 yes。"
               "写完拿真实历史样本回放校验，不要拍脑袋。")
 SHADOW_NO  = ("TODO 明确写出：哪些情况算 no（含容易误判的边界情形）。")
+
+msgs = []
+with open(facts_path) as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except Exception:
+            continue
+        if rec.get("metric") != "$NAME-item":
+            continue
+        raw = rec.get("raw") or {}
+        msgs.append((str(raw.get("key", "")), raw.get("value", "")))
 
 with open(rows_path, "w") as f:
     for key, value in msgs[-20:]:
@@ -275,11 +313,16 @@ if [ -n "\$SEMIF" ] && [ -f "\$SEMIF" ] && [ -s "\$WORK/rows.jsonl" ]; then
     > /dev/null 2> "\$WORK/semif.err" || true
   [ -s "\$WORK/semif.err" ] && printf '[%s] 影子打分告警: %s\n' "$NAME" "\$(tail -1 "\$WORK/semif.err")" >&2
 fi
+EOF
+fi
+
+cat >> "$TGT" <<EOF
 
 # ---------- 输出决策（stdout 唯一一行） ----------
 [ -s "\$WORK/decision.json" ] && { cat "\$WORK/decision.json"; echo; }
 exit 0
 EOF
+
 
 put "$TGT_ENV" <<EOF
 {
@@ -298,6 +341,14 @@ fi
 printf '\n[new-source] 已生成：\n'
 for f in "$COLL" "$COLL_ENV" "$COLL_SCHEMA"; do printf '  %s\n' "$f"; done
 [ "$WANT_TARGET" = "1" ] && for f in "$TGT" "$TGT_ENV"; do printf '  %s\n' "$f"; done
+
+if [ "$WANT_TARGET" = "1" ]; then
+  if [ "$WANT_SEMANTIC" = "1" ]; then
+    printf '\n[new-source] 语义影子层: 已生成\n'
+  else
+    printf '\n[new-source] 语义影子层: 已跳过（--no-semantic）\n'
+  fi
+fi
 
 printf '\n[new-source] 语法检查：\n'
 bash -n "$COLL" && printf '  ✅ collectors/%s.sh\n' "$NAME"
