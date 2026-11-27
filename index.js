@@ -1630,7 +1630,9 @@ function install(rt, ctx, cfg) {
     const delivered = await wakeL2Once(prompt, target, 'followup')
     if (!delivered) throw new Error(`没投到 ${target}：会话没找到或插件没连上（详见日志 L2 wake）`)
     log(`sources: tune ${name} → ${target}（${prompt.length} 字符）`)
-    return { target, name }
+    // prefApplied 是给界面比对用的：旧宿主不认识 preference 会照旧回 ok:true，
+    // 于是「写了要求却没带上」在界面上看起来完全成功 —— 必须让新宿主自报这一点。
+    return { target, name, prefApplied: String(body?.preference ?? '').trim().length > 0 }
   }
 
   /** 试跑：跑一次采集命令，把 stdout 翻成「几行 / 几行合法 / 前几行」。不写任何文件。 */

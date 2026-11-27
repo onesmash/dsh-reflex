@@ -144,6 +144,7 @@ window.__ModuleLoader__.load({
 			tunePrefHint: "最多 500 字。留空就按现有口径调。Ctrl/⌘ + Enter 开始，Esc 取消。",
 			tuneStart: "开始调优",
 			tuneCancel: "取消",
+			tunePrefDropped: "已投给 {target}，但你写的要求没带上（宿主里的插件是旧版）：重启 DSH 之后重发才会带上。",
 			tuneTooLong: "要求太长了（上限 500 字），挑最要紧的两三句。",
 			tuneReload: "宿主里的插件还是旧版（不认识 tune）：重启 DSH 之后这个按钮才生效。",
 			srcNew: "新"
@@ -282,6 +283,7 @@ window.__ModuleLoader__.load({
 			tunePrefHint: "Up to 500 characters. Empty tunes against the current criteria. Ctrl/⌘ + Enter starts, Esc cancels.",
 			tuneStart: "Start tuning",
 			tuneCancel: "Cancel",
+			tunePrefDropped: "Handed to {target}, but without your requirement — the loaded plugin is older than this page. Restart DSH, then send again to include it.",
 			tuneTooLong: "That requirement is too long (500 characters max). Keep the two or three points that matter.",
 			tuneReload: "The loaded plugin is older than this page (it does not know tune). Restart DSH, then this button works.",
 			srcNew: "new"
@@ -652,6 +654,7 @@ tunePrefPlaceholder: "e.g. wake me less often, but never miss an incident; calib
 tunePrefHint: "Up to 500 characters. Empty tunes against the current criteria. Ctrl/⌘ + Enter starts, Esc cancels.",
 tuneStart: "Start tuning",
 tuneCancel: "Cancel",
+tunePrefDropped: "Handed to {target}, but without your requirement — the loaded plugin is older than this page. Restart DSH, then send again to include it.",
 tuneTooLong: "That requirement is too long (500 characters max). Keep the two or three points that matter.",
 tuneReload: "The loaded plugin is older than this page (it does not know tune). Restart DSH, then this button works.",
 srcNew: "new"
@@ -998,7 +1001,11 @@ srcNew: "new"
 						return;
 					}
 					closeTune();
-					setTuneMsg({ phase: "ok", name: dlg.name, error: "", target: actual || to });
+					// 写了要求却没被带上：旧宿主不认识 preference，照旧回 ok。不能报「已交给」了事。
+					const dropped = String(dlg.pref || "").trim() && !(r && r.prefApplied === true);
+					setTuneMsg(dropped
+						? { phase: "error", name: dlg.name, error: tr("tunePrefDropped").split("{target}").join(actual || to), target: actual || to }
+						: { phase: "ok", name: dlg.name, error: "", target: actual || to });
 				} catch (e) {
 					const why = e && e.message ? e.message : String(e);
 					// 宿主还是旧版插件时会回 "unknown op: tune"：这句话对人没用，换成该做的事

@@ -38,6 +38,7 @@ const CASES = [
   'P34 点「调优」先弹窗：偏好随请求走、长度两边都挡、失败不清空输入也不关窗',
   'P35 弹窗无障碍与键盘：dialog/labelledby/describedby、输入框有标签与上限、操作条不在滚动区',
   'P36 键盘行为：Esc 取消、Ctrl+Enter 开始、Tab 焦点留在弹窗内、投递中不响应',
+  'P37 旧宿主不认 preference 时不许报「已交给」：拿回执里的 prefApplied 比对',
 ]
 
 let code
@@ -551,6 +552,16 @@ const runAsync = async () => {
     assert(cancelled === before[0] && started === before[1], '投递中还能取消或重复开始')
     results.push([CASES[17], true, ''])
   } catch (e) { results.push([CASES[17], false, e.message]) }
+
+  try {
+    // 旧宿主不认识 preference：照旧回 ok:true。客户端必须比对回执里的 prefApplied，
+    // 否则「写了要求却没带上」会显示成完全成功。
+    assert(/r\.prefApplied === true/.test(code), '客户端没有比对回执里的 prefApplied')
+    assert(/tunePrefDropped/.test(code), '缺「要求没带上」的文案')
+    const zhDropped = String(mod.zh.tunePrefDropped || '')
+    assert(/\{target\}/.test(zhDropped) && zhDropped.length > 10, '文案缺占位符或过短')
+    results.push([CASES[18], true, ''])
+  } catch (e) { results.push([CASES[18], false, e.message]) }
 }
 
 await runAsync()

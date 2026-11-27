@@ -93,6 +93,7 @@ const textOf = (msg) => (msg?.content ?? []).map((p) => p?.text ?? '').join('\n'
 // ---- ① 有 L1 的源：拼提示词、投给 Chief ----
 const sent = await call({ op: 'tune', name: 'demo' })
 ok('P30 有 L1 的源返回 ok 并指明投给了谁', sent.body.ok === true && sent.body.target === 'Chief', JSON.stringify(sent.body))
+ok('P30 没写偏好时回执 prefApplied=false（界面据此判断有没有被丢掉）', sent.body.prefApplied === false, JSON.stringify(sent.body))
 ok('P30 真的投出去一条', captured.length === 1, `captured=${captured.length}`)
 const text = textOf(captured[0] ?? { content: [] })
 ok('P30 提示词带 [调优请求]', text.startsWith('[调优请求]'), text.slice(0, 40))
@@ -106,6 +107,7 @@ const prefText = '宁可少叫我几次，也别漏掉事故'
 const withPref = await call({ op: 'tune', name: 'demo', preference: prefText })
 const prefMsg = textOf(captured[captured.length - 1] ?? { content: [] })
 ok('P30b 偏好原样进提示词', withPref.body.ok === true && prefMsg.includes(prefText), prefMsg.slice(0, 80))
+ok('P30b 回执自报这次带上了偏好', withPref.body.prefApplied === true, JSON.stringify(withPref.body))
 ok('P30b 偏好排在规矩之前（先看到要什么，再读门槛）',
   prefMsg.indexOf(prefText) > 0 && prefMsg.indexOf(prefText) < prefMsg.indexOf('先读现场'))
 
