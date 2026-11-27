@@ -1515,9 +1515,15 @@ function install(rt, ctx, cfg) {
     rebuildActiveTargets()
     warnRedundantConfig()
     lastDiscSig = discoverySig()
+    // manifest 是 L0 的【发现层】, 必须跟着【内容】刷新, 不能只跟【源名集合】刷新。
+    // 只比名字会漏掉两类真实变化: ① <name>.sh 先落盘、<name>.schema.json 后补 —— 名字集合没变,
+    // manifest 里该源 schema 就永久停在 null; ② 改 targets/<name>.env.json 的 minIntervalMs。
+    // 两种情况下运行时内存读到的都是新值, 功能正常、界面看不出来, 属于最难发现的那种坏
+    // (2026-11-27 建 baba-move 源时实际踩到)。这里已经过了 sig 门控(仅签名变化才走进来),
+    // 所以每次多写一个小 JSON 的成本可忽略。
+    writeManifest()
     const after = `${Object.keys(SCRIPT_SOURCES).join(',')}|${Object.keys(SCRIPT_TARGETS).join(',')}`
     if (before !== after) {
-      writeManifest()
       log(`discovery refreshed: sources=[${Object.keys(SCRIPT_SOURCES).join(',')}] script-targets=[${Object.keys(SCRIPT_TARGETS).join(',')}]`)
     }
   }
