@@ -135,6 +135,16 @@ window.__ModuleLoader__.load({
 			staleHost: "宿主里的插件是旧版（列表里没有 hasTarget）：重启 DSH 之后「调优」按钮才可点。",
 			tuneRunning: "投递中…",
 			tuneSent: "已把 {name} 的判定调优请求交给 {target}",
+			tuneDialogTitle: "调优这个源的判定",
+			tuneDialogWhat: "它会先读现场（影子样本、当前阈值、判据原文），再按样本量决定能不能动手。你写的要求会原样交给它。",
+			tuneDialogSource: "数据源",
+			tuneDialogWho: "交给",
+			tunePrefLabel: "你的要求（可选）",
+			tunePrefPlaceholder: "例：宁可少叫我几次，也别漏掉事故；阈值按最近两周的样本校准",
+			tunePrefHint: "最多 500 字。留空就按现有口径调。Ctrl/⌘ + Enter 开始，Esc 取消。",
+			tuneStart: "开始调优",
+			tuneCancel: "取消",
+			tuneTooLong: "要求太长了（上限 500 字），挑最要紧的两三句。",
 			tuneReload: "宿主里的插件还是旧版（不认识 tune）：重启 DSH 之后这个按钮才生效。",
 			srcNew: "新"
 		};
@@ -263,6 +273,16 @@ window.__ModuleLoader__.load({
 			staleHost: "The loaded plugin is older than this page (the list has no hasTarget). Restart DSH to enable the Tune buttons.",
 			tuneRunning: "Sending…",
 			tuneSent: "Judgement tuning request for {name} handed to {target}",
+			tuneDialogTitle: "Tune this source's judgement",
+			tuneDialogWhat: "It reads the current state first — shadow samples, the live threshold, the criteria text — then decides from the sample count whether it may touch anything. Your note goes through verbatim.",
+			tuneDialogSource: "Source",
+			tuneDialogWho: "Goes to",
+			tunePrefLabel: "Your requirement (optional)",
+			tunePrefPlaceholder: "e.g. wake me less often, but never miss an incident; calibrate on the last two weeks",
+			tunePrefHint: "Up to 500 characters. Empty tunes against the current criteria. Ctrl/⌘ + Enter starts, Esc cancels.",
+			tuneStart: "Start tuning",
+			tuneCancel: "Cancel",
+			tuneTooLong: "That requirement is too long (500 characters max). Keep the two or three points that matter.",
 			tuneReload: "The loaded plugin is older than this page (it does not know tune). Restart DSH, then this button works.",
 			srcNew: "new"
 		};
@@ -623,6 +643,16 @@ tuneNoTarget: "This source only collects and never judges; nothing to tune",
 staleHost: "The loaded plugin is older than this page (the list has no hasTarget). Restart DSH to enable the Tune buttons.",
 tuneRunning: "Sending…",
 tuneSent: "Judgement tuning request for {name} handed to {target}",
+tuneDialogTitle: "Tune this source's judgement",
+tuneDialogWhat: "It reads the current state first — shadow samples, the live threshold, the criteria text — then decides from the sample count whether it may touch anything. Your note goes through verbatim.",
+tuneDialogSource: "Source",
+tuneDialogWho: "Goes to",
+tunePrefLabel: "Your requirement (optional)",
+tunePrefPlaceholder: "e.g. wake me less often, but never miss an incident; calibrate on the last two weeks",
+tunePrefHint: "Up to 500 characters. Empty tunes against the current criteria. Ctrl/⌘ + Enter starts, Esc cancels.",
+tuneStart: "Start tuning",
+tuneCancel: "Cancel",
+tuneTooLong: "That requirement is too long (500 characters max). Keep the two or three points that matter.",
 tuneReload: "The loaded plugin is older than this page (it does not know tune). Restart DSH, then this button works.",
 srcNew: "new"
 		};
@@ -632,7 +662,7 @@ srcNew: "new"
 			return !value || value === key ? (SRC_FALLBACK[key] || key) : value;
 		}
 		/** 页面样式。作为 <style> 元素渲染在组件里，卸载即移除，不写 document.head。 */
-		const SRC_CSS = `.rfx-page{--rfx-line:var(--dsw-alias-border-l1,#ececec);--rfx-line2:var(--dsw-alias-border-l2,#dedede);--rfx-ink2:var(--dsw-alias-label-secondary,#6b7280);--rfx-ink3:var(--dsw-alias-label-tertiary,#9ca3af);--rfx-brand:var(--dsw-alias-brand-primary,#4d6bfe);--rfx-on-brand:var(--dsw-alias-label-primary-inverted,#fff);--rfx-err:color-mix(in srgb,#e5484d 62%,var(--dsw-alias-label-primary,#111));--rfx-panel:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.06));--rfx-card:var(--dsw-alias-bg-layer-1,transparent);display:flex;flex-direction:column;flex:1;min-height:0;height:100%;box-sizing:border-box;padding:0 clamp(20px,3.2vw,40px);color:var(--dsw-alias-label-primary,#111);container-type:inline-size}
+		const SRC_CSS = `.rfx-page{position:relative;--rfx-line:var(--dsw-alias-border-l1,#ececec);--rfx-line2:var(--dsw-alias-border-l2,#dedede);--rfx-ink2:var(--dsw-alias-label-secondary,#6b7280);--rfx-ink3:var(--dsw-alias-label-tertiary,#9ca3af);--rfx-brand:var(--dsw-alias-brand-primary,#4d6bfe);--rfx-on-brand:var(--dsw-alias-label-primary-inverted,#fff);--rfx-err:color-mix(in srgb,#e5484d 62%,var(--dsw-alias-label-primary,#111));--rfx-panel:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.06));--rfx-card:var(--dsw-alias-bg-layer-1,transparent);display:flex;flex-direction:column;flex:1;min-height:0;height:100%;box-sizing:border-box;padding:0 clamp(20px,3.2vw,40px);color:var(--dsw-alias-label-primary,#111);container-type:inline-size}
 .rfx-inner{display:flex;flex-direction:column;flex:1;min-height:0;width:100%;max-width:1080px;margin:0 auto}
 .rfx-head{flex:none;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:calc(var(--dsh-frame-top-clearance,44px) + 4px) 0 14px;border-bottom:1px solid var(--rfx-line)}
 .rfx-title{margin:0;font-size:18px;font-weight:600;line-height:1.3;text-wrap:balance}
@@ -676,6 +706,27 @@ srcNew: "new"
 @container (max-width:560px){.rfx-sources .rfx-th,.rfx-sources .rfx-td{padding-left:6px;padding-right:6px}.rfx-sources thead th:nth-child(3),.rfx-sources thead th:nth-child(4),.rfx-sources tbody td:nth-child(3),.rfx-sources tbody td:nth-child(4){display:none}.rfx-sources .rfx-btn{padding:0 8px;font-size:12px}.rfx-sources .rfx-name{word-break:break-all}.rfx-sources .rfx-th:last-child,.rfx-sources .rfx-td:last-child{white-space:nowrap}}
 @media (pointer:coarse){.rfx-btn{min-height:44px}.rfx-input{min-height:44px}}
 @media (prefers-reduced-motion:reduce){.rfx-page *{transition:none!important;animation:none!important}}
+/* 调优弹窗：遮罩 + 卡片。遮罩是 absolute 而不是 fixed —— 实测（Chrome 1440/390）
+   container-type: inline-size 并没有让 .rfx-page 成为 fixed 后代的包含块，fixed 会按视口铺满：
+   弹窗于是浮在整个宿主窗口中间，跟它所属的这一页脱节。absolute + .rfx-page{position:relative}
+   让它只盖这一页、在页内居中，侧栏与对话区仍然可见。
+   操作条（取消 / 开始调优）是 .rfx-dialogBody 的兄弟，不随正文滚动。 */
+.rfx-scrim{position:absolute;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(11,11,12,.52)}
+.rfx-dialog{display:flex;flex-direction:column;width:min(440px,100%);max-height:min(82vh,600px);background:var(--dsw-alias-bg-layer-1,#fff);color:inherit;border:1px solid var(--rfx-line2);border-radius:var(--dsw-radius-lg,14px);box-shadow:0 24px 64px -24px rgba(0,0,0,.55),0 2px 10px rgba(0,0,0,.12);overflow:hidden;animation:rfx-dlg-in 140ms cubic-bezier(.2,.8,.2,1)}
+@keyframes rfx-dlg-in{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
+.rfx-dialogHead{flex:none;padding:15px 16px 11px;border-bottom:1px solid var(--rfx-line)}
+.rfx-dialogTitle{margin:0;font-size:14px;font-weight:600;line-height:1.35;text-wrap:balance}
+.rfx-dialogMeta{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:7px 0 0;font-size:12px;color:var(--rfx-ink2)}
+.rfx-dialogKey{color:var(--rfx-ink3)}
+.rfx-dialogBody{flex:1;min-height:0;overflow:auto;padding:13px 16px 2px}
+.rfx-dialogWhat{margin:0 0 11px}
+.rfx-field{display:block}
+.rfx-fieldLabel{display:block;margin:0 0 6px;font-size:12px;font-weight:600;color:var(--rfx-ink2)}
+.rfx-textarea{min-height:92px;line-height:1.55;resize:vertical}
+.rfx-textarea:focus{outline:none;border-color:var(--rfx-brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--rfx-brand) 16%,transparent)}
+.rfx-dialogErr{margin:10px 0;padding:8px 10px;border-radius:var(--dsw-radius-sm,8px);border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.07);color:var(--rfx-err);font-size:12.5px;line-height:1.5}
+.rfx-dialogFoot{flex:none;display:flex;justify-content:flex-end;gap:8px;padding:11px 16px;border-top:1px solid var(--rfx-line);background:var(--rfx-panel)}
+@container (max-width:560px){.rfx-dialogFoot .rfx-btn{flex:1}}
 `;
 		/**
 		 * 一句话 → 请求体。纯函数：界面到底发了什么，测试可以直接调一次看到。
@@ -694,10 +745,12 @@ srcNew: "new"
 		 * 逐行「L1 调优」→ 请求体。只发一个源名：有没有这个源、有没有 L1 由宿主判
 		 * （只有宿主手里有 collectors/targets 两个目录）。
 		 */
-		function tuneBody(name, target) {
+		function tuneBody(name, target, preference) {
 			const body = { op: "tune", name: String(name || "").trim() };
 			const to = String(target || "").trim();
 			if (to) body.target = to;
+			const pref = String(preference || "").trim();
+			if (pref) body.preference = pref;   // 空偏好不传：与旧宿主、旧行为逐字一致
 			return body;
 		}
 		/**
@@ -712,6 +765,14 @@ srcNew: "new"
 		}
 		/** 本地只挡「还没写」和「长得离谱」；其余交给宿主，错了它给准话。上限与宿主同一个数。 */
 		const SENTENCE_MAX = 500;
+		/** 调优偏好的上限：sources.mjs 的 TUNE_PREFERENCE_MAX 是同一个数，两边都挡。 */
+		const PREFERENCE_MAX = 500;
+		/** @returns {string} 文案 key；空串 = 可以发 */
+		function preferenceBlocker(preference) {
+			const pref = String(preference || "").trim();
+			if (pref.length > PREFERENCE_MAX) return "tuneTooLong";
+			return "";
+		}
 		/** @returns {string} 对应的文案 key；空串 = 可以发 */
 		function sentenceBlocker(sentence) {
 			const s = String(sentence || "").trim();
@@ -719,6 +780,113 @@ srcNew: "new"
 			if (s.length > SENTENCE_MAX) return "addAskTooLong";
 			return "";
 		}
+		/** 上一次点开弹窗的那个「调优」按钮：关闭时把焦点还回去，键盘用户不会掉到页首。 */
+		let lastTuneTrigger = null;
+
+		/**
+		 * 调优弹窗：纯展示，不持状态。
+		 *
+		 * 为什么拆成纯组件：静态渲染（tests/render-sources-page.mjs）与面板断言
+		 * （tests/check-sources-panel.mjs）都要能在不点按钮的情况下把它画出来/读到，
+		 * 状态留在 SourcesPage 里，这里只负责按 props 出标记。
+		 *
+		 * 键盘：Esc 取消、Ctrl/⌘+Enter 开始、Tab 在弹窗内循环（焦点不逃到背后的表）。
+		 * 请求进行中禁用取消与开始，避免用户以为取消掉了、其实已经投出去。
+		 */
+		function TuneDialog(props) {
+			const p = props || {};
+			const tr = typeof p.tr === "function" ? p.tr : (k) => k;
+			const phase = p.phase || "idle";
+			const sending = phase === "sending";
+			const onKeyDown = (event) => {
+				const key = event && event.key;
+				if (key === "Escape") {
+					if (sending) return;
+					event.preventDefault();
+					if (typeof p.onCancel === "function") p.onCancel();
+					return;
+				}
+				if (key === "Enter" && (event.metaKey || event.ctrlKey)) {
+					event.preventDefault();
+					if (!sending && typeof p.onStart === "function") p.onStart();
+					return;
+				}
+				if (key !== "Tab") return;
+				const root = event.currentTarget;
+				if (!root || typeof root.querySelectorAll !== "function") return;
+				const items = Array.prototype.slice
+					.call(root.querySelectorAll("textarea,button,select,input,a[href]"))
+					.filter((el) => !el.disabled);
+				if (!items.length) return;
+				const first = items[0];
+				const last = items[items.length - 1];
+				const active = typeof document !== "undefined" ? document.activeElement : null;
+				if (event.shiftKey && active === first) { event.preventDefault(); last.focus(); }
+				else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus(); }
+			};
+			const onScrim = (event) => {
+				if (sending) return;
+				if (event && event.target === event.currentTarget && typeof p.onCancel === "function") p.onCancel();
+			};
+			return react_jsx_runtime.jsx("div", {
+				className: "rfx-scrim",
+				onMouseDown: onScrim,
+				children: react_jsx_runtime.jsxs("div", {
+					className: "rfx-dialog",
+					role: "dialog",
+					"aria-modal": "true",
+					"aria-labelledby": "rfx-tune-title",
+					"aria-describedby": "rfx-tune-what rfx-tune-hint",
+					onKeyDown: onKeyDown,
+					children: [
+						react_jsx_runtime.jsxs("header", { className: "rfx-dialogHead", children: [
+							react_jsx_runtime.jsx("h2", { className: "rfx-dialogTitle", id: "rfx-tune-title", children: tr("tuneDialogTitle") }),
+							react_jsx_runtime.jsxs("p", { className: "rfx-dialogMeta", children: [
+								react_jsx_runtime.jsx("span", { className: "rfx-dialogKey", children: tr("tuneDialogSource") }),
+								react_jsx_runtime.jsx("code", { className: "rfx-name", children: p.name || "" }),
+								react_jsx_runtime.jsx("span", { className: "rfx-dialogKey", children: tr("tuneDialogWho") }),
+								react_jsx_runtime.jsx("span", { className: "rfx-dialogWho", children: p.target || "Chief" })
+							] })
+						] }),
+						react_jsx_runtime.jsxs("div", { className: "rfx-dialogBody", children: [
+							react_jsx_runtime.jsx("p", { className: "rfx-hint rfx-dialogWhat", id: "rfx-tune-what", children: tr("tuneDialogWhat") }),
+							react_jsx_runtime.jsxs("label", { className: "rfx-field", htmlFor: "rfx-tune-pref", children: [
+								react_jsx_runtime.jsx("span", { className: "rfx-fieldLabel", children: tr("tunePrefLabel") }),
+								react_jsx_runtime.jsx("textarea", {
+									id: "rfx-tune-pref",
+									className: "rfx-input rfx-textarea",
+									rows: 3,
+									maxLength: PREFERENCE_MAX,
+									placeholder: tr("tunePrefPlaceholder"),
+									"aria-describedby": "rfx-tune-hint",
+									autoFocus: true,
+									disabled: sending,
+									value: p.value || "",
+									onChange: p.onInput
+								})
+							] }),
+							react_jsx_runtime.jsx("p", { className: "rfx-hint", id: "rfx-tune-hint", children: tr("tunePrefHint") }),
+							p.error
+								? react_jsx_runtime.jsx("div", { className: "rfx-dialogErr", role: "alert", children: p.error })
+								: null
+						] }),
+						react_jsx_runtime.jsxs("footer", { className: "rfx-dialogFoot", children: [
+							react_jsx_runtime.jsx("button", {
+								type: "button", className: "rfx-btn", disabled: sending,
+								onClick: () => { if (typeof p.onCancel === "function") p.onCancel(); },
+								children: tr("tuneCancel")
+							}),
+							react_jsx_runtime.jsx("button", {
+								type: "button", className: "rfx-btn rfx-btnPrimary", disabled: sending,
+								onClick: () => { if (typeof p.onStart === "function") p.onStart(); },
+								children: sending ? tr("tuneRunning") : tr("tuneStart")
+							})
+						] })
+					]
+				})
+			});
+		}
+
 		function SourcesPage(props) {
 			const t = typeof props.t === "function" ? props.t : (k) => k;
 			const tr = (k) => srcText(t, k);
@@ -748,6 +916,9 @@ srcNew: "new"
 			// 不能只在页面顶部飘一句「投递失败」——用户不知道是哪一行。
 			const [tuning, setTuning] = react.useState("");
 			const [tuneMsg, setTuneMsg] = react.useState({ phase: "idle", name: "", error: "", target: "" });
+			// 调优弹窗：null = 关着。开着时持有这一次的偏好与投递状态，
+			// 投递失败不清空输入 —— 用户不用重打一遍。
+			const [dlg, setDlg] = react.useState(null);
 			const load = react.useCallback(async () => {
 				setView((prev) => ({ phase: prev.data ? "ready" : "loading", data: prev.data, error: "" }));
 				const t0 = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
@@ -794,23 +965,44 @@ srcNew: "new"
 				}
 			};
 
-			const tuneRow = async (row) => {
-				setTuning(row.name);
-				setTuneMsg({ phase: "running", name: row.name, error: "", target: "" });
+			// 点「调优」先弹窗，不直接投递：调优是要写要求的事，一个没有输入的单按钮
+			// 只能让用户猜「它到底按什么标准调」。表单在弹窗里，投递在「开始调优」上。
+			const openTune = (row, event) => {
+				if (event && event.currentTarget) lastTuneTrigger = event.currentTarget;
+				setDlg({ name: row.name, pref: "", phase: "idle", error: "" });
+			};
+			const closeTune = () => {
+				setDlg(null);
+				const el = lastTuneTrigger;
+				lastTuneTrigger = null;
+				if (el && typeof el.focus === "function") el.focus();
+			};
+			const onDlgInput = (event) => {
+				const value = event && event.target ? event.target.value : "";
+				setDlg((d) => (d ? { ...d, pref: value, error: "" } : d));
+			};
+			const startTune = async () => {
+				if (!dlg) return;
+				const blocked = preferenceBlocker(dlg.pref);
+				if (blocked) { setDlg((d) => (d ? { ...d, error: tr(blocked) } : d)); return; }
 				const to = pickTarget();
+				setDlg((d) => (d ? { ...d, phase: "sending", error: "" } : d));
+				setTuning(dlg.name);
 				try {
-					const r = await reflexCall("tune", tuneBody(row.name, to));
+					const r = await reflexCall("tune", tuneBody(dlg.name, to, dlg.pref));
 					const actual = r && r.target ? String(r.target) : "";
 					const wrong = targetMismatch(to, actual);
 					if (wrong) {
-						setTuneMsg({ phase: "error", name: row.name, error: tr("targetMismatch").split("{actual}").join(actual).split("{want}").join(to), target: actual });
+						// 投出去了，但投给了别人：留着输入，把「实际投给了谁」说清楚
+						setDlg((d) => (d ? { ...d, phase: "idle", error: tr("targetMismatch").split("{actual}").join(actual).split("{want}").join(to) } : d));
 						return;
 					}
-					setTuneMsg({ phase: "ok", name: row.name, error: "", target: actual || to });
+					closeTune();
+					setTuneMsg({ phase: "ok", name: dlg.name, error: "", target: actual || to });
 				} catch (e) {
 					const why = e && e.message ? e.message : String(e);
 					// 宿主还是旧版插件时会回 "unknown op: tune"：这句话对人没用，换成该做的事
-					setTuneMsg({ phase: "error", name: row.name, error: /unknown op/.test(why) ? tr("tuneReload") : why, target: "" });
+					setDlg((d) => (d ? { ...d, phase: "idle", error: /unknown op/.test(why) ? tr("tuneReload") : why } : d));
 				} finally { setTuning(""); }
 			};
 
@@ -849,7 +1041,7 @@ srcNew: "new"
 							type: "button", className: "rfx-btn rfx-tune",
 							disabled: !r.hasTarget || tuning === r.name,
 							title: hostTooOld ? tr("staleHost") : (r.hasTarget ? tr("tuneTitle") : tr("tuneNoTarget")),
-							onClick: () => void tuneRow(r),
+							onClick: (event) => openTune(r, event),
 							children: tuning === r.name ? tr("tuneRunning") : tr("tuneBtn")
 						}),
 						react_jsx_runtime.jsx("button", {
@@ -919,8 +1111,7 @@ srcNew: "new"
 							className: (tuneMsg.phase === "ok" ? "rfx-saveMsg rfx-tuneMsg rfx-saveMsg--ok" : "rfx-saveMsg rfx-tuneMsg"),
 							role: "status", "aria-live": "polite",
 							children: tuneMsg.phase === "error" ? tuneMsg.error
-								: tuneMsg.phase === "running" ? tuneMsg.name + " · " + tr("tuneRunning")
-									: tr("tuneSent").split("{name}").join(tuneMsg.name).split("{target}").join(tuneMsg.target || "Chief")
+								: tr("tuneSent").split("{name}").join(tuneMsg.name).split("{target}").join(tuneMsg.target || "Chief")
 						}),
 						react_jsx_runtime.jsx("div", { className: "rfx-bar", children: data ? summary + (apiMs > 150 ? " · " + apiMs + " ms" : "") : tr("srcLoading") }),
 						view.error ? react_jsx_runtime.jsxs("div", { className: "rfx-error", children: [
@@ -951,7 +1142,18 @@ srcNew: "new"
 							] }, b.name)) }) })
 						] }) : null
 					] })
-				] })
+				] }),
+				dlg ? react_jsx_runtime.jsx(TuneDialog, {
+					tr,
+					name: dlg.name,
+					target: chosenTarget,
+					value: dlg.pref,
+					phase: dlg.phase,
+					error: dlg.error,
+					onInput: onDlgInput,
+					onCancel: closeTune,
+					onStart: () => void startTune()
+				}) : null
 			] });
 		}
 		//#endregion
@@ -1022,9 +1224,11 @@ srcNew: "new"
 		exports.TriggerIcon = TriggerIcon;
 		exports.delegateBody = delegateBody;
 		exports.tuneBody = tuneBody;
+		exports.preferenceBlocker = preferenceBlocker;
 		exports.targetMismatch = targetMismatch;
 		exports.sentenceBlocker = sentenceBlocker;
 		exports.SRC_CSS = SRC_CSS;
+		exports.TuneDialog = TuneDialog;
 		exports.zh = zh;
 		exports.en = en;
 		exports.apply = apply;

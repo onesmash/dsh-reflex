@@ -149,6 +149,20 @@ ${mod.SRC_CSS}
 `
 
 const page = () => html(mod.SourcesPage({ t: (key) => tr(key) }))
+// 调优弹窗：状态在页面里，静态渲染把纯组件 TuneDialog 直接挂进 .rfx-page 的最后一个孩子，
+// 这样遮罩的定位包含块与真实运行时一致（.rfx-page 带 container-type: inline-size）。
+const dialogNode = (over = {}) => mod.TuneDialog({
+  tr, name: 'x-timeline', target: 'Chief',
+  value: '宁可少叫几次，也别漏掉事故；阈值按最近两周的样本校准',
+  phase: 'idle', error: '',
+  ...over,
+})
+const withDialog = (over = {}) => {
+  const tree = mod.SourcesPage({ t: (key) => tr(key) })
+  const kids = Array.isArray(tree.props.children) ? tree.props.children.slice() : []
+  kids.push(dialogNode(over))
+  return html({ ...tree, props: { ...tree.props, children: kids } })
+}
 const pages = {
   'idle.html': [1440, 'light'],
   'narrow.html': [760, 'light'],
@@ -158,6 +172,21 @@ const pages = {
 
 mkdirSync(OUT, { recursive: true })
 const body = page()
+const dialogPages = {
+  'tune.html': [1440, 'light', {}],
+  'tune-sending.html': [1120, 'light', { phase: 'sending' }],
+  'tune-error.html': [1120, 'dark', { error: '没投到 求职顾问：会话没找到或插件没连上（详见日志 L2 wake）' }],
+  'tune-mobile.html': [390, 'light', {}],
+}
+for (const [name, [pane, theme, over]] of Object.entries(dialogPages)) {
+  const out = join(OUT, name)
+  writeFileSync(out, shell(withDialog(over), pane, theme))
+  const text = readFileSync(out, 'utf8')
+  if (!text.includes('role="dialog"')) { console.error(`FAIL ${name}: 没有渲染出 dialog`); process.exit(1) }
+  if (/\{(name|lines|code|target|n|m)\}/.test(text)) { console.error(`FAIL ${name}: 界面里还留着占位符`); process.exit(1) }
+  console.log(`wrote ${out}`)
+}
+
 for (const [name, [pane, theme]] of Object.entries(pages)) {
   const out = join(OUT, name)
   writeFileSync(out, shell(body, pane, theme))

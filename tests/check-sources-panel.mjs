@@ -35,6 +35,9 @@ const CASES = [
   'P31 行的「调优」按钮跟着 hasTarget 走（文案是动作、够宽、只采集与内置源不给可点的按钮）',
   'P32 宿主是旧版（列表没有 hasTarget）时必须喊「重启 DSH」，不许只把按钮变灰一声不吭',
   'P33 投给谁可选：下拉默认当前目标、请求体带 target、响应目标不一致要能识别',
+  'P34 点「调优」先弹窗：偏好随请求走、长度两边都挡、失败不清空输入也不关窗',
+  'P35 弹窗无障碍与键盘：dialog/labelledby/describedby、输入框有标签与上限、操作条不在滚动区',
+  'P36 键盘行为：Esc 取消、Ctrl+Enter 开始、Tab 焦点留在弹窗内、投递中不响应',
 ]
 
 let code
@@ -462,6 +465,92 @@ const runAsync = async () => {
     assert(pickMod.targetMismatch('Chief', 'Chief') === '', '目标一致却报了不一致')
     results.push([CASES[14], true, ''])
   } catch (e) { results.push([CASES[14], false, e.message]) }
+
+  // ④ 调优弹窗（P34-P36）：先弹窗再投递
+  try {
+    const tr = (k) => mod.zh[k] ?? k
+    const tree = mod.TuneDialog({ tr, name: 'arxiv', target: '求职顾问', value: '宁可少叫', phase: 'idle', error: '' })
+    const nodes = nodesOf(tree)
+
+    // 行里的按钮必须走 openTune，旧的一键直投路径不许留
+    assert(/onClick: \(event\) => openTune\(r, event\)/.test(code), '行里的「调优」没有走 openTune（点一下就应该弹窗）')
+    assert(!/void tuneRow\(r\)/.test(code), '旧的一键直投路径还在（绕过了偏好输入）')
+
+    // 请求体：偏好原样带过去，空偏好不塞字段；长度闸与宿主同一个数
+    assert(mod.tuneBody('arxiv', 'Chief', '宁可少叫').preference === '宁可少叫', 'tuneBody 没带偏好')
+    assert(!('preference' in mod.tuneBody('arxiv', 'Chief', '   ')), '空偏好不该塞 preference 字段')
+    assert(mod.preferenceBlocker('字'.repeat(501)) === 'tuneTooLong', '超长偏好没被本地挡住')
+    assert(mod.preferenceBlocker('字'.repeat(500)) === '', '正好 500 字被误挡')
+
+    // 失败不清空输入、不关窗：catch 分支里不许出现 setDlg(null)
+    const startIdx = code.indexOf('const startTune = async () =>')
+    assert(startIdx > 0, '找不到 startTune')
+    const catchBlk = code.slice(startIdx + code.slice(startIdx).indexOf('} catch (e)'), startIdx + code.slice(startIdx).indexOf('} finally'))
+    assert(!/setDlg\(null\)/.test(catchBlk), '投递失败把弹窗关了或把输入清了')
+    results.push([CASES[15], true, ''])
+  } catch (e) { results.push([CASES[15], false, e.message]) }
+
+  try {
+    const tr = (k) => mod.zh[k] ?? k
+    const nodes = nodesOf(mod.TuneDialog({ tr, name: 'arxiv', target: 'Chief', value: '', phase: 'idle', error: 'boom' }))
+    const dialog = nodes.find((n) => n.type === 'div' && n.props.role === 'dialog')
+    assert(dialog, '没有渲染出 role=dialog')
+    assert(dialog.props['aria-modal'] === 'true', '缺 aria-modal')
+    const titleId = dialog.props['aria-labelledby']
+    assert(titleId && nodes.some((n) => n.props.id === titleId), `aria-labelledby 指不到标题：${titleId}`)
+    const descIds = String(dialog.props['aria-describedby'] || '').split(/\s+/).filter(Boolean)
+    assert(descIds.length >= 2 && descIds.every((id) => nodes.some((n) => n.props.id === id)), 'aria-describedby 指不到说明文本')
+
+    const ta = nodes.find((n) => n.type === 'textarea')
+    assert(ta, '没有偏好输入框')
+    assert(ta.props.id && ta.props['aria-describedby'], '输入框没有 id 或说明')
+    assert(ta.props.maxLength === 500, `输入框 maxLength=${ta.props.maxLength}`)
+    assert(ta.props.value === '', '偏好初值应为空')
+    assert(ta.props.autoFocus === true, '打开时没有把焦点放到输入框')
+
+    const body = nodes.find((n) => String(n.props.className || '').includes('rfx-dialogBody'))
+    const foot = nodes.find((n) => n.type === 'footer')
+    assert(body && foot, '缺正文区或操作条')
+    const bodyNodes = new Set(nodesOf(body))
+    assert(!bodyNodes.has(foot), '操作条被放进了滚动区（滚一下按钮就没了）')
+
+    const alert = nodes.find((n) => n.props.role === 'alert')
+    assert(alert && String(alert.props.className || '').includes('rfx-dialogErr'), '错误没有就地播报（role=alert）')
+    results.push([CASES[16], true, ''])
+  } catch (e) { results.push([CASES[16], false, e.message]) }
+
+  try {
+    const tr = (k) => mod.zh[k] ?? k
+    let cancelled = 0
+    let started = 0
+    const idle = mod.TuneDialog({ tr, name: 'arxiv', target: 'Chief', value: '', phase: 'idle', onCancel: () => { cancelled += 1 }, onStart: () => { started += 1 } })
+    const onKey = nodesOf(idle).find((n) => typeof n.props.onKeyDown === 'function').props.onKeyDown
+    const kd = (extra) => onKey({ preventDefault() {}, ...extra })
+    kd({ key: 'Escape' })
+    assert(cancelled === 1, 'Esc 没有取消')
+    kd({ key: 'Enter', ctrlKey: true })
+    assert(started === 1, 'Ctrl+Enter 没有开始')
+
+    // Tab 焦点陷阱：末尾 Tab 回到第一个控件，开头 Shift+Tab 回到最后一个
+    const first = { disabled: false, focus() { first.focused = true } }
+    const last = { disabled: false, focus() { last.focused = true } }
+    const root = { querySelectorAll: () => [first, last] }
+    sandbox.document.activeElement = last
+    kd({ key: 'Tab', currentTarget: root })
+    assert(first.focused === true, 'Tab 到末尾没有绕回开头（焦点会逃出弹窗）')
+    sandbox.document.activeElement = first
+    kd({ key: 'Tab', shiftKey: true, currentTarget: root })
+    assert(last.focused === true, 'Shift+Tab 到开头没有绕回末尾')
+
+    // 投递中：Esc / Ctrl+Enter 都不许再触发（否则用户以为取消掉了，其实已经投出去）
+    const before = [cancelled, started]
+    const sending = mod.TuneDialog({ tr, name: 'arxiv', target: 'Chief', value: '', phase: 'sending', onCancel: () => { cancelled += 1 }, onStart: () => { started += 1 } })
+    const onKeyS = nodesOf(sending).find((n) => typeof n.props.onKeyDown === 'function').props.onKeyDown
+    onKeyS({ key: 'Escape', preventDefault() {} })
+    onKeyS({ key: 'Enter', ctrlKey: true, preventDefault() {} })
+    assert(cancelled === before[0] && started === before[1], '投递中还能取消或重复开始')
+    results.push([CASES[17], true, ''])
+  } catch (e) { results.push([CASES[17], false, e.message]) }
 }
 
 await runAsync()
