@@ -101,6 +101,20 @@ ok('P30 先读阈值登记表', text.includes('shadow_targets.json'))
 ok('P30 带信号量分档与 A/B 规矩', /100/.test(text) && /30/.test(text) && /pc_inject/.test(text))
 ok('P30 消息 source.role=post', captured[0]?.source?.role === 'post', String(captured[0]?.source?.role))
 
+// ---- ①b 用户在弹窗里写的偏好：原样进提示词；超长在入口挡住 ----
+const prefText = '宁可少叫我几次，也别漏掉事故'
+const withPref = await call({ op: 'tune', name: 'demo', preference: prefText })
+const prefMsg = textOf(captured[captured.length - 1] ?? { content: [] })
+ok('P30b 偏好原样进提示词', withPref.body.ok === true && prefMsg.includes(prefText), prefMsg.slice(0, 80))
+ok('P30b 偏好排在规矩之前（先看到要什么，再读门槛）',
+  prefMsg.indexOf(prefText) > 0 && prefMsg.indexOf(prefText) < prefMsg.indexOf('先读现场'))
+
+const beforeLong = captured.length
+const tooLong = await call({ op: 'tune', name: 'demo', preference: '字'.repeat(501) })
+ok('P30b 超长偏好 → 400 且不投递',
+  tooLong.status === 400 && /最多/.test(tooLong.body.error ?? '') && captured.length === beforeLong,
+  JSON.stringify(tooLong.body))
+
 // ---- ② 没有 L1 的源：400，且不投递 ----
 const before = captured.length
 const noTarget = await call({ op: 'tune', name: 'onlycollect' })

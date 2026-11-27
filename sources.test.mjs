@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
-import { scanSources, setPaused, respondToOp, buildDelegatePrompt, buildTunePrompt, BUILTIN_SOURCES, SOURCE_ROUTE, SOURCE_ROUTE_CLIENT } from './sources.mjs'
+import { scanSources, setPaused, respondToOp, buildDelegatePrompt, buildTunePrompt, TUNE_PREFERENCE_MAX, BUILTIN_SOURCES, SOURCE_ROUTE, SOURCE_ROUTE_CLIENT } from './sources.mjs'
 
 const tempRoot = () => mkdtempSync(join(tmpdir(), 'reflex-sources-'))
 
@@ -186,6 +186,27 @@ test('P28 调优请求的名字不合法就拒绝（不做兜底猜测）', () =
   assert.throws(() => buildTunePrompt('   '), /数据源/)
   assert.throws(() => buildTunePrompt('X-Timeline'), /名字/)
   assert.throws(() => buildTunePrompt('../etc'), /名字/)
+})
+
+test('P29b 用户偏好原样进提示词，且出现在规矩之前', () => {
+  const pref = '宁可少叫我几次，也别漏掉事故'
+  const p = buildTunePrompt('x-timeline', pref)
+
+  assert.ok(p.includes(pref), '偏好没进提示词')
+  assert.ok(p.indexOf(pref) < p.indexOf('先读现场'), '偏好排在规矩之后——bot 会先按旧口径动手')
+  assert.ok(/原话/.test(p.slice(0, p.indexOf(pref))), '没说明这段是用户原话')
+  assert.ok(p.indexOf(pref) < p.indexOf('不许改任何文件'), '偏好被写在了硬规矩后面，读起来像补充说明')
+
+  // 空 / 纯空白偏好：与旧行为逐字一致（老调用方不受影响）
+  const base = buildTunePrompt('x-timeline')
+  assert.equal(buildTunePrompt('x-timeline', ''), base, '空串偏好改变了提示词')
+  assert.equal(buildTunePrompt('x-timeline', '   '), base, '空白偏好改变了提示词')
+  assert.equal(buildTunePrompt('x-timeline', null), base, 'null 偏好改变了提示词')
+
+  // 长度闸：超一个就拒绝，正好等于上限放行
+  assert.throws(() => buildTunePrompt('x-timeline', '字'.repeat(TUNE_PREFERENCE_MAX + 1)), /最多/)
+  assert.ok(buildTunePrompt('x-timeline', '字'.repeat(TUNE_PREFERENCE_MAX)).includes('字'.repeat(TUNE_PREFERENCE_MAX)))
+  assert.equal(TUNE_PREFERENCE_MAX, 500, '上限与客户端 PREFERENCE_MAX 必须同一个数（两处都写 500）')
 })
 
 test('P29 tune 只负责接线：交给注入的投递函数，没接线就明确失败', async () => {

@@ -1617,7 +1617,8 @@ function install(rt, ctx, cfg) {
    */
   async function tuneSourceRequest(body) {
     const name = String(body?.name ?? '').trim()
-    const prompt = buildTunePrompt(name)          // 先过名字校验（纯函数，报错直接给人话）
+    // 先过名字与偏好校验（纯函数，报错直接给人话）；偏好是用户在弹窗里写的原话，原样进提示词
+    const prompt = buildTunePrompt(name, body?.preference)
     if (builtinNames().includes(name)) {
       throw new Error(`内置源由 profile 控制，不支持一键调优：${name}`)
     }

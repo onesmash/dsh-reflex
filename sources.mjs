@@ -216,12 +216,30 @@ export function buildDelegatePrompt(sentence) {
  * 为什么不把门槛留给现场判断：0 标签拟合阈值就是拟合噪声。样本量分档、A/B、重拟合、
  * 语义不许自动转正这几条必须写在提示词里，否则每次调优的可靠性都取决于当天谁在处理。
  */
-export function buildTunePrompt(name) {
+export const TUNE_PREFERENCE_MAX = 500
+
+/**
+ * 「调优请求」提示词。
+ *
+ * @param {string} name 数据源名
+ * @param {string} [preference] 用户这次的要求（原话）。空 = 与旧行为逐字一致，
+ *   所以这里只在非空时插一段，不改已有措辞 —— 旧调用方与旧测试都不受影响。
+ *   偏好写在最前面：bot 先看到「这次要什么」，再读规矩。
+ */
+export function buildTunePrompt(name, preference) {
   const target = String(name ?? '').trim()
   if (!target) throw new Error('先给一个数据源名字')
   if (!NAME.test(target)) throw new Error(`名字不合法：${JSON.stringify(target)}`)
-  return `[调优请求] 目标数据源：${target}
 
+  const pref = String(preference ?? '').trim()
+  if (pref.length > TUNE_PREFERENCE_MAX) {
+    throw new Error(`偏好最多 ${TUNE_PREFERENCE_MAX} 个字（现在 ${pref.length} 个）`)
+  }
+  const prefBlock = pref
+    ? `\n用户这次的偏好（原话，按它取舍；它不覆盖下面的硬规矩）：\n${pref}\n`
+    : ''
+  return `[调优请求] 目标数据源：${target}
+${prefBlock}
 先读现场，再决定改不改。不许凭印象调参数。
 
 ## 一、先把基线读出来（这一步不做完，后面一律不许动文件）
