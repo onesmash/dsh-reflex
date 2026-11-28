@@ -47,6 +47,11 @@ window.__ModuleLoader__.load({
 			srcColLast: "最近成功",
 			srcColState: "状态",
 			srcColAction: "操作",
+			srcColDest: "投递",
+			destDefault: "默认（跟随宿主）",
+			destTitle: "这个源的告警投到哪里。改完立即生效，不用重启 DSH。",
+			destStale: "宿主是旧版：重启 DSH 之后才能改投递目标。",
+			destNoTarget: "只采集、不判定，没有可设的投递目标",
 			srcPause: "暂停采集",
 			srcResume: "恢复采集",
 			srcWorking: "处理中…",
@@ -186,6 +191,11 @@ window.__ModuleLoader__.load({
 			srcColLast: "Last success",
 			srcColState: "State",
 			srcColAction: "Action",
+			srcColDest: "Deliver to",
+			destDefault: "Default (follow host)",
+			destTitle: "Where this source's alerts go. Takes effect immediately; no DSH restart needed.",
+			destStale: "Host is older: restart DSH before changing the delivery target.",
+			destNoTarget: "Collect only, no decision step: no delivery target to set",
 			srcPause: "Pause",
 			srcResume: "Resume",
 			srcWorking: "Working…",
@@ -566,6 +576,10 @@ window.__ModuleLoader__.load({
 			srcRefresh: "Refresh", srcLoading: "Loading…", srcSummary: "{n} collecting · {m} paused",
 			srcColName: "Name", srcColEvery: "Every", srcColToday: "Today", srcColLast: "Last success",
 			srcColState: "State", srcColAction: "Action",
+			srcColDest: "Deliver to", destDefault: "Default (follow host)",
+			destTitle: "Where this source's alerts go. Takes effect immediately; no DSH restart needed.",
+			destStale: "Host is older: restart DSH before changing the delivery target.",
+			destNoTarget: "Collect only, no decision step: no delivery target to set",
 			srcPause: "Pause", srcResume: "Resume", srcWorking: "Working…",
 			srcStateOn: "Collecting", srcStateIdle: "No data", srcStatePaused: "Paused", srcStateFailed: "Failed",
 			srcBuiltinTitle: "Built-in sources",
@@ -943,6 +957,19 @@ srcNew: "new"
 					setView((prev) => ({ ...prev, error: e && e.message ? e.message : String(e) }));
 				} finally { setBusy(""); }
 			};
+			// 改投递目标：只发一个 op，落盘与校验都由宿主做。
+			// "" = 跟随宿主默认；"group:<名>" / "bot:<名>" 与宿主 resolveWakeTarget 的形状对齐。
+			const setDest = async (row, value) => {
+				const wakeTo = !value ? null : (value.indexOf("group:") === 0
+					? { kind: "group", name: value.slice(6) }
+					: { kind: "bot", name: value.slice(4) });
+				setBusy(row.name);
+				try {
+					setView({ phase: "ready", data: rememberList(await reflexCall("setWakeTo", { name: row.name, wakeTo })), error: "" });
+				} catch (e) {
+					setView((prev) => ({ ...prev, error: e && e.message ? e.message : String(e) }));
+				} finally { setBusy(""); }
+			};
 			const onAsk = (event) => setAsk(event && event.target ? event.target.value : "");
 			const onTarget = (event) => setTarget(event && event.target ? event.target.value : "");
 			const sendAsk = async () => {
@@ -1043,6 +1070,23 @@ srcNew: "new"
 						react_jsx_runtime.jsx("span", { className: "rfx-dot", style: { background: st.color } }, "d"),
 						st.text
 					] }) }, "s"),
+					react_jsx_runtime.jsx("td", { className: "rfx-td", children: (() => {
+						if (!r.hasTarget) return react_jsx_runtime.jsx("span", { className: "rfx-muted", children: tr("destNoTarget") });
+						const d = view.data && view.data.destinations;
+						if (!d) return react_jsx_runtime.jsx("span", { className: "rfx-muted", children: tr("destStale") });
+						const cur = r.wakeTo ? (r.wakeTo.kind === "group" ? "group:" + r.wakeTo.name : "bot:" + r.wakeTo.name) : "";
+						const opts = [["", d.default ? tr("destDefault") + "（" + d.default + "）" : tr("destDefault")]]
+							.concat((d.groups || []).map((n) => ["group:" + n, "群：" + n]))
+							.concat((d.bots || []).map((n) => ["bot:" + n, "Bot：" + n]));
+						return react_jsx_runtime.jsx("select", {
+							className: "rfx-btn rfx-dest",
+							value: cur,
+							disabled: busy === r.name,
+							title: tr("destTitle"),
+							onChange: (event) => void setDest(r, event && event.target ? event.target.value : ""),
+							children: opts.map(([v, label]) => react_jsx_runtime.jsx("option", { value: v, children: label }, v))
+						});
+					})() }, "d"),
 					react_jsx_runtime.jsx("td", { className: "rfx-td", children: react_jsx_runtime.jsxs("span", { className: "rfx-rowBtns", children: [
 						react_jsx_runtime.jsx("button", {
 							type: "button", className: "rfx-btn rfx-tune",
@@ -1135,6 +1179,7 @@ srcNew: "new"
 								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColToday") }),
 								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColLast") }),
 								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColState") }),
+								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColDest") }),
 								react_jsx_runtime.jsx("th", { className: "rfx-th", children: tr("srcColAction") })
 							] }) }),
 							react_jsx_runtime.jsx("tbody", { children: rows.map(rowNode) })

@@ -51,15 +51,70 @@ export function scanSources(dir, options = {}) {
     if (existsSync(schemaFile)) {
       try { metric = JSON.parse(readFileSync(schemaFile, 'utf8'))?.metric ?? null } catch {}
     }
+    // 投递目标住在 targets/<name>.env.json：界面要显示、也要能改，所以在同一处读出来。
+    // 坏 env.json 不影响列表——退回「默认」，与「没配」同义。
+    let wakeTo = null
+    if (targetsDir) {
+      const tEnv = join(targetsDir, `${name}.env.json`)
+      if (existsSync(tEnv)) {
+        try { wakeTo = normalizeWakeTo(JSON.parse(readFileSync(tEnv, 'utf8'))?.wakeTo) } catch { wakeTo = null }
+      }
+    }
     return {
       name,
       paused: existsSync(join(dir, `${name}.paused`)),
       intervalMs,
       hasEnv,
       metric,
+      wakeTo,
       hasTarget: Boolean(targetsDir) && existsSync(join(targetsDir, `${name}.sh`)),
     }
   })
+}
+
+// ---------- 投递目标（wakeTo）：界面可改，所以先做成纯函数 ----------
+// 三种合法形态（与 index.js 的 resolveWakeTarget 对齐，别另发明一套）：
+//   null                       → 跟随宿主默认目标（cfg.l1.targetBot）
+//   {kind:"group", name:"群名"} → 投进该群
+//   {kind:"bot",  name:"Bot名"} / 直接写 "Bot名" → 投进某 Bot 私聊
+// 为什么在这一层：界面要把用户选的东西写进 targets/<name>.env.json，
+// 而那是共享状态。边界处解析一次、归一化成一个形状，写盘就只剩字符串拼接。
+export function normalizeWakeTo(input) {
+  if (input === null || input === undefined) return null
+  if (typeof input === 'string') {
+    const name = input.trim()
+    if (!name) return null
+    return { kind: 'bot', name }
+  }
+  if (input && typeof input === 'object') {
+    const kind = input.kind
+    const name = typeof input.name === 'string' ? input.name.trim() : ''
+    if ((kind === 'group' || kind === 'bot') && name) return { kind, name }
+    throw new Error(`投递目标不合法：kind 必须是 group 或 bot，且 name 不能为空（收到 ${JSON.stringify(input)}）`)
+  }
+  throw new Error(`投递目标不合法：只能是 null、"Bot名" 或 {kind,name}（收到 ${JSON.stringify(input)}）`)
+}
+
+/**
+ * 把 wakeTo 写进一段 targets env.json 文本，返回新文本。
+ * 只动 wakeTo 这一个键：其它键（displayName / interruptAlways / sources / env …）原样保留。
+ * 原文本不是合法 JSON 时抛错而【不】顺手覆盖 —— 那会把别人的配置吃掉。
+ */
+export function applyWakeToToEnvText(text, wakeToInput) {
+  let obj
+  try { obj = JSON.parse(String(text ?? '')) } catch (e) { throw new Error(`targets env.json 解析失败，拒绝改写：${e.message}`) }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('targets env.json 顶层必须是对象，拒绝改写')
+  const wakeTo = normalizeWakeTo(wakeToInput)
+  if (wakeTo === null) delete obj.wakeTo
+  else obj.wakeTo = wakeTo
+  return JSON.stringify(obj, null, 2) + '\n'
+}
+
+/** 界面上显示当前投递目标。三种状态必须能一眼分开：默认 / 群 / Bot。 */
+export function wakeToDisplay(wakeToInput) {
+  const wakeTo = normalizeWakeTo(wakeToInput)
+  if (!wakeTo) return '默认（跟随宿主）'
+  return wakeTo.kind === 'group' ? `群：${wakeTo.name}` : `Bot：${wakeTo.name}`
 }
 
 /**
@@ -122,6 +177,13 @@ export function respondToOp(op, body, io) {
       return Promise.reject(new Error('一句话建源未接线：宿主没有提供 delegate'))
     }
     return Promise.resolve(io.delegate(body)).then((result) => ({ ok: true, ...(result ?? {}) }))
+  }
+  // 重新设置投递目标：只接线。合法性（有没有这个 target/群/Bot）由宿主判，
+  // 因为只有宿主手里有 targetsDir 与 ds-bot 的 state.json。
+  if (op === 'setWakeTo') {
+    if (typeof io?.setWakeTo !== 'function') throw new Error('设置投递目标未接线：宿主没有提供 setWakeTo')
+    const result = io.setWakeTo(body) ?? {}
+    return { ok: true, ...result, ...list() }
   }
   // 逐行 L1 调优：同样只接线。合法性（有没有这个源、有没有 target）由宿主判，
   // 因为只有宿主手里有 collectors/targets 两个目录。

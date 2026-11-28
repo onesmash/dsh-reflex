@@ -30,6 +30,9 @@ import {
   buildDelegatePrompt,
   buildTunePrompt,
   SOURCE_ROUTE,
+  normalizeWakeTo,
+  applyWakeToToEnvText,
+  wakeToDisplay,
 } from './sources.mjs'
 import { promisify, format } from 'node:util'
 import { randomUUID, createHash } from 'node:crypto'
@@ -1548,10 +1551,64 @@ function install(rt, ctx, cfg) {
     } catch { return { factsToday: 0, lastFactAt: null } }
   }
   const builtinNames = () => Object.keys(BUILTIN_SOURCES)
+  /** 名字合法 + 确有 targets/<name>.sh。调优与改投递目标共用，避免两处各写一遍后走样。 */
+  function requireScriptTarget(name, message) {
+    if (!existsSync(join(targetsDir, `${name}.sh`))) {
+      throw new Error(message ?? `没有这个 target：targets/${name}.sh 不存在`)
+    }
+  }
+
   function sourceRows() {
     // 带上 targetsDir：界面要靠 hasTarget 决定哪一行给「L1 调优」按钮、哪一行置灰。
     return scanSources(collectorsDir, { targetsDir }).map((row) => ({ ...row, ...factsStat(row.name) }))
   }
+  /** 界面「投递目标」下拉的可选项：群（来自 rooms）+ Bot（来自 state.bots）+ 默认。 */
+  function wakeDestinations() {
+    const groups = []
+    try {
+      const state = JSON.parse(readFileSync(cfg.statePath, 'utf8'))
+      const seen = new Set()
+      for (const room of Object.values(state.rooms ?? {})) {
+        const name = typeof room?.name === 'string' ? room.name.trim() : ''
+        if (name && !seen.has(name)) { seen.add(name); groups.push(name) }
+      }
+    } catch (e) { log(`wakeDestinations rooms error: ${e.message}`) }
+    groups.sort((a, b) => a.localeCompare(b))
+    return { groups, bots: botTargets().map((b) => b.name), default: cfg.l1.targetBot }
+  }
+
+  /**
+   * 重新设置某个 target 的投递目标（写 targets/<name>.env.json 的 wakeTo）。
+   *
+   * 三条拒绝都必须说人话，因为按钮就在用户眼前：
+   *   没有这个 target / 没有这个群 / 没有这个 Bot。
+   * 为什么写前要校验目标存在：resolveWakeTarget 找不到群会返回 undefined，
+   * 而 wakeL2 会退回默认私聊——写一个拼错的群名，等于让告警【悄悄改道】。
+   */
+  function setWakeToTarget(body) {
+    const name = String(body?.name ?? '').trim()
+    if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error(`源名不合法：${name || '(空)'}`)
+    requireScriptTarget(name)
+    const wakeTo = normalizeWakeTo(body?.wakeTo ?? null)
+    const dest = wakeDestinations()
+    if (wakeTo?.kind === 'group' && !dest.groups.includes(wakeTo.name)) {
+      throw new Error(`没有这个群：${wakeTo.name}（现在有：${dest.groups.join('、') || '无'}）`)
+    }
+    if (wakeTo?.kind === 'bot' && !dest.bots.includes(wakeTo.name)) {
+      throw new Error(`没有这个 Bot：${wakeTo.name}（现在有：${dest.bots.join('、') || '无'}）`)
+    }
+    const envFile = join(targetsDir, `${name}.env.json`)
+    const prevText = existsSync(envFile) ? readFileSync(envFile, 'utf8') : '{}\n'
+    const nextText = applyWakeToToEnvText(prevText, wakeTo)
+    const tmp = `${envFile}.tmp-${process.pid}`
+    writeFileSync(tmp, nextText, { encoding: 'utf8', mode: 0o600 })
+    renameSync(tmp, envFile)
+    log(`targets: ${name} wakeTo → ${wakeToDisplay(wakeTo)}`)
+    // mtime 变了 → discoverySig 变化 → 下一轮重装载，不用重启 DSH
+    refreshDiscovery()
+    return { name, wakeTo, display: wakeToDisplay(wakeTo) }
+  }
+
   function builtinRows() {
     const declared = new Set(cfg.l0.sources ?? [])
     return builtinNames().map((name) => ({ name, builtin: true, enabled: declared.has(name) }))
@@ -1629,9 +1686,7 @@ function install(rt, ctx, cfg) {
       throw new Error(`内置源由 profile 控制，不支持一键调优：${name}`)
     }
     if (!existsSync(join(collectorsDir, `${name}.sh`))) throw new Error(`没有这个数据源：${name}`)
-    if (!existsSync(join(targetsDir, `${name}.sh`))) {
-      throw new Error(`${name} 没有 L1 判定（只采集），没有可调的东西`)
-    }
+    requireScriptTarget(name, `${name} 没有 L1 判定（只采集），没有可调的东西`)
     const target = resolveRequestTarget(body?.target)
     const delivered = await wakeL2Once(prompt, target, 'followup')
     if (!delivered) throw new Error(`没投到 ${target}：会话没找到或插件没连上（详见日志 L2 wake）`)
@@ -1681,7 +1736,7 @@ function install(rt, ctx, cfg) {
   async function reflexRoute(op, body) {
     // probe 恒返回 Promise（起子进程不能阻塞宿主的事件循环），await 一次两种形态都收。
     return await respondToOp(op, body, {
-      list: () => ({ sources: sourceRows(), builtin: builtinRows(), scannedAt: Date.now(), targetBot: cfg.l1.targetBot, targets: botTargets() }),
+      list: () => ({ sources: sourceRows(), builtin: builtinRows(), scannedAt: Date.now(), targetBot: cfg.l1.targetBot, targets: botTargets(), destinations: wakeDestinations() }),
       commit: (name, paused) => setPaused(collectorsDir, name, paused, { builtins: builtinNames() }),
       refresh: () => refreshDiscovery(),
       log,
@@ -1689,6 +1744,7 @@ function install(rt, ctx, cfg) {
       probe: (payload) => probeCommand(payload),
       delegate: (payload) => delegateCreate(payload),
       tune: (payload) => tuneSourceRequest(payload),
+      setWakeTo: (payload) => setWakeToTarget(payload),
     })
   }
   try {

@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
-import { scanSources, setPaused, respondToOp, buildDelegatePrompt, buildTunePrompt, TUNE_PREFERENCE_MAX, BUILTIN_SOURCES, SOURCE_ROUTE, SOURCE_ROUTE_CLIENT } from './sources.mjs'
+import { scanSources, setPaused, respondToOp, buildDelegatePrompt, buildTunePrompt, TUNE_PREFERENCE_MAX, BUILTIN_SOURCES, SOURCE_ROUTE, SOURCE_ROUTE_CLIENT, normalizeWakeTo, applyWakeToToEnvText, wakeToDisplay } from './sources.mjs'
 
 const tempRoot = () => mkdtempSync(join(tmpdir(), 'reflex-sources-'))
 
@@ -219,4 +219,52 @@ test('P29 tune 只负责接线：交给注入的投递函数，没接线就明�
   assert.equal(seen.name, 'x-timeline')
 
   await assert.rejects(async () => { await respondToOp('tune', { name: 'x' }, {}) }, /未接线/)
+})
+
+// ===========================================================================
+// 投递目标（wakeTo）的读写：界面能改它，所以它必须先是纯函数。
+// 性质编号 P-W1..P-W3 对应 registrations 里的同名条目。
+// ===========================================================================
+
+test('P-W1 归一化：只接受三种形态，其它一律拒绝并说人话', () => {
+  // 空 = 跟随宿主默认目标
+  assert.equal(normalizeWakeTo(null), null)
+  assert.equal(normalizeWakeTo(undefined), null)
+  assert.equal(normalizeWakeTo(''), null)
+  // 群
+  assert.deepEqual(normalizeWakeTo({ kind: 'group', name: '美股持仓' }), { kind: 'group', name: '美股持仓' })
+  // bot：字符串是最早的写法，必须继续支持（现有 env.json 里有 "Chief" 这种）
+  assert.deepEqual(normalizeWakeTo('Chief'), { kind: 'bot', name: 'Chief' })
+  assert.deepEqual(normalizeWakeTo({ kind: 'bot', name: 'Chief' }), { kind: 'bot', name: 'Chief' })
+  // 名字两端空白要去掉，否则群名匹配会差一个空格
+  assert.deepEqual(normalizeWakeTo({ kind: 'group', name: '  美股持仓  ' }), { kind: 'group', name: '美股持仓' })
+  // 非法：必须抛，且消息里带上原因
+  for (const bad of [{ kind: 'room', name: 'x' }, { kind: 'group' }, { kind: 'group', name: '   ' }, 42]) {
+    assert.throws(() => normalizeWakeTo(bad), /投递目标|kind|name/)
+  }
+})
+
+test('P-W2 写盘：加/换/清 wakeTo，其它键一个都不许动；原文本坏了必须拒绝', () => {
+  const base = JSON.stringify({ displayName: 'X', sources: ['a'], minIntervalMs: 1800000, interruptAlways: true }, null, 2)
+  // 加
+  const added = JSON.parse(applyWakeToToEnvText(base, { kind: 'group', name: '美股持仓' }))
+  assert.deepEqual(added.wakeTo, { kind: 'group', name: '美股持仓' })
+  assert.deepEqual(Object.keys(added).sort(), ['displayName', 'interruptAlways', 'minIntervalMs', 'sources', 'wakeTo'])
+  assert.equal(added.sources[0], 'a')
+  assert.equal(added.interruptAlways, true)
+  // 换：再写一次是幂等的
+  const again = applyWakeToToEnvText(applyWakeToToEnvText(base, { kind: 'group', name: '美股持仓' }), { kind: 'group', name: '美股持仓' })
+  assert.equal(again, applyWakeToToEnvText(base, { kind: 'group', name: '美股持仓' }))
+  // 清：null 要把键删掉，不是写成 null
+  const cleared = JSON.parse(applyWakeToToEnvText(applyWakeToToEnvText(base, { kind: 'bot', name: 'Chief' }), null))
+  assert.equal('wakeTo' in cleared, false)
+  // 坏 JSON 不许「顺手修好」——那会把别人的配置吃掉
+  assert.throws(() => applyWakeToToEnvText('{ not json', null), /JSON|解析/)
+})
+
+test('P-W3 显示：三种状态在界面上必须能分开读', () => {
+  assert.match(wakeToDisplay(null), /默认/)
+  assert.match(wakeToDisplay({ kind: 'group', name: '美股持仓' }), /美股持仓/)
+  assert.match(wakeToDisplay({ kind: 'group', name: '美股持仓' }), /群/)
+  assert.match(wakeToDisplay({ kind: 'bot', name: 'Chief' }), /Chief/)
 })

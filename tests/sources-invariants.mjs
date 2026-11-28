@@ -234,6 +234,27 @@ const MUTATIONS = [
     to: 'if (false) throw new Error(`名字不合法：${JSON.stringify(target)}`)',
   },
   {
+    name: 'P-W1 接受任意 kind（不再只认 group/bot）',
+    prop: 'P-W1',
+    file: 'sources.mjs',
+    from: "if ((kind === 'group' || kind === 'bot') && name) return { kind, name }",
+    to: "if (name) return { kind, name }",
+  },
+  {
+    name: 'P-W2 清空时写成 null 而不是删键（wakeTo:null 会被当成“配了个 null”）',
+    prop: 'P-W2',
+    file: 'sources.mjs',
+    from: 'if (wakeTo === null) delete obj.wakeTo',
+    to: 'if (wakeTo === null) obj.wakeTo = null',
+  },
+  {
+    name: 'P-W3 显示恒为默认（界面看不出投给了群还是 Bot）',
+    prop: 'P-W3',
+    file: 'sources.mjs',
+    from: "  return wakeTo.kind === 'group' ? `群：${wakeTo.name}` : `Bot：${wakeTo.name}`",
+    to: "  return '默认（跟随宿主）'",
+  },
+  {
     name: 'P30 没有 L1 的源也放行（跳过 target 存在性检查）',
     prop: 'P30',
     file: 'index.js',
